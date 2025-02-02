@@ -1,35 +1,41 @@
 use log::info;
-use std::io::Read;
+use tokio::io::AsyncReadExt;
 use tun::Configuration;
 
 pub struct TunDev {
-    dev: tun::Device,
+    pub dev: tun::AsyncDevice,
 }
 
 impl TunDev {
     #[allow(unused_variables)]
-    pub fn new(tun_name: String, ip_addr: String) -> Self {
+    pub fn new(tun_name: String, netmask: String, destination: String, ip_addr: String) -> Self {
         info!("TUN initialized for {}", ip_addr);
 
         let mut config = Configuration::default();
         config
             .address(ip_addr.clone())
-            .netmask("255.255.255.0")
-            .destination("10.0.0.0")
+            .netmask(netmask)
+            .destination(destination)
             .mtu(1500);
+        #[cfg(target_os = "linux")]
+        config.platform_config(|config| {
+            config.ensure_root_privileges(true);
+        });
+
         #[cfg(not(target_os = "macos"))]
         config.tun_name(tun_name);
+
         config.up();
-        let tun = tun::create(&config).unwrap();
-        tun.set_nonblock().unwrap();
-        TunDev { dev: tun }
+        let dev = tun::create_as_async(&config).expect("Cannot create TUN device");
+
+        TunDev { dev }
     }
 
-    pub fn send(self: &mut Self, buf: &[u8]) {
-        self.dev.send(buf).unwrap();
+    pub async fn send(self: &mut Self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
+        return self.dev.send(&buf[..nbytes]).await;
     }
 
-    pub fn read(self: &mut Self, buffer: &mut [u8]) -> std::io::Result<usize> {
-        return self.dev.read(buffer);
+    pub async fn read(self: &mut Self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
+        return self.dev.read(buffer).await;
     }
 }
