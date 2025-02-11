@@ -1,4 +1,6 @@
+use log::info;
 use std::env;
+use tokio::signal::unix::{signal, SignalKind};
 
 pub mod client;
 pub mod common;
@@ -15,6 +17,17 @@ fn echo_syntax(args: &Vec<String>) {
 
 #[tokio::main]
 async fn main() {
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigterm.recv() => {}
+            _ = sigint.recv() => {}
+        }
+        info!("Shutting down...");
+        // TODO shutdown gracefully
+        std::process::exit(0);
+    });
     colog::init();
 
     let args: Vec<String> = env::args().collect();
