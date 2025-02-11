@@ -1,0 +1,13 @@
+[Unit]
+Description=reticula-server
+After=network.target
+
+[Service]
+Restart=on-failure
+ExecStart=/opt/reticula/reticula server
+PIDFile=/run/reticual/reticula-server.pid
+StandardOutput=append:/var/log/reticula.out.log
+StandardError=append:/var/log/reticula.err.log
+
+[Install]
+WantedBy=multi-user.target
