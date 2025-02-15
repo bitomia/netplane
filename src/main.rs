@@ -32,9 +32,7 @@ async fn main() {
 
     let args: Vec<String> = env::args().collect();
     if args.len() == 2 && args[1] == "server" {
-        if server::run().is_err() {
-            std::process::exit(1);
-        }
+        let _ = server::run().await;
     } else if args.len() == 7 && args[1] == "client" {
         let _ = client::run(
             args[2].clone(),
