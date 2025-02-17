@@ -1,9 +1,11 @@
 use crate::common::{handshake_deserialize, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
+use crate::db;
 use crate::packet::parse_ipv4_header;
-use axum::{response::Html, routing::get, Router};
+use crate::webserver::WebServer;
 use log::{debug, error, info};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::Arc;
 
 #[derive(Eq, Hash, PartialEq)]
 struct Client {
@@ -11,14 +13,10 @@ struct Client {
     pub ipv4_addr: Ipv4Addr,
 }
 
-async fn index() -> Html<&'static str> {
-    Html(std::include_str!("../index.html"))
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
-async fn reticula_server() {
+async fn reticula_server(db: Arc<db::Db>) {
     let socket = UdpSocket::bind("0.0.0.0:5000").expect("Cannot open socket");
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
@@ -26,11 +24,22 @@ async fn reticula_server() {
         let (amt, src) = socket.recv_from(&mut buf).expect("Cannot receive");
         if amt == HANDSHAKE_SIZE && buf[..3] == HANDSHAKE_HEADER {
             let handshake = handshake_deserialize(&buf);
-            info!("Client connected {} {}", src, handshake.ipv4_addr);
-            clients.insert(Client {
-                src,
-                ipv4_addr: handshake.ipv4_addr,
-            });
+            if db
+                .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
+                .await
+                == true
+            {
+                clients.insert(Client {
+                    src,
+                    ipv4_addr: handshake.ipv4_addr,
+                });
+                info!("Client connected {} {}", src, handshake.ipv4_addr);
+            } else {
+                error!(
+                    "Ignoring Unknown user pair {} {}",
+                    src.ip(), handshake.ipv4_addr
+                );
+            }
             continue;
         }
         if let Some(header) = parse_ipv4_header(&buf[..amt]) {
@@ -56,15 +65,11 @@ async fn reticula_server() {
 }
 
 pub async fn run() -> Result<(), ProcessError> {
-    info!("Starting web server");
-    let app = Router::new().route("/", get(index));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .unwrap();
-    let web_server = axum::serve(listener, app);
+    let db = Arc::new(db::Db::new().await);
+    let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
 
     info!("Starting reticula server");
-    let reticula_server = tokio::spawn(reticula_server());
+    let reticula_server = tokio::spawn(reticula_server(db.clone()));
     info!("UDP server listening on 0.0.0.0:5000");
 
     tokio::select! {

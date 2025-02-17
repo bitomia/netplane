@@ -2,6 +2,7 @@
 name = "reticula"
 version = "0.1.0"
 edition = "2021"
+default-run = "reticula"
 
 [lib]
 name = "reticula"
@@ -10,6 +11,10 @@ crate-type = ["staticlib"]
 [[bin]]
 name = "reticula"
 path = "src/main.rs"
+
+[[bin]]
+name = "migrate"
+path = "src/migrate.rs"
 
 [dependencies]
 axum = { version = "0.8.1", features = ["ws"] }
@@ -20,4 +25,10 @@ mio = "1.0.3"
 nix = { version = "0.27", features = ["socket"] }
 tokio = { version = "1", features = ["full"] }
 tun = { version = "0.7", features = ["async"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tower-http = { version = "0.6.1", features = ["cors", "fs"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid"] }
+dotenv = "0.15.0"
 
