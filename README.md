@@ -19,11 +19,11 @@ cargo make musl
 Server running at 172.16.140.1:5000:
 
 ```shell
-./reticula server
+RUST_LOG=debug cargo run server
 ```
 
 Client mode:
 
 ```shell
-sudo ./reticula client tun0 12.0.0.0 255.255.255.0 12.0.0.2 172.16.140.1:5000
+RUST_LOG=debug cargo run client tun0 12.0.0.0 255.255.255.0 12.0.0.2 172.16.140.1:5000
 ```

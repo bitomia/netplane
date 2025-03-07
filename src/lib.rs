@@ -22,11 +22,12 @@ pub unsafe extern "C" fn start_client(
     server_addr: *const libc::c_char,
 ) {
     colog::init();
-    let _ = client::run(
-        c_str_to_string(tun_name),
-        c_str_to_string(netmask),
-        c_str_to_string(destination),
-        c_str_to_string(ip_addr),
-        c_str_to_string(server_addr),
-    );
+//    let _ = client::run(
+//        c_str_to_string(tun_name),
+//        c_str_to_string(netmask),
+//        c_str_to_string(destination),
+//        c_str_to_string(ip_addr),
+//        c_str_to_string(server_addr),
+//    );
+//
 }

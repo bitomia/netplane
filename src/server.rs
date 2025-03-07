@@ -37,7 +37,8 @@ async fn reticula_server(db: Arc<db::Db>) {
             } else {
                 error!(
                     "Ignoring Unknown user pair {} {}",
-                    src.ip(), handshake.ipv4_addr
+                    src.ip(),
+                    handshake.ipv4_addr
                 );
             }
             continue;

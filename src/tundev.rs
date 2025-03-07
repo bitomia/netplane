@@ -8,7 +8,7 @@ pub struct TunDev {
 
 impl TunDev {
     #[allow(unused_variables)]
-    pub fn new(tun_name: String, netmask: String, destination: String, ip_addr: String) -> Self {
+    pub fn new(tun_name: &str,  netmask: &str, destination: &str, ip_addr: &str) -> Self {
         info!("TUN initialized for {}", ip_addr);
 
         let mut config = Configuration::default();
