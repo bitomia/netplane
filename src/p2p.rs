@@ -15,7 +15,7 @@ const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
 #[derive(Eq, Hash, PartialEq)]
 struct Client {
-    pub src: SocketAddr,
+    pub src: PeerId,
     pub ipv4_addr: Ipv4Addr,
 }
 
@@ -55,27 +55,17 @@ async fn echo(mut stream: Stream) -> std::io::Result<usize> {
     }
 }
 
-pub async fn p2p_server() -> Result<()> {
-    let mut swarm = SwarmBuilder::with_new_identity()
-        .with_tokio()
-        .with_quic()
-        .with_behaviour(|_| stream::Behaviour::new())?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
-        .build();
-
-    swarm
-        .listen_on("/ip4/127.0.0.1/udp/5000/quic-v1".parse()?)
-        .unwrap();
-    let mut incoming_streams = swarm
-        .behaviour()
-        .new_control()
-        .accept(RETICULA_PROTOCOL)
-        .unwrap();
-    let mut clients: HashSet<Client> = HashSet::new();
-
+async fn handle_server(mut incoming_streams: libp2p_stream::IncomingStreams) {
     while let Some((peer, mut stream)) = incoming_streams.next().await {
         log::info!("Client connected {peer:?}");
+
+        let mut clients: HashSet<Client> = HashSet::new();
         // TODO check peer registered
+        clients.insert(Client {
+            src: peer,
+            ipv4_addr: Ipv4Addr::new(0, 0, 0, 0),
+        });
+
         tokio::spawn(async move {
             let mut buf: [u8; 1500] = [0; 1500];
             loop {
@@ -104,7 +94,7 @@ pub async fn p2p_server() -> Result<()> {
                         //    continue;
                         //}
                         if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                            log::debug!(
+                            log::info!(
                                 "{} {} {}",
                                 header.src_ip,
                                 header.dst_ip,
@@ -112,11 +102,11 @@ pub async fn p2p_server() -> Result<()> {
                             );
 
                             for client in &clients {
-                                log::debug!("Sending data to {}", peer);
+                                log::info!("Sending data to {}", peer);
                                 //                            if src != client.src
                                 {
-                                    // TODO this is broadcasting, parse IP header and send only to target
-                                    log::debug!("...relying");
+                                    log::info!("...relying");
+                                    stream.write_all(&buf[..amt]).await;
                                     //    socket
                                     //        .send_to(&buf[..amt], &client.src)
                                     //        .expect("Cannot send");
@@ -131,7 +121,26 @@ pub async fn p2p_server() -> Result<()> {
                 }
             }
         });
-    });
+    }
+}
+pub async fn p2p_server() -> Result<()> {
+    let mut swarm = SwarmBuilder::with_new_identity()
+        .with_tokio()
+        .with_quic()
+        .with_behaviour(|_| stream::Behaviour::new())?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
+        .build();
+
+    swarm
+        .listen_on("/ip4/127.0.0.1/udp/5000/quic-v1".parse()?)
+        .unwrap();
+    let mut incoming_streams = swarm
+        .behaviour()
+        .new_control()
+        .accept(RETICULA_PROTOCOL)
+        .unwrap();
+
+    tokio::spawn(handle_server(incoming_streams));
     loop {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -200,29 +209,43 @@ async fn client_connection_handler(
         }
     };
     let mut tun_buf = [0; 1500];
+    let mut buf = [0; 1500];
     loop {
-        let tun_ret = dev.read(&mut tun_buf).await;
-        match tun_ret {
-            Ok(amt) => {
-                log::info!("<= Tun read {}", amt);
-
-                let mut is_loopback = false;
-                if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
-                    is_loopback =
-                        header.src_ip == header.dst_ip && header.src_port == header.dst_port;
-                    is_loopback = false; // TODO remove this line
-                }
-                if is_loopback {
-                    send_tun(&mut dev, &tun_buf, amt).await;
-                } else {
-                    match stream.write_all(&tun_buf[..amt]).await {
-                        Ok(_) => {}
-                        Err(err) => log::error!("{}", err),
+        tokio::select! {
+            stream_ret = stream.read(&mut buf) => {
+                match stream_ret {
+                    Ok(amt) => {
+                        log::info!("=> Stream read {}", amt);
+                        send_tun(&mut dev, &buf, amt).await;
+                    }
+                    Err(err) => {
+                        log::info!("{}", err);
                     }
                 }
-            }
-            Err(err) => {
-                log::info!("{}", err);
+            },
+            tun_ret = dev.read(&mut tun_buf) => {
+                match tun_ret {
+                    Ok(amt) => {
+                        log::info!("<= Tun read {}", amt);
+
+                        let mut is_loopback = false;
+                        if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
+                            is_loopback =
+                                header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                        }
+                        if is_loopback {
+                            send_tun(&mut dev, &tun_buf, amt).await;
+                        } else {
+                            match stream.write_all(&tun_buf[..amt]).await {
+                                Ok(_) => {}
+                                Err(err) => log::error!("{}", err),
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        log::info!("{}", err);
+                    }
+                }
             }
         }
     }
