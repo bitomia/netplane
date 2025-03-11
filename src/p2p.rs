@@ -79,54 +79,56 @@ pub async fn p2p_server() -> Result<()> {
             // TODO check peer registered
             //
             let mut buf: [u8; 1500] = [0; 1500];
-            match stream.read(&mut buf).await {
-                Ok(amt) => {
-                    log::info!("Received {} bytes", amt);
-                    //if amt == HANDSHAKE_SIZE && buf[..3] == HANDSHAKE_HEADER {
-                    //    let handshake = handshake_deserialize(&buf);
-                    //    if db
-                    //        .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
-                    //    .await
-                    //    == true
-                    //    {
-                    //        clients.insert(Client {
-                    //            src,
-                    //            ipv4_addr: handshake.ipv4_addr,
-                    //        });
-                    //        log::info!("Client connected {} {}", src, handshake.ipv4_addr);
-                    //    } else {
-                    //        log::error!(
-                    //            "Ignoring Unknown user pair {} {}",
-                    //            src.ip(),
-                    //            handshake.ipv4_addr
-                    //        );
-                    //    }
-                    //    continue;
-                    //}
-                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                        log::debug!(
-                            "{} {} {}",
-                            header.src_ip,
-                            header.dst_ip,
-                            header.total_length
-                        );
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(amt) => {
+                        log::info!("Received {} bytes", amt);
+                        //if amt == HANDSHAKE_SIZE && buf[..3] == HANDSHAKE_HEADER {
+                        //    let handshake = handshake_deserialize(&buf);
+                        //    if db
+                        //        .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
+                        //    .await
+                        //    == true
+                        //    {
+                        //        clients.insert(Client {
+                        //            src,
+                        //            ipv4_addr: handshake.ipv4_addr,
+                        //        });
+                        //        log::info!("Client connected {} {}", src, handshake.ipv4_addr);
+                        //    } else {
+                        //        log::error!(
+                        //            "Ignoring Unknown user pair {} {}",
+                        //            src.ip(),
+                        //            handshake.ipv4_addr
+                        //        );
+                        //    }
+                        //    continue;
+                        //}
+                        if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                            log::debug!(
+                                "{} {} {}",
+                                header.src_ip,
+                                header.dst_ip,
+                                header.total_length
+                            );
 
-                        for client in &clients {
-                            log::debug!("Sending data to {}", peer);
-                            //                            if src != client.src
-                            {
-                                // TODO this is broadcasting, parse IP header and send only to target
-                                log::debug!("...relying");
-                                //    socket
-                                //        .send_to(&buf[..amt], &client.src)
-                                //        .expect("Cannot send");
-                                //
+                            for client in &clients {
+                                log::debug!("Sending data to {}", peer);
+                                //                            if src != client.src
+                                {
+                                    // TODO this is broadcasting, parse IP header and send only to target
+                                    log::debug!("...relying");
+                                    //    socket
+                                    //        .send_to(&buf[..amt], &client.src)
+                                    //        .expect("Cannot send");
+                                    //
+                                }
                             }
                         }
                     }
-                }
-                Err(_) => {
-                    continue;
+                    Err(_) => {
+                        continue;
+                    }
                 }
             }
         }
