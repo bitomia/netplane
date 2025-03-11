@@ -73,11 +73,10 @@ pub async fn p2p_server() -> Result<()> {
         .unwrap();
     let mut clients: HashSet<Client> = HashSet::new();
 
-    tokio::spawn(async move {
-        while let Some((peer, mut stream)) = incoming_streams.next().await {
-            log::info!("Client connected {peer:?}");
-            // TODO check peer registered
-            //
+    while let Some((peer, mut stream)) = incoming_streams.next().await {
+        log::info!("Client connected {peer:?}");
+        // TODO check peer registered
+        tokio::spawn(async move {
             let mut buf: [u8; 1500] = [0; 1500];
             loop {
                 match stream.read(&mut buf).await {
@@ -131,7 +130,7 @@ pub async fn p2p_server() -> Result<()> {
                     }
                 }
             }
-        }
+        });
     });
     loop {
         match swarm.select_next_some().await {
