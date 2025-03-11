@@ -1,81 +1,104 @@
+use crate::client::Client;
 use crate::common::{handshake_deserialize, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
 use crate::db;
 use crate::packet::parse_ipv4_header;
-use crate::webserver::WebServer;
-use log::{debug, error, info};
-use std::collections::HashSet;
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::Arc;
+use anyhow::Result;
+use libp2p::{*, futures::AsyncReadExt, futures::AsyncWriteExt, futures::StreamExt};
+use libp2p::swarm::SwarmEvent;
+use libp2p_stream as stream;
+use std::net::Ipv4Addr;
+use std::{collections::HashSet, time::Duration};
 
-#[derive(Eq, Hash, PartialEq)]
-struct Client {
-    pub src: SocketAddr,
-    pub ipv4_addr: Ipv4Addr,
-}
+const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcessError(u32);
+async fn handle_server(mut incoming_streams: libp2p_stream::IncomingStreams) {
+    while let Some((peer, mut stream)) = incoming_streams.next().await {
+        log::info!("Client connected {peer:?}");
 
-async fn reticula_server(db: Arc<db::Db>) {
-    let socket = UdpSocket::bind("0.0.0.0:5000").expect("Cannot open socket");
-    let mut clients: HashSet<Client> = HashSet::new();
-    let mut buf = [0; 1500];
-    loop {
-        let (amt, src) = socket.recv_from(&mut buf).expect("Cannot receive");
-        if amt == HANDSHAKE_SIZE && buf[..3] == HANDSHAKE_HEADER {
-            let handshake = handshake_deserialize(&buf);
-            if db
-                .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
-                .await
-                == true
-            {
-                clients.insert(Client {
-                    src,
-                    ipv4_addr: handshake.ipv4_addr,
-                });
-                info!("Client connected {} {}", src, handshake.ipv4_addr);
-            } else {
-                error!(
-                    "Ignoring Unknown user pair {} {}",
-                    src.ip(),
-                    handshake.ipv4_addr
-                );
-            }
-            continue;
-        }
-        if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-            debug!(
-                "{} {} {}",
-                header.src_ip, header.dst_ip, header.total_length
-            );
+        let mut clients: HashSet<Client> = HashSet::new();
+        // TODO check peer registered
+        clients.insert(Client {
+            peer,
+            ipv4_addr: Ipv4Addr::new(0, 0, 0, 0),
+        });
 
-            for client in &clients {
-                debug!("Sending data to {}", src);
-                if src != client.src {
-                    // TODO this is broadcasting, parse IP header and send only to target
-                    debug!("...relying");
-                    socket
-                        .send_to(&buf[..amt], &client.src)
-                        .expect("Cannot send");
+        tokio::spawn(async move {
+            let mut buf: [u8; 1500] = [0; 1500];
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(amt) => {
+                        log::info!("Received {} bytes", amt);
+                        //if amt == HANDSHAKE_SIZE && buf[..3] == HANDSHAKE_HEADER {
+                        //    let handshake = handshake_deserialize(&buf);
+                        //    if db
+                        //        .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
+                        //    .await
+                        //    == true
+                        //    {
+                        //        clients.insert(Client {
+                        //            src,
+                        //            ipv4_addr: handshake.ipv4_addr,
+                        //        });
+                        //        log::info!("Client connected {} {}", src, handshake.ipv4_addr);
+                        //    } else {
+                        //        log::error!(
+                        //            "Ignoring Unknown user pair {} {}",
+                        //            src.ip(),
+                        //            handshake.ipv4_addr
+                        //        );
+                        //    }
+                        //    continue;
+                        //}
+                        if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                            log::info!(
+                                "{} {} {}",
+                                header.src_ip,
+                                header.dst_ip,
+                                header.total_length
+                            );
+
+                            for client in &clients {
+                                log::info!("Sending data to {}", peer);
+                                if peer != client.peer {
+                                    let _ = stream.write_all(&buf[..amt]).await;
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        continue;
+                    }
                 }
             }
-        } else {
-            error!("Packet not supported");
-        }
+        });
     }
 }
+pub async fn start() -> Result<()> {
+    let mut swarm = SwarmBuilder::with_new_identity()
+        .with_tokio()
+        .with_quic()
+        .with_behaviour(|_| stream::Behaviour::new())?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
+        .build();
 
-pub async fn run() -> Result<(), ProcessError> {
-    let db = Arc::new(db::Db::new().await);
-    let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
+    swarm
+        .listen_on("/ip4/127.0.0.1/udp/5000/quic-v1".parse()?)
+        .unwrap();
+    let incoming_streams = swarm
+        .behaviour()
+        .new_control()
+        .accept(RETICULA_PROTOCOL)
+        .unwrap();
 
-    info!("Starting reticula server");
-    let reticula_server = tokio::spawn(reticula_server(db.clone()));
-    info!("UDP server listening on 0.0.0.0:5000");
-
-    tokio::select! {
-        _ = web_server => info!("Web server stopped"),
-        _ = reticula_server => info!("Reticula server stopped")
+    tokio::spawn(handle_server(incoming_streams));
+    loop {
+        match swarm.select_next_some().await {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                let listen_address = address.with_p2p(*swarm.local_peer_id()).unwrap();
+                log::info!("Listening on {listen_address:?}")
+            }
+            SwarmEvent::Behaviour(event) => log::info!("{event:?}"),
+            _ => {}
+        }
     }
-    Ok(())
 }
