@@ -1,6 +1,6 @@
 use crate::db::Db;
 use axum::{
-    extract::State, http::StatusCode, response::Html, response::Json, routing::get, serve::Serve,
+    extract::State, http::StatusCode, response::Json, routing::get, serve::Serve,
     Router,
 };
 use log::info;

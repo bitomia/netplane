@@ -1,13 +1,15 @@
-use crate::common::{handshake_deserialize, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
+use crate::common::{handshake_deserialize, Handshake, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
 use crate::db;
 use crate::packet::parse_ipv4_header;
 use crate::tundev;
-use anyhow::Result;
+use crate::common;
+use anyhow::{anyhow, Result};
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use libp2p::{multiaddr::Protocol, *};
 use libp2p_stream as stream;
 use std::net::Ipv4Addr;
 use std::time::Duration;
+use std::str::FromStr;
 
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
@@ -40,7 +42,7 @@ pub async fn start(
     };
 
     let control = swarm.behaviour().new_control();
-    tokio::spawn(client_connection_handler(dev, peer, control));
+    tokio::spawn(client_connection_handler(dev, control, ip_addr.to_string(), peer));
     loop {
         let event = swarm.next().await.expect("never terminates");
         match event {
@@ -62,16 +64,24 @@ pub async fn send_tun(dev: &mut crate::tundev::TunDev, buf: &[u8], nbytes: usize
 
 async fn client_connection_handler(
     mut dev: tundev::TunDev,
-    peer: PeerId,
     mut control: stream::Control,
-) {
+    ip_addr: String,
+    peer: PeerId,
+) -> Result<()> {
     let mut stream = match control.open_stream(peer, RETICULA_PROTOCOL).await {
         Ok(stream) => stream,
-        Err(err) => {
-            log::error!("{}", err);
-            return;
-        }
+        Err(err) => return Err(anyhow!("{}", err)),
     };
+    let ipv4_addr = match Ipv4Addr::from_str(ip_addr.as_str()) {
+        Ok(addr) => addr,
+        Err(err) => return Err(anyhow!("{}", err)),
+    };
+    let handshake = Handshake {
+        header: HANDSHAKE_HEADER,
+        ipv4_addr,
+    };
+    log::info!("Sending handshake");
+    stream.write_all(&common::handshake_serialize(&handshake)).await?;
     let mut tun_buf = [0; 1500];
     let mut buf = [0; 1500];
     loop {

@@ -27,7 +27,7 @@ async fn main() {
             _ = sigterm.recv() => {
                 std::process::exit(0);
             },
-                _ = sigint.recv() => {
+            _ = sigint.recv() => {
                 std::process::exit(0);
             }
         }
