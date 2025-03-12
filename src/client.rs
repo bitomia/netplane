@@ -86,6 +86,7 @@ async fn client_connection_handler(
     peer: PeerId,
     sdn_ip_addr: String
 ) -> Result<()> {
+    println!("TEST {}", peer);
     let mut stream = match control.open_stream(peer, RETICULA_PROTOCOL).await {
         Ok(stream) => stream,
         Err(err) => return Err(anyhow!("{}", err)),

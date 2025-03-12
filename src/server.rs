@@ -10,6 +10,7 @@ use lazy_static::lazy_static;
 use libp2p::{*, futures::AsyncReadExt, futures::AsyncWriteExt, futures::StreamExt, multiaddr::Protocol};
 use libp2p::swarm::SwarmEvent;
 use libp2p_stream::{self as stream, OpenStreamError};
+use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
@@ -20,6 +21,7 @@ use std::sync::Mutex;
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
 lazy_static! {
+    static ref streams: tokio::sync::Mutex<Vec<Arc<tokio::sync::Mutex<libp2p::swarm::Stream>>>> = tokio::sync::Mutex::new(Vec::new());
     static ref clients: tokio::sync::Mutex<HashMap<PeerId, Client>> = {
         let m = HashMap::new();
         tokio::sync::Mutex::new(m)
@@ -38,19 +40,26 @@ fn extract_ipv4(multiaddr: &Multiaddr) -> Option<std::net::Ipv4Addr> {
 async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_stream::Control>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
     while let Some((peer, mut stream)) = incoming_streams.next().await {
         log::info!("Client connected {peer:?}");
+
         let db = Arc::clone(&db);
-        let control = Arc::clone(&control);
+        let stream = Arc::new(tokio::sync::Mutex::new(stream));
+        streams.lock().await.push(stream.clone());
+
         tokio::spawn(async move {
             let mut buf: [u8; 1500] = [0; 1500];
             loop {
-                match stream.read(&mut buf).await {
+                let mut locked_stream = stream.lock().await;
+                match locked_stream.read(&mut buf).await {
                     Ok(amt) => {
+                        drop(locked_stream);
+                        
                         log::info!("Received {} bytes", amt);
                         if buf[..3] == HANDSHAKE_HEADER {
                             let handshake = deserialize_handshake(&buf);
                             let base64_identity = common::identity_to_base64(&handshake.identity);
                             log::info!("Received handshake from {peer} with identity {base64_identity}");
-                            if db.check_client(&base64_identity, &handshake.sdn_ip_addr.to_string()).await {
+                            //if db.check_client(&base64_identity, &handshake.sdn_ip_addr.to_string()).await
+                            {
                                 log::info!("Client connected {}", peer);
                                 let mut current_clients = clients.lock().await;
                                 let client_addr = current_clients.get(&peer).unwrap().addr.clone();
@@ -59,10 +68,11 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                     sdn_ip_addr: handshake.sdn_ip_addr,
                                     addr: client_addr,
                                 });
-                            } else {
-                                log::error!("Ignoring unknown user pair {}", peer);
-                                break;
-                            }
+                            } 
+                            //else {
+                            //    log::error!("Ignoring unknown user pair {}", peer);
+                            //    break;
+                            //}
                         } else if let Some(header) = parse_ipv4_header(&buf[..amt]) {
                             log::info!(
                                 "{} {} {}",
@@ -70,13 +80,10 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                 header.dst_ip,
                                 header.total_length
                             );
-                            let mut control = control.lock().await;
-                            for client in clients.lock().await.values() {
-                                println!("{} {}", client.sdn_ip_addr.to_string(), header.dst_ip);
-                                if client.sdn_ip_addr.to_string() == header.dst_ip {
-                                    let mut stream = control.open_stream(client.peer, RETICULA_PROTOCOL).await.unwrap();
-                                    let _ = stream.write_all(&buf[..amt]).await;
-                                }
+                            for stream in streams.lock().await.iter() {
+                                println!("relay 1");
+                                stream.lock().await.write_all(&buf[..amt]).await.unwrap();
+                                println!("relay 2");
                             }
                         }
                     }
