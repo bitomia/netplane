@@ -1,32 +1,31 @@
-use crate::common::{handshake_deserialize, Handshake, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
-use crate::db;
+use crate::common::{serialize_handshake, Handshake, HANDSHAKE_HEADER};
 use crate::packet::parse_ipv4_header;
 use crate::tundev;
-use crate::common;
 use anyhow::{anyhow, Result};
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use libp2p::{multiaddr::Protocol, *};
 use libp2p_stream as stream;
-use std::net::Ipv4Addr;
 use std::time::Duration;
-use std::str::FromStr;
+use std::fs;
+use crate::common;
+use std::net::Ipv4Addr;
 
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
-#[derive(Eq, Hash, PartialEq)]
 pub struct Client {
     pub peer: PeerId,
-    pub ipv4_addr: Ipv4Addr,
+    pub sdn_ip_addr: Ipv4Addr,
+    pub addr: libp2p::multiaddr::Multiaddr,
 }
 
 pub async fn start(
     tun_name: &str,
     destination: &str,
     netmask: &str,
-    ip_addr: &str,
+    sdn_ip_addr: &str,
     addr: &str,
 ) -> Result<()> {
-    let dev = tundev::TunDev::new(tun_name, netmask, destination, ip_addr);
+    let dev = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_quic()
@@ -41,8 +40,9 @@ pub async fn start(
         anyhow::bail!("Provided address does not end in `/p2p`");
     };
 
+    let identity = load_identity();
     let control = swarm.behaviour().new_control();
-    tokio::spawn(client_connection_handler(dev, control, ip_addr.to_string(), peer));
+    tokio::spawn(client_connection_handler(dev, control, identity, peer, sdn_ip_addr.to_string()));
     loop {
         let event = swarm.next().await.expect("never terminates");
         match event {
@@ -50,9 +50,14 @@ pub async fn start(
                 let listen_address = address.with_p2p(*swarm.local_peer_id()).unwrap();
                 log::info!("{listen_address:?}");
             }
+            libp2p::swarm::SwarmEvent::ConnectionClosed { .. } => {
+                log::info!("Connection closed");
+                break;
+            }
             _event => log::info!("event"),
         }
     }
+    Ok(())
 }
 
 pub async fn send_tun(dev: &mut crate::tundev::TunDev, buf: &[u8], nbytes: usize) {
@@ -62,26 +67,36 @@ pub async fn send_tun(dev: &mut crate::tundev::TunDev, buf: &[u8], nbytes: usize
     }
 }
 
+fn load_identity() -> identity::Keypair {
+    let key_file = "identity.json";
+    if let Ok(key_data) = fs::read_to_string(key_file) {
+        return common::base64_to_identity(key_data.as_str());
+    }
+    log::info!("Generating new identity...");
+    let keypair = identity::Keypair::generate_ed25519();
+    let base64_encoded = common::identity_to_base64(&keypair);
+    fs::write(key_file, base64_encoded).expect("Failed to save identity");
+    keypair
+}
+
 async fn client_connection_handler(
     mut dev: tundev::TunDev,
     mut control: stream::Control,
-    ip_addr: String,
+    identity: identity::Keypair,
     peer: PeerId,
+    sdn_ip_addr: String
 ) -> Result<()> {
     let mut stream = match control.open_stream(peer, RETICULA_PROTOCOL).await {
         Ok(stream) => stream,
         Err(err) => return Err(anyhow!("{}", err)),
     };
-    let ipv4_addr = match Ipv4Addr::from_str(ip_addr.as_str()) {
-        Ok(addr) => addr,
-        Err(err) => return Err(anyhow!("{}", err)),
-    };
     let handshake = Handshake {
         header: HANDSHAKE_HEADER,
-        ipv4_addr,
+        sdn_ip_addr: sdn_ip_addr.parse().expect("Invalid IP address"),
+        identity,
     };
     log::info!("Sending handshake");
-    stream.write_all(&common::handshake_serialize(&handshake)).await?;
+    stream.write_all(&serialize_handshake(&handshake)).await?;
     let mut tun_buf = [0; 1500];
     let mut buf = [0; 1500];
     loop {
@@ -106,6 +121,7 @@ async fn client_connection_handler(
                         if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
                             is_loopback =
                                 header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                            is_loopback = false;
                         }
                         if is_loopback {
                             send_tun(&mut dev, &tun_buf, amt).await;
