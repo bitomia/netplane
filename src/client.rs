@@ -26,7 +26,7 @@ pub async fn start(
     sdn_ip_addr: &str,
     addr: &str,
 ) -> Result<()> {
-    let dev = Arc::new(tokio::sync::Mutex::new(tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr)));
+    let dev = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_quic()
@@ -61,68 +61,111 @@ pub async fn start(
     Ok(())
 }
 
-pub async fn send_tun(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, buf: &[u8], nbytes: usize) {
-    match dev.lock().await.send(&buf[..nbytes], nbytes).await {
+pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
+    match dev.send(&buf[..nbytes], nbytes).await {
         Ok(_) => {
             log::info!("=> Tun write {}", nbytes);
         }
         Err(err) => log::error!("send_tun {}", err),
     }
 }
-
-async fn handle_tun_dev(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut stream: libp2p::Stream) {
-    let mut tun_buf = [0; 1500];
-    loop {
-        let mut locked_dev = dev.lock().await;
-        match locked_dev.read(&mut tun_buf).await {
-            Ok(amt) => {
-                drop(locked_dev);
-                log::info!("<= Tun read {}", amt);
-
+//
+//async fn handle_tun_dev(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut stream: libp2p::Stream) {
+//    let mut tun_buf = [0; 1500];
+//    loop {
+//        let mut locked_dev = dev.lock().await;
+//        match locked_dev.read(&mut tun_buf).await {
+//            Ok(amt) => {
+//                drop(locked_dev);
+//                log::info!("<= Tun read {}", amt);
+//
+//                let mut is_loopback = false;
+//                if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
+//                    is_loopback =
+//                        header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+//                }
+//                if is_loopback {
+//                    log::info!("Loopback packet");
+////                    send_tun(dev.clone(), &tun_buf, amt).await;
+//                } else {
+//                    match stream.write_all(&tun_buf[..amt]).await {
+//                        Ok(_) => {
+//                            log::info!("=> Stream write {}", amt);
+//                        }
+//                        Err(err) => log::error!("{}", err),
+//                    }
+//                }
+//            }
+//            Err(err) => {
+//                drop(locked_dev);
+//                log::info!("{}", err);
+//            }
+//        }
+//    }
+//}
+//
+//async fn handle_incoming_stream(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
+//    while let Some((peer, mut stream)) = incoming_streams.next().await {
+//        log::info!("Incoming stream from {}", peer);
+//        let mut buf = [0; 1500];
+//        match stream.read(&mut buf).await {
+//            Ok(amt) => {
+//                log::info!("Stream read 1 {}", amt);
+//                send_tun(dev.clone(), &buf, amt).await;
+//                log::info!("Stream read 2 {}", amt);
+//            }
+//            Err(err) => {
+//                log::info!("{}", err);
+//                break;
+//            }
+//        }
+//    }
+//}
+//
+async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
+    let mut buf = [0; 1500];
+    tokio::select! {
+        t = dev.read(&mut buf) => {
+            if let Ok(amt) = t {
+                log::info!("Tun read");
                 let mut is_loopback = false;
-                if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
-                    is_loopback =
-                        header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                    is_loopback = header.src_ip == header.dst_ip && header.src_port == header.dst_port;
                 }
                 if is_loopback {
                     log::info!("Loopback packet");
-                    send_tun(dev.clone(), &tun_buf, amt).await;
+                    send_tun(dev, &buf, amt).await;
                 } else {
-                    match stream.write_all(&tun_buf[..amt]).await {
+                    match stream.write_all(&buf[..amt]).await {
                         Ok(_) => {
-                            log::info!("=> Stream write {}", amt);
+                            log::info!("Stream write");
                         }
                         Err(err) => log::error!("{}", err),
                     }
                 }
             }
-            Err(err) => {
-                drop(locked_dev);
-                log::info!("{}", err);
-            }
         }
-    }
-}
-
-async fn handle_incoming_stream(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
-    while let Some((peer, mut stream)) = incoming_streams.next().await {
-        log::info!("Incoming stream from {}", peer);
-        let mut buf = [0; 1500];
-        match stream.read(&mut buf).await {
-            Ok(amt) => {
-                log::info!("Stream read {}", amt);
-                send_tun(dev.clone(), &buf, amt).await;
-            }
-            Err(err) => {
-                log::info!("{}", err);
-                break;
+        s = incoming_streams.next() => {
+            if let Some((peer, mut stream)) = s {
+                log::info!("Incoming stream from {}", peer);
+                let mut buf = [0; 1500];
+                match stream.read(&mut buf).await {
+                    Ok(amt) => {
+                        log::info!("Stream read 1 {}", amt);
+                        send_tun(dev, &buf, amt).await;
+                        log::info!("Stream read 2 {}", amt);
+                    }
+                    Err(err) => {
+                        log::info!("{}", err);
+                    }
+                }
             }
         }
     }
 }
 
 async fn client_connection_handler(
-    dev: Arc<tokio::sync::Mutex<tundev::TunDev>>,
+    dev: tundev::TunDev,
     mut control: stream::Control,
     identity: identity::Keypair,
     server_peer: PeerId,
@@ -141,15 +184,19 @@ async fn client_connection_handler(
     log::info!("Sending handshake");
     stream.write_all(&serialize_handshake(&handshake)).await?;
 
-    let stream_handler = tokio::spawn(handle_incoming_stream(dev.clone(), incoming_streams));
-    let tun_handler = tokio::spawn(handle_tun_dev(dev, stream));
+    let handler = tokio::spawn(handle_client(dev, stream, incoming_streams));
+    //let stream_handler = tokio::spawn(handle_incoming_stream(dev.clone(), incoming_streams));
+    //let tun_handler = tokio::spawn(handle_tun_dev(dev, stream));
     tokio::select! {
-        _ = tun_handler => {
-            log::info!("Tun handler finished");
+        _ = handler => {
+            log::info!("Handler finished");
         }
-        _ = stream_handler => {
-            log::info!("Stream handler finished");
-        }
+        //_ = tun_handler => {
+        //    log::info!("Tun handler finished");
+        //}
+        //_ = stream_handler => {
+        //    log::info!("Stream handler finished");
+        //}
     }
     Ok(())
 }
