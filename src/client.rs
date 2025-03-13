@@ -6,6 +6,7 @@ use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use libp2p::{multiaddr::Protocol, *};
 use libp2p_stream as stream;
 use std::time::Duration;
+use std::sync::Arc;
 use std::fs;
 use crate::common;
 use std::net::Ipv4Addr;
@@ -25,7 +26,7 @@ pub async fn start(
     sdn_ip_addr: &str,
     addr: &str,
 ) -> Result<()> {
-    let dev = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
+    let dev = Arc::new(tokio::sync::Mutex::new(tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr)));
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_quic()
@@ -36,13 +37,13 @@ pub async fn start(
     let server_addr: Multiaddr = addr.parse().expect("Invalid Multiaddr");
     swarm.dial(server_addr.clone())?;
 
-    let Some(Protocol::P2p(peer)) = server_addr.iter().last() else {
+    let Some(Protocol::P2p(server_peer)) = server_addr.iter().last() else {
         anyhow::bail!("Provided address does not end in `/p2p`");
     };
 
     let identity = common::load_identity();
     let control = swarm.behaviour().new_control();
-    tokio::spawn(client_connection_handler(dev, control, identity, peer, sdn_ip_addr.to_string()));
+    tokio::spawn(client_connection_handler(dev, control, identity, server_peer, sdn_ip_addr.to_string()));
     loop {
         let event = swarm.next().await.expect("never terminates");
         match event {
@@ -60,21 +61,74 @@ pub async fn start(
     Ok(())
 }
 
-pub async fn send_tun(dev: &mut crate::tundev::TunDev, buf: &[u8], nbytes: usize) {
-    match dev.send(&buf[..nbytes], nbytes).await {
-        Ok(_) => {}
+pub async fn send_tun(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, buf: &[u8], nbytes: usize) {
+    match dev.lock().await.send(&buf[..nbytes], nbytes).await {
+        Ok(_) => {
+            log::info!("=> Tun write {}", nbytes);
+        }
         Err(err) => log::error!("send_tun {}", err),
     }
 }
 
+async fn handle_tun_dev(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut stream: libp2p::Stream) {
+    let mut tun_buf = [0; 1500];
+    loop {
+        let mut locked_dev = dev.lock().await;
+        match locked_dev.read(&mut tun_buf).await {
+            Ok(amt) => {
+                drop(locked_dev);
+                log::info!("<= Tun read {}", amt);
+
+                let mut is_loopback = false;
+                if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
+                    is_loopback =
+                        header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                }
+                if is_loopback {
+                    send_tun(dev.clone(), &tun_buf, amt).await;
+                } else {
+                    match stream.write_all(&tun_buf[..amt]).await {
+                        Ok(_) => {
+                            log::info!("=> Stream write {}", amt);
+                        }
+                        Err(err) => log::error!("{}", err),
+                    }
+                }
+            }
+            Err(err) => {
+                drop(locked_dev);
+                log::info!("{}", err);
+            }
+        }
+    }
+}
+
+async fn handle_incoming_stream(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
+    while let Some((peer, mut stream)) = incoming_streams.next().await {
+        log::info!("Incoming stream from {}", peer);
+        let mut buf = [0; 1500];
+        match stream.read(&mut buf).await {
+            Ok(amt) => {
+                log::info!("Stream read {}", amt);
+                send_tun(dev.clone(), &buf, amt).await;
+            }
+            Err(err) => {
+                log::info!("{}", err);
+                break;
+            }
+        }
+    }
+}
+
 async fn client_connection_handler(
-    mut dev: tundev::TunDev,
+    dev: Arc<tokio::sync::Mutex<tundev::TunDev>>,
     mut control: stream::Control,
     identity: identity::Keypair,
-    peer: PeerId,
+    server_peer: PeerId,
     sdn_ip_addr: String
 ) -> Result<()> {
-    let mut stream = match control.open_stream(peer, RETICULA_PROTOCOL).await {
+    let incoming_streams = control.accept(RETICULA_PROTOCOL).unwrap();
+    let mut stream = match control.open_stream(server_peer, RETICULA_PROTOCOL).await {
         Ok(stream) => stream,
         Err(err) => return Err(anyhow!("{}", err)),
     };
@@ -85,48 +139,16 @@ async fn client_connection_handler(
     };
     log::info!("Sending handshake");
     stream.write_all(&serialize_handshake(&handshake)).await?;
-    let mut tun_buf = [0; 1500];
-    let mut buf = [0; 1500];
-    loop {
-        tokio::select! {
-            stream_ret = stream.read(&mut buf) => {
-                match stream_ret {
-                    Ok(amt) => {
-                        log::info!("=> Stream read {}", amt);
-                        send_tun(&mut dev, &buf, amt).await;
-                    }
-                    Err(err) => {
-                        log::info!("{}", err);
-                    }
-                }
-            },
-            tun_ret = dev.read(&mut tun_buf) => {
-                match tun_ret {
-                    Ok(amt) => {
-                        log::info!("<= Tun read {}", amt);
 
-                        let mut is_loopback = false;
-                        if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
-                            is_loopback =
-                                header.src_ip == header.dst_ip && header.src_port == header.dst_port;
-                            is_loopback = false;
-                        }
-                        if is_loopback {
-                            send_tun(&mut dev, &tun_buf, amt).await;
-                        } else {
-                            match stream.write_all(&tun_buf[..amt]).await {
-                                Ok(_) => {
-                                    log::info!("=> Stream write {}", amt);
-                                }
-                                Err(err) => log::error!("{}", err),
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        log::info!("{}", err);
-                    }
-                }
-            }
+    let tun_handler = tokio::spawn(handle_tun_dev(dev.clone(), stream));
+    let stream_handler = tokio::spawn(handle_incoming_stream(dev, incoming_streams));
+    tokio::select! {
+        _ = tun_handler => {
+            log::info!("Tun handler finished");
+        }
+        _ = stream_handler => {
+            log::info!("Stream handler finished");
         }
     }
+    Ok(())
 }

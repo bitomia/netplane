@@ -5,18 +5,14 @@ use crate::db;
 use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
 use anyhow::Result;
-use autonat::v2::client;
 use lazy_static::lazy_static;
 use libp2p::{*, futures::AsyncReadExt, futures::AsyncWriteExt, futures::StreamExt, multiaddr::Protocol};
 use libp2p::swarm::SwarmEvent;
-use libp2p_stream::{self as stream, OpenStreamError};
-use std::borrow::Borrow;
-use std::fmt::Debug;
+use libp2p_stream::{self as stream};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::{collections::HashSet, time::Duration};
+use std::time::Duration;
 use std::sync::Arc;
-use std::sync::Mutex;
 
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
@@ -38,14 +34,15 @@ fn extract_ipv4(multiaddr: &Multiaddr) -> Option<std::net::Ipv4Addr> {
 }
 
 async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_stream::Control>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
-    while let Some((peer, mut stream)) = incoming_streams.next().await {
+    while let Some((peer, stream)) = incoming_streams.next().await {
         log::info!("Client connected {peer:?}");
 
-        let db = Arc::clone(&db);
+        //let db = Arc::clone(&db);
         let stream = Arc::new(tokio::sync::Mutex::new(stream));
         {
             streams.lock().await.insert(peer, stream.clone());
         }
+        let control = Arc::clone(&control);
         tokio::spawn(async move {
             let mut buf: [u8; 1500] = [0; 1500];
             loop {
@@ -81,23 +78,19 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                 header.dst_ip,
                                 header.total_length
                             );
-                            let cloned_streams = streams.lock().await.clone();
-                            for stream in cloned_streams.iter() {
-                                println!("relay 1");
-                                if let Ok(mut s) = stream.1.try_lock() {
-                                    s.write_all(&buf[..amt]).await;
-                                } else {
-                                    println!("failed to lock");
+
+                            let current_clients = clients.lock().await;
+                            for client in current_clients.iter() {
+                                if *client.0 == peer {
+                                    continue;
                                 }
-                                //if let Err(err) = stream.1.try_lock().await.write_all(&buf[..amt]).await {
-                                //    log::error!("Failed to relay packet: {}", err);
-                                //    remove_client(*stream.0).await;
-                                //}
-                                println!("relay 2");
+                                let s = control.lock().await.open_stream(*client.0, RETICULA_PROTOCOL).await;
+                                let _ = s.unwrap().write_all(&buf[..amt]).await;
                             }
                         }
                     }
                     Err(_) => {
+                        log::info!("Unknown error");
                         drop(locked_stream);
                         continue;
                     }
@@ -105,13 +98,6 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
             }
         });
     }
-}
-
-async fn read_header(mut stream: libp2p::Stream) -> std::io::Result<Vec<u8>> {
-    let mut buffer = vec![0; 1500];
-    let n = stream.read(&mut buffer).await?;
-    buffer.truncate(n); // Resize buffer to actual read size
-    Ok(buffer)
 }
 
 async fn remove_client(peer: PeerId) {
@@ -130,6 +116,8 @@ pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behavio
             }
             SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
                 let addr = endpoint.get_remote_address();
+                log::info!("Connection established {peer_id:?} {addr:?}");
+
                 let mut current_clients = clients.lock().await;
                 current_clients.insert(peer_id, Client {
                     addr: addr.clone(),
@@ -150,7 +138,7 @@ pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behavio
 pub async fn start() -> Result<()> {
     let db = Arc::new(db::Db::new().await);
     log::info!("Starting reticula server");
-    let web_server = WebServer::new("172.16.140.1:3000", db.clone()).await;
+    let web_server = WebServer::new("127.0.0.1:3000", db.clone()).await;
     let identity = common::load_identity();
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -159,7 +147,7 @@ pub async fn start() -> Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
         .build();
     swarm
-        .listen_on("/ip4/172.16.140.1/udp/5000/quic-v1".parse()?)
+        .listen_on("/ip4/127.0.0.1/udp/5000/quic-v1".parse()?)
         .unwrap();
     let mut control = swarm
         .behaviour()

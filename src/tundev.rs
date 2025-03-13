@@ -27,15 +27,14 @@ impl TunDev {
 
         config.up();
         let dev = tun::create_as_async(&config).expect("Cannot create TUN device");
-
         TunDev { dev }
     }
 
-    pub async fn send(self: &mut Self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
+    pub async fn send(&mut self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
         return self.dev.send(&buf[..nbytes]).await;
     }
 
-    pub async fn read(self: &mut Self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
+    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
         return self.dev.read(buffer).await;
     }
 }
