@@ -1,3 +1,4 @@
+use crate::common;
 use crate::common::{serialize_handshake, Handshake, HANDSHAKE_HEADER};
 use crate::packet::parse_ipv4_header;
 use crate::tundev;
@@ -5,11 +6,8 @@ use anyhow::{anyhow, Result};
 use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use libp2p::{multiaddr::Protocol, *};
 use libp2p_stream as stream;
-use std::time::Duration;
-use std::sync::Arc;
-use std::fs;
-use crate::common;
 use std::net::Ipv4Addr;
+use std::time::Duration;
 
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
@@ -43,7 +41,13 @@ pub async fn start(
 
     let identity = common::load_identity();
     let control = swarm.behaviour().new_control();
-    tokio::spawn(client_connection_handler(dev, control, identity, server_peer, sdn_ip_addr.to_string()));
+    tokio::spawn(client_connection_handler(
+        dev,
+        control,
+        identity,
+        server_peer,
+        sdn_ip_addr.to_string(),
+    ));
     loop {
         let event = swarm.next().await.expect("never terminates");
         match event {
@@ -61,7 +65,7 @@ pub async fn start(
     Ok(())
 }
 
-pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
+pub async fn send_tun(dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
     match dev.send(&buf[..nbytes], nbytes).await {
         Ok(_) => {
             log::debug!("=> Tun write {}", nbytes);
@@ -70,7 +74,11 @@ pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
     }
 }
 
-async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
+async fn handle_client(
+    dev: tundev::TunDev,
+    mut stream: libp2p::Stream,
+    mut incoming_streams: libp2p_stream::IncomingStreams,
+) {
     let mut buf = [0; 1500];
     loop {
         tokio::select! {
@@ -119,7 +127,7 @@ async fn client_connection_handler(
     mut control: stream::Control,
     identity: identity::Keypair,
     server_peer: PeerId,
-    sdn_ip_addr: String
+    sdn_ip_addr: String,
 ) -> Result<()> {
     let incoming_streams = control.accept(RETICULA_PROTOCOL).unwrap();
     let mut stream = match control.open_stream(server_peer, RETICULA_PROTOCOL).await {

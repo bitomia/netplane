@@ -1,39 +1,35 @@
 use crate::client::Client;
-use crate::common::{deserialize_handshake, HANDSHAKE_HEADER};
 use crate::common;
+use crate::common::{deserialize_handshake, HANDSHAKE_HEADER};
 use crate::db;
 use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
 use anyhow::Result;
 use lazy_static::lazy_static;
-use libp2p::{*, futures::AsyncReadExt, futures::AsyncWriteExt, futures::StreamExt, multiaddr::Protocol};
 use libp2p::swarm::SwarmEvent;
+use libp2p::{futures::AsyncReadExt, futures::AsyncWriteExt, futures::StreamExt, *};
 use libp2p_stream::{self as stream};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
 lazy_static! {
-    static ref streams: tokio::sync::Mutex<HashMap<PeerId, Arc<tokio::sync::Mutex<libp2p::swarm::Stream>>>> = tokio::sync::Mutex::new(HashMap::new());
+    static ref streams: tokio::sync::Mutex<HashMap<PeerId, Arc<tokio::sync::Mutex<libp2p::swarm::Stream>>>> =
+        tokio::sync::Mutex::new(HashMap::new());
     static ref clients: tokio::sync::Mutex<HashMap<PeerId, Client>> = {
         let m = HashMap::new();
         tokio::sync::Mutex::new(m)
     };
 }
 
-fn extract_ipv4(multiaddr: &Multiaddr) -> Option<std::net::Ipv4Addr> {
-    for protocol in multiaddr.iter() {
-        if let Protocol::Ip4(ipv4) = protocol {
-            return Some(ipv4);
-        }
-    }
-    None
-}
-
-async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_stream::Control>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
+async fn handle_server(
+    _db: Arc<db::Db>,
+    control: Arc<tokio::sync::Mutex<libp2p_stream::Control>>,
+    mut incoming_streams: libp2p_stream::IncomingStreams,
+) {
     while let Some((peer, stream)) = incoming_streams.next().await {
         log::info!("Client connected {peer:?}");
 
@@ -50,23 +46,28 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                 match locked_stream.read(&mut buf).await {
                     Ok(amt) => {
                         drop(locked_stream);
-                        
+
                         log::debug!("Received {} bytes", amt);
                         if buf[..3] == HANDSHAKE_HEADER {
                             let handshake = deserialize_handshake(&buf);
                             let base64_identity = common::identity_to_base64(&handshake.identity);
-                            log::debug!("Received handshake from {peer} with identity {base64_identity}");
+                            log::debug!(
+                                "Received handshake from {peer} with identity {base64_identity}"
+                            );
                             //if db.check_client(&base64_identity, &handshake.sdn_ip_addr.to_string()).await
                             {
                                 log::info!("Client connected {}", peer);
                                 let mut current_clients = clients.lock().await;
                                 let client_addr = current_clients.get(&peer).unwrap().addr.clone();
-                                current_clients.insert(peer, Client {
+                                current_clients.insert(
                                     peer,
-                                    sdn_ip_addr: handshake.sdn_ip_addr,
-                                    addr: client_addr,
-                                });
-                            } 
+                                    Client {
+                                        peer,
+                                        sdn_ip_addr: handshake.sdn_ip_addr,
+                                        addr: client_addr,
+                                    },
+                                );
+                            }
                             //else {
                             //    log::error!("Ignoring unknown user pair {}", peer);
                             //    break;
@@ -84,7 +85,11 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                 if *client.0 == peer {
                                     continue;
                                 }
-                                let s = control.lock().await.open_stream(*client.0, RETICULA_PROTOCOL).await;
+                                let s = control
+                                    .lock()
+                                    .await
+                                    .open_stream(*client.0, RETICULA_PROTOCOL)
+                                    .await;
                                 let _ = s.unwrap().write_all(&buf[..amt]).await;
                                 log::debug!("Forwarded packet to {}", *client.0);
                             }
@@ -108,25 +113,36 @@ async fn remove_client(peer: PeerId) {
     current_streams.remove(&peer);
 }
 
-pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behaviour>) {
+pub async fn server_swarm_loop(_db: Arc<db::Db>, mut swarm: Swarm<stream::Behaviour>) {
     loop {
         match swarm.select_next_some().await {
             SwarmEvent::NewListenAddr { address, .. } => {
                 let listen_address = address.with_p2p(*swarm.local_peer_id()).unwrap();
                 log::info!("Listening on {listen_address:?}")
             }
-            SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
                 let addr = endpoint.get_remote_address();
                 log::info!("Connection established {peer_id:?} {addr:?}");
 
                 let mut current_clients = clients.lock().await;
-                current_clients.insert(peer_id, Client {
-                    addr: addr.clone(),
-                    peer: peer_id,
-                    sdn_ip_addr: Ipv4Addr::new(0, 0, 0, 0),
-                });
+                current_clients.insert(
+                    peer_id,
+                    Client {
+                        addr: addr.clone(),
+                        peer: peer_id,
+                        sdn_ip_addr: Ipv4Addr::new(0, 0, 0, 0),
+                    },
+                );
             }
-            SwarmEvent::ConnectionClosed { peer_id, connection_id, endpoint, num_established, cause } => {
+            SwarmEvent::ConnectionClosed {
+                peer_id,
+                connection_id,
+                endpoint,
+                num_established,
+                cause,
+            } => {
                 log::info!("Connection closed {peer_id:?} {connection_id:?} {endpoint:?} {num_established:?} {cause:?}");
                 remove_client(peer_id).await;
             }
@@ -150,13 +166,13 @@ pub async fn start() -> Result<()> {
     swarm
         .listen_on("/ip4/172.16.140.1/udp/5003/quic-v1".parse()?)
         .unwrap();
-    let mut control = swarm
-        .behaviour()
-        .new_control();
-    let incoming_streams = control
-        .accept(RETICULA_PROTOCOL)
-        .unwrap();
-    let server = tokio::spawn(handle_server(db.clone(), Arc::new(tokio::sync::Mutex::new(control)), incoming_streams));
+    let mut control = swarm.behaviour().new_control();
+    let incoming_streams = control.accept(RETICULA_PROTOCOL).unwrap();
+    let server = tokio::spawn(handle_server(
+        db.clone(),
+        Arc::new(tokio::sync::Mutex::new(control)),
+        incoming_streams,
+    ));
     let server_swarm = tokio::spawn(server_swarm_loop(db.clone(), swarm));
     tokio::select! {
         _ = server => log::info!("Server exited"),

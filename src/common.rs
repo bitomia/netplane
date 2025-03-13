@@ -1,10 +1,10 @@
+use crate::common;
+use base64::prelude::*;
+use bincode;
 use libp2p::identity;
 use serde::{Deserialize, Serialize};
-use bincode;
-use base64::prelude::*;
-use std::net::Ipv4Addr;
 use std::fs;
-use crate::common;
+use std::net::Ipv4Addr;
 
 pub const HANDSHAKE_HEADER: [u8; 3] = [0, 1, 2];
 
@@ -12,7 +12,10 @@ pub const HANDSHAKE_HEADER: [u8; 3] = [0, 1, 2];
 pub struct Handshake {
     pub header: [u8; 3],
     pub sdn_ip_addr: Ipv4Addr,
-    #[serde(serialize_with = "serialize_identity", deserialize_with = "deserialize_identity")]
+    #[serde(
+        serialize_with = "serialize_identity",
+        deserialize_with = "deserialize_identity"
+    )]
     pub identity: identity::Keypair,
 }
 
@@ -20,7 +23,9 @@ fn serialize_identity<S>(identity: &identity::Keypair, serializer: S) -> Result<
 where
     S: serde::Serializer,
 {
-    let encoded = identity.to_protobuf_encoding().map_err(serde::ser::Error::custom)?;
+    let encoded = identity
+        .to_protobuf_encoding()
+        .map_err(serde::ser::Error::custom)?;
     serializer.serialize_bytes(&encoded)
 }
 
@@ -41,7 +46,7 @@ pub fn deserialize_handshake(data: &[u8]) -> Handshake {
 }
 
 pub fn identity_to_base64(identity: &identity::Keypair) -> String {
-  BASE64_STANDARD.encode(&identity.to_protobuf_encoding().unwrap())
+    BASE64_STANDARD.encode(&identity.to_protobuf_encoding().unwrap())
 }
 
 pub fn base64_to_identity(encoded: &str) -> identity::Keypair {
@@ -60,5 +65,3 @@ pub fn load_identity() -> identity::Keypair {
     fs::write(key_file, base64_encoded).expect("Failed to save identity");
     keypair
 }
-
-

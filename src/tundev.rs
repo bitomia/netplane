@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use log::info;
+use std::sync::Arc;
 use tokio::io::AsyncReadExt;
+use tokio::sync::Mutex;
 use tun::Configuration;
 
 pub struct TunDev {
@@ -15,7 +15,7 @@ impl TunDev {
 
         let mut config = Configuration::default();
         config
-            .address(ip_addr.clone())
+            .address(ip_addr)
             .netmask(netmask)
             .destination(destination)
             .mtu(1500);
@@ -29,7 +29,7 @@ impl TunDev {
 
         config.up();
         let dev = tun::create_as_async(&config).expect("Cannot create TUN device");
-        
+
         TunDev {
             dev: Arc::new(Mutex::new(dev)),
         }
@@ -53,4 +53,3 @@ impl Clone for TunDev {
         }
     }
 }
-
