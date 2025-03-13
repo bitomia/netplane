@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use bincode;
 use base64::prelude::*;
 use std::net::Ipv4Addr;
+use std::fs;
+use crate::common;
 
 pub const HANDSHAKE_HEADER: [u8; 3] = [0, 1, 2];
 
@@ -46,4 +48,17 @@ pub fn base64_to_identity(encoded: &str) -> identity::Keypair {
     let decoded = BASE64_STANDARD.decode(encoded).unwrap();
     identity::Keypair::from_protobuf_encoding(&decoded).unwrap()
 }
+
+pub fn load_identity() -> identity::Keypair {
+    let key_file = "identity.json";
+    if let Ok(key_data) = fs::read_to_string(key_file) {
+        return common::base64_to_identity(key_data.as_str());
+    }
+    log::info!("Generating new identity...");
+    let keypair = identity::Keypair::generate_ed25519();
+    let base64_encoded = common::identity_to_base64(&keypair);
+    fs::write(key_file, base64_encoded).expect("Failed to save identity");
+    keypair
+}
+
 

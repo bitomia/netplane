@@ -21,7 +21,7 @@ use std::sync::Mutex;
 const RETICULA_PROTOCOL: StreamProtocol = StreamProtocol::new("/reticula");
 
 lazy_static! {
-    static ref streams: tokio::sync::Mutex<Vec<Arc<tokio::sync::Mutex<libp2p::swarm::Stream>>>> = tokio::sync::Mutex::new(Vec::new());
+    static ref streams: tokio::sync::Mutex<HashMap<PeerId, Arc<tokio::sync::Mutex<libp2p::swarm::Stream>>>> = tokio::sync::Mutex::new(HashMap::new());
     static ref clients: tokio::sync::Mutex<HashMap<PeerId, Client>> = {
         let m = HashMap::new();
         tokio::sync::Mutex::new(m)
@@ -43,8 +43,9 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
 
         let db = Arc::clone(&db);
         let stream = Arc::new(tokio::sync::Mutex::new(stream));
-        streams.lock().await.push(stream.clone());
-
+        {
+            streams.lock().await.insert(peer, stream.clone());
+        }
         tokio::spawn(async move {
             let mut buf: [u8; 1500] = [0; 1500];
             loop {
@@ -82,12 +83,15 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                             );
                             for stream in streams.lock().await.iter() {
                                 println!("relay 1");
-                                stream.lock().await.write_all(&buf[..amt]).await.unwrap();
+                                if let Err(err) = stream.1.lock().await.write_all(&buf[..amt]).await {
+                                    log::error!("Failed to relay packet: {}", err);
+                                }
                                 println!("relay 2");
                             }
                         }
                     }
                     Err(_) => {
+                        drop(locked_stream);
                         continue;
                     }
                 }
@@ -101,6 +105,14 @@ async fn read_header(mut stream: libp2p::Stream) -> std::io::Result<Vec<u8>> {
     let n = stream.read(&mut buffer).await?;
     buffer.truncate(n); // Resize buffer to actual read size
     Ok(buffer)
+}
+
+async fn remove_client(peer: PeerId) {
+    log::info!("Removing client {}", peer);
+    let mut current_clients = clients.lock().await;
+    current_clients.remove(&peer);
+    let mut current_streams = streams.lock().await;
+    current_streams.remove(&peer);
 }
 
 pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behaviour>) {
@@ -119,6 +131,10 @@ pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behavio
                     sdn_ip_addr: Ipv4Addr::new(0, 0, 0, 0),
                 });
             }
+            SwarmEvent::ConnectionClosed { peer_id, connection_id, endpoint, num_established, cause } => {
+                log::info!("Connection closed {peer_id:?} {connection_id:?} {endpoint:?} {num_established:?} {cause:?}");
+                remove_client(peer_id).await;
+            }
             SwarmEvent::Behaviour(event) => log::info!("{event:?}"),
             _ => {}
         }
@@ -128,15 +144,16 @@ pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behavio
 pub async fn start() -> Result<()> {
     let db = Arc::new(db::Db::new().await);
     log::info!("Starting reticula server");
-    let web_server = WebServer::new("127.0.0.1:3000", db.clone()).await;
-    let mut swarm = SwarmBuilder::with_new_identity()
+    let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
+    let identity = common::load_identity();
+    let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
         .with_quic()
         .with_behaviour(|_| stream::Behaviour::new())?
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
         .build();
     swarm
-        .listen_on("/ip4/127.0.0.1/udp/5000/quic-v1".parse()?)
+        .listen_on("/ip4/0.0.0.0/udp/5000/quic-v1".parse()?)
         .unwrap();
     let mut control = swarm
         .behaviour()

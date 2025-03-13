@@ -14,6 +14,14 @@ For musl:
 cargo make musl
 ```
 
+## Initializing
+
+```shell
+cargo install sqlx-cli
+# Check .env exists with a valid DATABSE_URL
+sqlx database create --source src/migrations
+```
+
 ## Running example
 
 Server running at 172.16.140.1:5000:

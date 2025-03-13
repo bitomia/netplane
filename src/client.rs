@@ -40,7 +40,7 @@ pub async fn start(
         anyhow::bail!("Provided address does not end in `/p2p`");
     };
 
-    let identity = load_identity();
+    let identity = common::load_identity();
     let control = swarm.behaviour().new_control();
     tokio::spawn(client_connection_handler(dev, control, identity, peer, sdn_ip_addr.to_string()));
     loop {
@@ -65,18 +65,6 @@ pub async fn send_tun(dev: &mut crate::tundev::TunDev, buf: &[u8], nbytes: usize
         Ok(_) => {}
         Err(err) => log::error!("send_tun {}", err),
     }
-}
-
-fn load_identity() -> identity::Keypair {
-    let key_file = "identity.json";
-    if let Ok(key_data) = fs::read_to_string(key_file) {
-        return common::base64_to_identity(key_data.as_str());
-    }
-    log::info!("Generating new identity...");
-    let keypair = identity::Keypair::generate_ed25519();
-    let base64_encoded = common::identity_to_base64(&keypair);
-    fs::write(key_file, base64_encoded).expect("Failed to save identity");
-    keypair
 }
 
 async fn client_connection_handler(
