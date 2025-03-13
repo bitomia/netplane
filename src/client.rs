@@ -27,6 +27,7 @@ pub async fn start(
     addr: &str,
 ) -> Result<()> {
     let dev = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
+    let dev2 = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_quic()
@@ -43,7 +44,7 @@ pub async fn start(
 
     let identity = common::load_identity();
     let control = swarm.behaviour().new_control();
-    tokio::spawn(client_connection_handler(dev, control, identity, server_peer, sdn_ip_addr.to_string()));
+    tokio::spawn(client_connection_handler(dev, dev2, control, identity, server_peer, sdn_ip_addr.to_string()));
     loop {
         let event = swarm.next().await.expect("never terminates");
         match event {
@@ -122,50 +123,53 @@ pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
 //    }
 //}
 //
-async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
+async fn handle_client(mut dev: tundev::TunDev, mut dev2: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
     let mut buf = [0; 1500];
-    tokio::select! {
-        t = dev.read(&mut buf) => {
-            if let Ok(amt) = t {
-                log::info!("Tun read");
-                let mut is_loopback = false;
-                if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                    is_loopback = header.src_ip == header.dst_ip && header.src_port == header.dst_port;
-                }
-                if is_loopback {
-                    log::info!("Loopback packet");
-                    send_tun(dev, &buf, amt).await;
-                } else {
-                    match stream.write_all(&buf[..amt]).await {
-                        Ok(_) => {
-                            log::info!("Stream write");
+    loop {
+        tokio::select! {
+            t = dev.read(&mut buf) => {
+                if let Ok(amt) = t {
+                    log::info!("Tun read");
+                    let mut is_loopback = false;
+                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                        is_loopback = header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                    }
+                    if is_loopback {
+                        log::info!("Loopback packet");
+                        send_tun(dev.clone(), &buf, amt).await;
+                    } else {
+                        match stream.write_all(&buf[..amt]).await {
+                            Ok(_) => {
+                                log::info!("Stream write");
+                            }
+                            Err(err) => log::error!("{}", err),
                         }
-                        Err(err) => log::error!("{}", err),
                     }
                 }
             }
-        }
-        s = incoming_streams.next() => {
-            if let Some((peer, mut stream)) = s {
-                log::info!("Incoming stream from {}", peer);
-                let mut buf = [0; 1500];
-                match stream.read(&mut buf).await {
-                    Ok(amt) => {
-                        log::info!("Stream read 1 {}", amt);
-                        send_tun(dev, &buf, amt).await;
-                        log::info!("Stream read 2 {}", amt);
-                    }
-                    Err(err) => {
-                        log::info!("{}", err);
+                s = incoming_streams.next() => {
+                    if let Some((peer, mut stream)) = s {
+                        log::info!("Incoming stream from {}", peer);
+                        let mut buf = [0; 1500];
+                        match stream.read(&mut buf).await {
+                            Ok(amt) => {
+                                log::info!("Stream read 1 {}", amt);
+                                send_tun(dev2.clone(), &buf, amt).await;
+                                log::info!("Stream read 2 {}", amt);
+                            }
+                            Err(err) => {
+                                log::info!("{}", err);
+                            }
+                        }
                     }
                 }
-            }
         }
     }
 }
 
 async fn client_connection_handler(
     dev: tundev::TunDev,
+    dev2: tundev::TunDev,
     mut control: stream::Control,
     identity: identity::Keypair,
     server_peer: PeerId,
@@ -184,7 +188,7 @@ async fn client_connection_handler(
     log::info!("Sending handshake");
     stream.write_all(&serialize_handshake(&handshake)).await?;
 
-    let handler = tokio::spawn(handle_client(dev, stream, incoming_streams));
+    let handler = tokio::spawn(handle_client(dev, dev2, stream, incoming_streams));
     //let stream_handler = tokio::spawn(handle_incoming_stream(dev.clone(), incoming_streams));
     //let tun_handler = tokio::spawn(handle_tun_dev(dev, stream));
     tokio::select! {

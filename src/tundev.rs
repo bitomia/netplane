@@ -1,9 +1,11 @@
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use log::info;
 use tokio::io::AsyncReadExt;
 use tun::Configuration;
 
 pub struct TunDev {
-    pub dev: tun::AsyncDevice,
+    pub dev: Arc<Mutex<tun::AsyncDevice>>,
 }
 
 impl TunDev {
@@ -27,14 +29,28 @@ impl TunDev {
 
         config.up();
         let dev = tun::create_as_async(&config).expect("Cannot create TUN device");
-        TunDev { dev }
+        
+        TunDev {
+            dev: Arc::new(Mutex::new(dev)),
+        }
     }
 
-    pub async fn send(&mut self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
-        return self.dev.send(&buf[..nbytes]).await;
+    pub async fn send(&self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
+        let dev = self.dev.lock().await;
+        dev.send(&buf[..nbytes]).await
     }
 
-    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
-        return self.dev.read(buffer).await;
+    pub async fn read(&self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
+        let mut dev = self.dev.lock().await;
+        dev.read(buffer).await
     }
 }
+
+impl Clone for TunDev {
+    fn clone(&self) -> Self {
+        TunDev {
+            dev: Arc::clone(&self.dev),
+        }
+    }
+}
+
