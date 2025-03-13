@@ -81,11 +81,16 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                 header.dst_ip,
                                 header.total_length
                             );
-                            for stream in streams.lock().await.iter() {
+                            let cloned_streams = streams.lock().await.clone();
+                            for stream in cloned_streams.iter() {
                                 println!("relay 1");
-                                if let Err(err) = stream.1.lock().await.write_all(&buf[..amt]).await {
-                                    log::error!("Failed to relay packet: {}", err);
+                                if let Ok(mut s) = stream.1.try_lock() {
+                                    s.write_all(&buf[..amt]).await;
                                 }
+                                //if let Err(err) = stream.1.try_lock().await.write_all(&buf[..amt]).await {
+                                //    log::error!("Failed to relay packet: {}", err);
+                                //    remove_client(*stream.0).await;
+                                //}
                                 println!("relay 2");
                             }
                         }
@@ -108,7 +113,6 @@ async fn read_header(mut stream: libp2p::Stream) -> std::io::Result<Vec<u8>> {
 }
 
 async fn remove_client(peer: PeerId) {
-    log::info!("Removing client {}", peer);
     let mut current_clients = clients.lock().await;
     current_clients.remove(&peer);
     let mut current_streams = streams.lock().await;
@@ -144,7 +148,7 @@ pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behavio
 pub async fn start() -> Result<()> {
     let db = Arc::new(db::Db::new().await);
     log::info!("Starting reticula server");
-    let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
+    let web_server = WebServer::new("172.16.140.128:3000", db.clone()).await;
     let identity = common::load_identity();
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -153,7 +157,7 @@ pub async fn start() -> Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
         .build();
     swarm
-        .listen_on("/ip4/0.0.0.0/udp/5000/quic-v1".parse()?)
+        .listen_on("/ip4/172.16.140.128/udp/5000/quic-v1".parse()?)
         .unwrap();
     let mut control = swarm
         .behaviour()
