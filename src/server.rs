@@ -86,6 +86,8 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                 println!("relay 1");
                                 if let Ok(mut s) = stream.1.try_lock() {
                                     s.write_all(&buf[..amt]).await;
+                                } else {
+                                    println!("failed to lock");
                                 }
                                 //if let Err(err) = stream.1.try_lock().await.write_all(&buf[..amt]).await {
                                 //    log::error!("Failed to relay packet: {}", err);
@@ -148,7 +150,7 @@ pub async fn server_swarm_loop(db: Arc<db::Db>, mut swarm: Swarm<stream::Behavio
 pub async fn start() -> Result<()> {
     let db = Arc::new(db::Db::new().await);
     log::info!("Starting reticula server");
-    let web_server = WebServer::new("172.16.140.128:3000", db.clone()).await;
+    let web_server = WebServer::new("172.16.140.1:3000", db.clone()).await;
     let identity = common::load_identity();
     let mut swarm = SwarmBuilder::with_existing_identity(identity)
         .with_tokio()
@@ -157,7 +159,7 @@ pub async fn start() -> Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
         .build();
     swarm
-        .listen_on("/ip4/172.16.140.128/udp/5000/quic-v1".parse()?)
+        .listen_on("/ip4/172.16.140.1/udp/5000/quic-v1".parse()?)
         .unwrap();
     let mut control = swarm
         .behaviour()

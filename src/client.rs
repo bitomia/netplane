@@ -115,7 +115,9 @@ async fn client_connection_handler(
                             send_tun(&mut dev, &tun_buf, amt).await;
                         } else {
                             match stream.write_all(&tun_buf[..amt]).await {
-                                Ok(_) => {}
+                                Ok(_) => {
+                                    log::info!("=> Stream write {}", amt);
+                                }
                                 Err(err) => log::error!("{}", err),
                             }
                         }
