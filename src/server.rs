@@ -148,7 +148,7 @@ pub async fn start() -> Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(10)))
         .build();
     swarm
-        .listen_on("/ip4/172.16.140.1/udp/5002/quic-v1".parse()?)
+        .listen_on("/ip4/172.16.140.1/udp/5003/quic-v1".parse()?)
         .unwrap();
     let mut control = swarm
         .behaviour()
