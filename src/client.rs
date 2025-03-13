@@ -27,7 +27,6 @@ pub async fn start(
     addr: &str,
 ) -> Result<()> {
     let dev = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
-    let dev2 = tundev::TunDev::new(tun_name, netmask, destination, sdn_ip_addr);
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_quic()
@@ -44,7 +43,7 @@ pub async fn start(
 
     let identity = common::load_identity();
     let control = swarm.behaviour().new_control();
-    tokio::spawn(client_connection_handler(dev, dev2, control, identity, server_peer, sdn_ip_addr.to_string()));
+    tokio::spawn(client_connection_handler(dev, control, identity, server_peer, sdn_ip_addr.to_string()));
     loop {
         let event = swarm.next().await.expect("never terminates");
         match event {
@@ -117,7 +116,6 @@ async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut 
 
 async fn client_connection_handler(
     dev: tundev::TunDev,
-    dev2: tundev::TunDev,
     mut control: stream::Control,
     identity: identity::Keypair,
     server_peer: PeerId,
@@ -137,18 +135,10 @@ async fn client_connection_handler(
     stream.write_all(&serialize_handshake(&handshake)).await?;
 
     let handler = tokio::spawn(handle_client(dev, stream, incoming_streams));
-    //let stream_handler = tokio::spawn(handle_incoming_stream(dev.clone(), incoming_streams));
-    //let tun_handler = tokio::spawn(handle_tun_dev(dev, stream));
     tokio::select! {
         _ = handler => {
             log::info!("Handler finished");
         }
-        //_ = tun_handler => {
-        //    log::info!("Tun handler finished");
-        //}
-        //_ = stream_handler => {
-        //    log::info!("Stream handler finished");
-        //}
     }
     Ok(())
 }
