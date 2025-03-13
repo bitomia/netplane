@@ -85,6 +85,7 @@ async fn handle_tun_dev(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut stream
                         header.src_ip == header.dst_ip && header.src_port == header.dst_port;
                 }
                 if is_loopback {
+                    log::info!("Loopback packet");
                     send_tun(dev.clone(), &tun_buf, amt).await;
                 } else {
                     match stream.write_all(&tun_buf[..amt]).await {
@@ -140,8 +141,8 @@ async fn client_connection_handler(
     log::info!("Sending handshake");
     stream.write_all(&serialize_handshake(&handshake)).await?;
 
-    let tun_handler = tokio::spawn(handle_tun_dev(dev.clone(), stream));
-    let stream_handler = tokio::spawn(handle_incoming_stream(dev, incoming_streams));
+    let stream_handler = tokio::spawn(handle_incoming_stream(dev.clone(), incoming_streams));
+    let tun_handler = tokio::spawn(handle_tun_dev(dev, stream));
     tokio::select! {
         _ = tun_handler => {
             log::info!("Tun handler finished");
