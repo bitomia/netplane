@@ -30,8 +30,8 @@ impl Db {
         Db { pool }
     }
 
-    pub async fn check_client(self: &Self, base64_identity: &String, sdn_client_ip: &String) -> bool {
-        println!("{} {}", base64_identity, sdn_client_ip);
+    pub async fn check_client(&self, base64_identity: &String, sdn_client_ip: &String) -> bool {
+        log::info!("[db] checking clien {} {}", base64_identity, sdn_client_ip);
         let query_ret: (i64,) =
             sqlx::query_as("select count(*) from clients where client_ip=? and sdn_client_ip=?")
                 .bind(base64_identity)

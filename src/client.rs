@@ -64,7 +64,7 @@ pub async fn start(
 pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
     match dev.send(&buf[..nbytes], nbytes).await {
         Ok(_) => {
-            log::info!("=> Tun write {}", nbytes);
+            log::debug!("=> Tun write {}", nbytes);
         }
         Err(err) => log::error!("send_tun {}", err),
     }

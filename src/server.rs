@@ -72,8 +72,8 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                             //    break;
                             //}
                         } else if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                            log::info!(
-                                "{} {} {}",
+                            log::debug!(
+                                "IPv4 header src_ip={} dst_ip={} length={}",
                                 header.src_ip,
                                 header.dst_ip,
                                 header.total_length
