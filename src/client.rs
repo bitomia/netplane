@@ -123,7 +123,7 @@ pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
 //    }
 //}
 //
-async fn handle_client(mut dev: tundev::TunDev, mut dev2: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
+async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
     let mut buf = [0; 1500];
     loop {
         tokio::select! {
@@ -154,7 +154,7 @@ async fn handle_client(mut dev: tundev::TunDev, mut dev2: tundev::TunDev, mut st
                         match stream.read(&mut buf).await {
                             Ok(amt) => {
                                 log::info!("Stream read 1 {}", amt);
-                                send_tun(dev2.clone(), &buf, amt).await;
+                                send_tun(dev.clone(), &buf, amt).await;
                                 log::info!("Stream read 2 {}", amt);
                             }
                             Err(err) => {
@@ -188,7 +188,7 @@ async fn client_connection_handler(
     log::info!("Sending handshake");
     stream.write_all(&serialize_handshake(&handshake)).await?;
 
-    let handler = tokio::spawn(handle_client(dev, dev2, stream, incoming_streams));
+    let handler = tokio::spawn(handle_client(dev, stream, incoming_streams));
     //let stream_handler = tokio::spawn(handle_incoming_stream(dev.clone(), incoming_streams));
     //let tun_handler = tokio::spawn(handle_tun_dev(dev, stream));
     tokio::select! {
