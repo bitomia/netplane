@@ -51,11 +51,11 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                     Ok(amt) => {
                         drop(locked_stream);
                         
-                        log::info!("Received {} bytes", amt);
+                        log::debug!("Received {} bytes", amt);
                         if buf[..3] == HANDSHAKE_HEADER {
                             let handshake = deserialize_handshake(&buf);
                             let base64_identity = common::identity_to_base64(&handshake.identity);
-                            log::info!("Received handshake from {peer} with identity {base64_identity}");
+                            log::debug!("Received handshake from {peer} with identity {base64_identity}");
                             //if db.check_client(&base64_identity, &handshake.sdn_ip_addr.to_string()).await
                             {
                                 log::info!("Client connected {}", peer);
@@ -86,12 +86,12 @@ async fn handle_server(db: Arc<db::Db>, control: Arc<tokio::sync::Mutex<libp2p_s
                                 }
                                 let s = control.lock().await.open_stream(*client.0, RETICULA_PROTOCOL).await;
                                 let _ = s.unwrap().write_all(&buf[..amt]).await;
-                                log::info!("Forwarded packet to {}", *client.0);
+                                log::debug!("Forwarded packet to {}", *client.0);
                             }
                         }
                     }
                     Err(_) => {
-                        log::info!("Unknown error");
+                        log::error!("Unknown error");
                         drop(locked_stream);
                         continue;
                     }

@@ -70,77 +70,25 @@ pub async fn send_tun(mut dev: tundev::TunDev, buf: &[u8], nbytes: usize) {
         Err(err) => log::error!("send_tun {}", err),
     }
 }
-//
-//async fn handle_tun_dev(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut stream: libp2p::Stream) {
-//    let mut tun_buf = [0; 1500];
-//    loop {
-//        let mut locked_dev = dev.lock().await;
-//        match locked_dev.read(&mut tun_buf).await {
-//            Ok(amt) => {
-//                drop(locked_dev);
-//                log::info!("<= Tun read {}", amt);
-//
-//                let mut is_loopback = false;
-//                if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
-//                    is_loopback =
-//                        header.src_ip == header.dst_ip && header.src_port == header.dst_port;
-//                }
-//                if is_loopback {
-//                    log::info!("Loopback packet");
-////                    send_tun(dev.clone(), &tun_buf, amt).await;
-//                } else {
-//                    match stream.write_all(&tun_buf[..amt]).await {
-//                        Ok(_) => {
-//                            log::info!("=> Stream write {}", amt);
-//                        }
-//                        Err(err) => log::error!("{}", err),
-//                    }
-//                }
-//            }
-//            Err(err) => {
-//                drop(locked_dev);
-//                log::info!("{}", err);
-//            }
-//        }
-//    }
-//}
-//
-//async fn handle_incoming_stream(dev: Arc<tokio::sync::Mutex<tundev::TunDev>>, mut incoming_streams: libp2p_stream::IncomingStreams) {
-//    while let Some((peer, mut stream)) = incoming_streams.next().await {
-//        log::info!("Incoming stream from {}", peer);
-//        let mut buf = [0; 1500];
-//        match stream.read(&mut buf).await {
-//            Ok(amt) => {
-//                log::info!("Stream read 1 {}", amt);
-//                send_tun(dev.clone(), &buf, amt).await;
-//                log::info!("Stream read 2 {}", amt);
-//            }
-//            Err(err) => {
-//                log::info!("{}", err);
-//                break;
-//            }
-//        }
-//    }
-//}
-//
+
 async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut incoming_streams: libp2p_stream::IncomingStreams) {
     let mut buf = [0; 1500];
     loop {
         tokio::select! {
             t = dev.read(&mut buf) => {
                 if let Ok(amt) = t {
-                    log::info!("Tun read");
+                    log::debug!("Tun read");
                     let mut is_loopback = false;
                     if let Some(header) = parse_ipv4_header(&buf[..amt]) {
                         is_loopback = header.src_ip == header.dst_ip && header.src_port == header.dst_port;
                     }
                     if is_loopback {
-                        log::info!("Loopback packet");
+                        log::debug!("Loopback packet");
                         send_tun(dev.clone(), &buf, amt).await;
                     } else {
                         match stream.write_all(&buf[..amt]).await {
                             Ok(_) => {
-                                log::info!("Stream write");
+                                log::debug!("Stream write");
                             }
                             Err(err) => log::error!("{}", err),
                         }
@@ -149,16 +97,16 @@ async fn handle_client(mut dev: tundev::TunDev, mut stream: libp2p::Stream, mut 
             }
                 s = incoming_streams.next() => {
                     if let Some((peer, mut stream)) = s {
-                        log::info!("Incoming stream from {}", peer);
+                        log::debug!("Incoming stream from {}", peer);
                         let mut buf = [0; 1500];
                         match stream.read(&mut buf).await {
                             Ok(amt) => {
-                                log::info!("Stream read 1 {}", amt);
+                                log::debug!("Stream read {}", amt);
                                 send_tun(dev.clone(), &buf, amt).await;
-                                log::info!("Stream read 2 {}", amt);
+                                log::debug!("Stream read sent to tun {}", amt);
                             }
                             Err(err) => {
-                                log::info!("{}", err);
+                                log::error!("{}", err);
                             }
                         }
                     }
