@@ -2,15 +2,14 @@
 name = "reticula"
 version = "0.1.0"
 edition = "2021"
-default-run = "reticula"
-
-[lib]
-name = "reticula"
-crate-type = ["staticlib"]
 
 [[bin]]
-name = "reticula"
-path = "src/main.rs"
+name = "server"
+path = "src/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
 
 [[bin]]
 name = "migrate"

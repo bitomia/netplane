@@ -1,16 +1,19 @@
-use crate::common::{handshake_serialize, Handshake, HANDSHAKE_HEADER};
-use crate::packet::parse_ipv4_header;
-use crate::tundev;
-
 use log::{debug, error, info};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tokio::net::UdpSocket;
+use dotenv::dotenv;
+use tokio::signal::unix::{signal, SignalKind};
+use std::env;
+
+pub mod packet;
+pub mod tundev;
+pub mod common;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
-pub async fn send_tun(dev: &mut crate::tundev::TunDev, buf: &[u8], nbytes: usize) {
+pub async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
     match dev.send(&buf[..nbytes], nbytes).await {
         Ok(_) => {}
         Err(err) => error!("{}", err),
@@ -40,8 +43,8 @@ pub async fn run(
         Ok(addr) => addr,
         Err(_) => return Err(ProcessError(1)),
     };
-    let handshake = Handshake {
-        header: HANDSHAKE_HEADER,
+    let handshake = common::Handshake {
+        header: common::HANDSHAKE_HEADER,
         ipv4_addr,
     };
     info!("Sending handshake {}", server_addr.clone());
@@ -50,7 +53,7 @@ pub async fn run(
         .await
         .expect("Cannot connect");
     socket
-        .send(&handshake_serialize(&handshake))
+        .send(&common::handshake_serialize(&handshake))
         .await
         .expect("Cannot send handshake");
 
@@ -62,7 +65,7 @@ pub async fn run(
                 match result {
                     Ok((amt, from)) => {
                         debug!("=> Server sent {} from {}", amt, from);
-                        if let Some(header) = parse_ipv4_header(&socket_buf[..amt]) {
+                        if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
                             debug!(
                                 "{} {} {}",
                                 header.src_ip, header.dst_ip, header.total_length
@@ -79,7 +82,7 @@ pub async fn run(
                         debug!("<= Tun read {}", amt);
 
                         let mut is_loopback = false;
-                        if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
+                        if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
                             debug!("{} {}", header.src_ip, header.dst_ip);
                             is_loopback =
                                 header.src_ip == header.dst_ip && header.src_port == header.dst_port;
@@ -103,5 +106,46 @@ pub async fn run(
                 }
             }
         }
+    }
+}
+
+fn echo_syntax(args: &Vec<String>) {
+    println!(
+        "Use {} [tun_name] [destination] [netmask] [ip] [server_ip]",
+        args[0]
+    );
+}
+
+#[tokio::main]
+async fn main() {
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
+
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigterm.recv() => {}
+            _ = sigint.recv() => {}
+        }
+        info!("Shutting down...");
+        // TODO shutdown gracefully
+        std::process::exit(0);
+    });
+
+    colog::init();
+    dotenv().ok();
+
+    let args: Vec<String> = env::args().collect();
+    if args.len() == 6 {
+        let _ = run(
+            args[1].clone(),
+            args[2].clone(),
+            args[3].clone(),
+            args[4].clone(),
+            args[5].clone(),
+        )
+            .await;
+    } else {
+        echo_syntax(&args);
+        std::process::exit(1);
     }
 }
