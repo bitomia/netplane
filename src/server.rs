@@ -1,11 +1,20 @@
-use crate::common::{handshake_deserialize, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
-use crate::db;
-use crate::packet::parse_ipv4_header;
-use crate::webserver::WebServer;
 use log::{debug, error, info};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
+use dotenv::dotenv;
+use std::env;
+use tokio::signal::unix::{signal, SignalKind};
+
+pub mod packet;
+pub mod tundev;
+pub mod common;
+pub mod db;
+pub mod webserver;
+
+use crate::common::{handshake_deserialize, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
+use crate::packet::parse_ipv4_header;
+use crate::webserver::WebServer;
 
 #[derive(Eq, Hash, PartialEq)]
 struct Client {
@@ -64,7 +73,24 @@ async fn reticula_server(db: Arc<db::Db>) {
     }
 }
 
-pub async fn run() -> Result<(), ProcessError> {
+#[tokio::main]
+async fn main() -> Result<(), ProcessError> {
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
+
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigterm.recv() => {}
+            _ = sigint.recv() => {}
+        }
+        info!("Shutting down...");
+        // TODO shutdown gracefully
+        std::process::exit(0);
+    });
+
+    colog::init();
+    dotenv().ok();
+
     let db = Arc::new(db::Db::new().await);
     let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
 
