@@ -5,6 +5,7 @@ use tokio::net::UdpSocket;
 use dotenv::dotenv;
 use tokio::signal::unix::{signal, SignalKind};
 use std::env;
+use tray_item::{TrayItem, IconSource};
 
 pub mod packet;
 pub mod tundev;
@@ -37,6 +38,19 @@ pub async fn run(
         socket.local_addr().expect("Cannot get the local addr")
     );
 
+    let icon_raw = include_bytes!("../icons/icon-red.ico");
+    //let connected_icon_raw = include_bytes!("../icons/icon-green.ico");
+    let mut tray = TrayItem::new("Tray Example", IconSource::Data { height: 64, width: 64, data: Vec::from(icon_raw) }).unwrap();
+
+    tray.add_label("Tray Label").unwrap();
+
+    tray.add_menu_item("Hello", || {
+        println!("Hello!");
+    }).unwrap();
+
+    let mut inner = tray.inner_mut();
+    inner.add_quit_item("Quit");
+    inner.display();
     let mut dev = tundev::TunDev::new(tun_name, netmask, destination, ip_addr.clone());
 
     let ipv4_addr = match Ipv4Addr::from_str(ip_addr.as_str()) {
