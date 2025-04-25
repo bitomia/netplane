@@ -1,4 +1,5 @@
 use tokio::net::UdpSocket;
+use tokio::time;
 use std::env;
 
 #[tokio::main]
@@ -20,19 +21,17 @@ async fn main() -> Result<(), anyhow::Error> {
         socket.local_addr().expect("Cannot get the local addr")
     );
 
-    println!("Sending handshake {}", dst);
-    socket
-        .connect(dst)
-        .await
-        .expect("Cannot connect");
-    socket
-        .send("test".as_bytes())
-        .await
-        .expect("Cannot send handshake");
-
+    let mut interval = time::interval(time::Duration::from_millis(100));
     let mut socket_buf = [0; 1500];
     loop {
         tokio::select! {
+            _ = interval.tick() => {
+                println!(".");
+                socket
+                .send_to("test".as_bytes(), dst)
+                .await
+                .expect("Cannot send handshake");
+            },
             result = socket.recv_from(&mut socket_buf) => {
                 match result {
                     Ok((amt, from)) => {
@@ -44,8 +43,7 @@ async fn main() -> Result<(), anyhow::Error> {
                         //     );
                         // }
                     }
-                    Err(_
-                    ) => todo!()
+                    Err(e) => println!("{}", e)
                 }
             }
         }
