@@ -143,7 +143,7 @@ async fn main() {
         std::process::exit(0);
     });
 
-    colog::init();
+    env_logger::init();
     dotenv().ok();
 
     let args: Vec<String> = env::args().collect();
