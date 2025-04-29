@@ -1,4 +1,4 @@
-use log::{debug, error, info};
+use log::{debug, error, info, LevelFilter};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
@@ -88,7 +88,7 @@ async fn main() -> Result<(), ProcessError> {
         std::process::exit(0);
     });
 
-    colog::init();
+    env_logger::init();
     dotenv().ok();
 
     let db = Arc::new(db::Db::new().await);
