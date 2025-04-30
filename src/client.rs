@@ -1,15 +1,17 @@
 use log::{debug, error, info};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use anyhow::Result;
+use std::env;
 use tokio::net::UdpSocket;
 use dotenv::dotenv;
 use tokio::signal::unix::{signal, SignalKind};
-use std::env;
 //use tray_item::{TrayItem, IconSource};
 
 pub mod packet;
 pub mod tundev;
 pub mod common;
+pub mod crypto;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -129,7 +131,7 @@ fn echo_syntax(args: &Vec<String>) {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
     let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
 
@@ -147,17 +149,21 @@ async fn main() {
     dotenv().ok();
 
     let args: Vec<String> = env::args().collect();
-    if args.len() == 6 {
+    if args.len() == 2 && args[1] == "--auth" {
+        println!("Generating auth keys");
+        crypto::try_generate_auth_keys()?;
+        println!("Keys saved.");
+    } else if args.len() == 6 {
         let _ = run(
             args[1].clone(),
             args[2].clone(),
             args[3].clone(),
             args[4].clone(),
             args[5].clone(),
-        )
-            .await;
+        ).await;
     } else {
         echo_syntax(&args);
         std::process::exit(1);
     }
+    Ok(())
 }
