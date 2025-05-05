@@ -1,13 +1,11 @@
 [Unit]
 Description=reticula-server
-After=network.target
+After=docker.service
+Requires=docker.service
 
 [Service]
 Restart=on-failure
-ExecStart=/opt/reticula/reticula server
-PIDFile=/run/reticual/reticula-server.pid
-StandardOutput=append:/var/log/reticula.out.log
-StandardError=append:/var/log/reticula.err.log
-
-[Install]
-WantedBy=multi-user.target
+ExecStart=/usr/bin/docker run --rm --name reticula-server --env-file /root/reticula-server.env --network=host ghcr.io/bitomica/reticula-server
+ExecStop=/usr/bin/docker stop reticula-server
+StandardOutput=append:/var/log/reticula-server.out.log
+StandardError=append:/var/log/reticula-server.err.log

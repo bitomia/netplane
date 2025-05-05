@@ -2,3 +2,5 @@ debug/
 target/
 **/*~
 reticula.db
+*.key
+web/.env*
