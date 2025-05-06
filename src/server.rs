@@ -1,10 +1,9 @@
-use common::HandshakeReq;
-use log::{debug, error, info, LevelFilter};
-use std::collections::HashSet;
+use common::{HandshakeReq, HandshakeRep, HandshakeStatus};
+use log::{debug, error, info, trace};
+use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
 use dotenv::dotenv;
-use std::env;
 use tokio::signal::unix::{signal, SignalKind};
 use anyhow::Result;
 
@@ -14,7 +13,6 @@ pub mod common;
 pub mod db;
 pub mod webserver;
 
-use crate::common::HANDSHAKE_REQUEST_HEADER;
 use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
 
@@ -31,50 +29,67 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:5000").expect("Cannot open socket");
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
-    let mut is_initialized = false;
+    let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
+    
     loop {
         let (amt, src) = socket.recv_from(&mut buf).expect("Cannot receive");
-        if !is_initialized {
-            
-        }
-        if amt == HandshakeReq::size() && buf[..3] == HANDSHAKE_REQUEST_HEADER {
-            let handshake = HandshakeReq::deserialize(&buf)?;
-            if db
-                .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
-                .await
-                == true
-            {
-                clients.insert(Client {
-                    src,
-                    ipv4_addr: handshake.ipv4_addr,
-                });
-                info!("Client connected {} {}", src, handshake.ipv4_addr);
-            } else {
-                error!(
-                    "Ignoring Unknown user pair {} {}",
-                    src.ip(), handshake.ipv4_addr
-                );
-            }
-            continue;
-        }
-        if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-            debug!(
-                "{} {} {}",
-                header.src_ip, header.dst_ip, header.total_length
-            );
+        debug!("BYTES received {}", amt);
+        let status = clients_status.entry(src).or_insert(HandshakeStatus::Pending);
+        match status {
+            HandshakeStatus::Initialized => {
+                if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                    debug!(
+                        "{} {} {}",
+                        header.src_ip, header.dst_ip, header.total_length
+                    );
 
-            for client in &clients {
-                debug!("Sending data to {}", src);
-                if src != client.src {
-                    // TODO this is broadcasting, parse IP header and send only to target
-                    debug!("...relying");
-                    socket
-                        .send_to(&buf[..amt], &client.src)
-                        .expect("Cannot send");
+                    for client in &clients {
+                        debug!("Sending data to {}", src);
+                        if src != client.src {
+                            // TODO this is broadcasting, parse IP header and send only to target
+                            debug!("...relying");
+                            socket
+                                .send_to(&buf[..amt], &client.src)
+                                .expect("Cannot send");
+                        }
+                    }
+                } else {
+                    error!("Packet not supported");
+                }                
+            },
+            HandshakeStatus::Pending => {
+                match HandshakeReq::deserialize(&buf[..amt]) {
+                    Ok(handshake) => {
+                        info!("HandshakeReq received {} {}", src, handshake.ipv4_addr);
+                        if db
+                            .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
+                            .await
+                            == true
+                        {
+                            clients.insert(Client {
+                                src,
+                                ipv4_addr: handshake.ipv4_addr,
+                            });
+                            info!("Client connected {} {}", src, handshake.ipv4_addr);
+                            let reply = HandshakeRep::new();
+                            if let Ok(_) = socket.send_to(&reply.serialize(), &src) {
+                                clients_status.insert(src, HandshakeStatus::Initialized);
+                            } else {
+                                // TODO
+                            }
+                        } else {
+                            error!(
+                                "Ignoring Unknown user pair {} {}",
+                                src.ip(), handshake.ipv4_addr
+                            );
+                        }
+                    },
+                    Err(err) => {
+                        error!("HandshakeReq failed: {}", err);
+                    }
                 }
-            }
-        } else {
-            error!("Packet not supported");
+            },
+
         }
     }
 }
