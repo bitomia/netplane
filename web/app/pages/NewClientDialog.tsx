@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 
 export default ({ setNewClient, onCreateClient }) => {
   const [sdnIP, setSDNIP] = useState("");
-  const [wanIP, setWANIP] = useState("");
+  const [clientKey, setClientKey] = useState("");
   const createDisabled = useMemo(
-    () => sdnIP?.length == 0 || wanIP.length == 0,
-    [sdnIP, wanIP],
+    () => sdnIP?.length == 0 || clientKey.length == 0,
+    [sdnIP, clientKey],
   );
 
   return (
@@ -33,14 +33,14 @@ export default ({ setNewClient, onCreateClient }) => {
                     Create client
                   </h3>
                   <div className="mt-2 text-sm text-gray-700 flex flex-col">
-                    <label className="mt-3">WAN IP Address</label>
+                    <label className="mt-3">Client Key</label>
                     <input
                       type="text"
-                      placeholder="xxx.xxx.xxx.xxx"
+                      placeholder="Signed key"
                       className="px-3 py-2 border border-slate-200 rounded invalid:border-pink-500 invalid:text-pink-600 focus:invalid:border-pink-500 focus:invalid:outline-pink-500"
                       onChange={(e) => {
                         if (e.currentTarget.validity.valid) {
-                          setWANIP(e.currentTarget.value);
+                          setClientKey(e.currentTarget.value);
                         }
                       }}
                       minLength={7}
@@ -74,7 +74,7 @@ export default ({ setNewClient, onCreateClient }) => {
                 type="button"
                 disabled={createDisabled}
                 className="inline-flex w-full justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-green-500 sm:ml-3 sm:w-auto disabled:bg-slate-200"
-                onClick={() => onCreateClient(sdnIP, wanIP)}
+                onClick={() => onCreateClient(sdnIP, clientKey)}
               >
                 Create
               </button>

@@ -22,7 +22,7 @@ type ServerError = String;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 struct Client {
     id: String,
-    client_ip: String,
+    client_key: String,
     sdn_client_ip: String,
 }
 
@@ -54,14 +54,14 @@ impl WebServer {
         let id = Uuid::new_v4();
         let client = Client {
             id: id.to_string(),
-            client_ip: payload.client_ip,
+            client_key: payload.client_ip,
             sdn_client_ip: payload.sdn_client_ip,
         };
 
         let insert_ret =
             sqlx::query("INSERT INTO clients (id, client_ip, sdn_client_ip) VALUES (?, ?, ?)")
                 .bind(&client.id)
-                .bind(&client.client_ip)
+                .bind(&client.client_key)
                 .bind(&client.sdn_client_ip)
                 .execute(&state.db.pool)
                 .await;

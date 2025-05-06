@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use log::{debug};
 
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
-const HANDSHAKE_REQUEST_SIZE: usize = 7;
+const HANDSHAKE_REQUEST_SIZE: usize = 35;
 
 #[derive(PartialEq)]
 pub enum HandshakeStatus {
@@ -14,18 +14,18 @@ pub enum HandshakeStatus {
 
 pub struct HandshakeReq {
     pub header: [u8; 3],
-    pub ipv4_addr: Ipv4Addr,
+    pub client_key: [u8; 32],
 }
 
 impl HandshakeReq {
-    pub fn new(ip_addr: String) -> Result<HandshakeReq> {
+    pub fn new(client_key: &Vec<u8>) -> Result<HandshakeReq> {
         Ok(HandshakeReq {
             header: HANDSHAKE_REQUEST_HEADER,
-            ipv4_addr: Ipv4Addr::from_str(ip_addr.as_str())?
+            client_key: client_key[..32].try_into()?
         })
     }
     pub fn serialize(self: &Self) -> Vec<u8> {
-        return [&self.header, &self.ipv4_addr.octets()[..4]].concat();
+        return [&self.header, &self.client_key[..]].concat();
     }
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
         debug!("{}", buf.len());
@@ -34,7 +34,7 @@ impl HandshakeReq {
         }
         Ok(HandshakeReq {
             header: HANDSHAKE_REQUEST_HEADER,
-            ipv4_addr: Ipv4Addr::new(buf[3], buf[4], buf[5], buf[6]),
+            client_key: buf[3..32].try_into()?,
         })
     }
     pub fn size() -> usize {

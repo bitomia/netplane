@@ -1,6 +1,7 @@
 use log::{debug, error, info};
 use sqlx::{migrate, sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::{env, path::Path as FilePath};
+use anyhow::Result;
 
 pub enum ErrorCode {
     CannotConnect,
@@ -31,14 +32,10 @@ impl Db {
         Db { pool }
     }
 
-    pub async fn check_client(self: &Self, client_ip: &String, sdn_client_ip: &String) -> bool {
-        let query_ret: (i64,) =
-            sqlx::query_as("select count(*) from clients where client_ip=? and sdn_client_ip=?")
-                .bind(&client_ip)
-                .bind(&sdn_client_ip)
-                .fetch_one(&self.pool)
-                .await
-                .expect("");
-        return query_ret.0 > 0;
+    pub async fn get_client_sdn_ip(self: &Self, client_key: &str) -> Option<String> {
+        sqlx::query_scalar("SELECT sdn_client_ip FROM clients WHERE client_key = $1")
+            .bind(client_key)
+            .fetch_optional(&self.pool)
+            .await.ok()?
     }
 }

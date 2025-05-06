@@ -15,13 +15,13 @@ export default function () {
   }, []);
 
   const onCreateClient = useCallback(
-    (sdnIP, wanIP) => {
+    (sdnIP, clientKey) => {
       fetch(`/api/clients`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ sdn_client_ip: sdnIP, client_ip: wanIP }),
+        body: JSON.stringify({ sdn_client_ip: sdnIP, client_key: clientKey }),
       }).then(async (res) => {
         const data = await res.json();
         if (data.Ok) {
