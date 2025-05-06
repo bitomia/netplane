@@ -1,13 +1,14 @@
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use anyhow::{anyhow, Result};
+use log::{debug};
 
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
 const HANDSHAKE_REQUEST_SIZE: usize = 7;
 
+#[derive(PartialEq)]
 pub enum HandshakeStatus {
     Pending,
-    WaitingReply,
     Initialized,
 }
 
@@ -27,6 +28,7 @@ impl HandshakeReq {
         return [&self.header, &self.ipv4_addr.octets()[..4]].concat();
     }
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
+        debug!("{}", buf.len());
         if buf.len() != HANDSHAKE_REQUEST_SIZE {
             return Err(anyhow!("Invalid handshake request"));
         }
@@ -47,10 +49,10 @@ pub struct HandshakeRep {
     pub header: [u8; 3],
 }
 impl HandshakeRep {
-    pub fn new() -> Result<HandshakeRep> {
-        Ok(HandshakeRep {
+    pub fn new() -> HandshakeRep {
+        HandshakeRep {
             header: HANDSHAKE_REPLY_HEADER,
-        })
+        }
     }
     pub fn serialize(self: &Self) -> Vec<u8> {
         return self.header.to_vec();

@@ -1,11 +1,11 @@
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use anyhow::Result;
 use std::env;
 use tokio::net::UdpSocket;
 use dotenv::dotenv;
 use tokio::signal::unix::{signal, SignalKind};
 //use tray_item::{TrayItem, IconSource};
-use common::HandshakeReq;
+use common::{HandshakeReq, HandshakeRep, HandshakeStatus};
 
 pub mod packet;
 pub mod tundev;
@@ -23,8 +23,9 @@ async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
 }
 
 async fn handshake(ip_addr: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
+    trace!("Sending handshake {}", server_addr.clone());
+    
     let handshake = HandshakeReq::new(ip_addr)?;
-    info!("Sending handshake {}", server_addr.clone());
     socket
         .connect(server_addr.clone())
         .await?;
@@ -62,29 +63,44 @@ pub async fn run(
     // inner.add_quit_item("Quit");
     // inner.display();
 
-    handshake(ip_addr.clone(), server_addr, &socket).await?;
-
-    let mut dev = tundev::TunDev::new(tun_name, netmask, destination, ip_addr.clone());
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
+    let mut status = HandshakeStatus::Pending;
+
+    handshake(ip_addr.clone(), server_addr, &socket).await?;
+
+    let mut dev = tundev::TunDev::new(tun_name, netmask, destination, ip_addr.clone());    
     loop {
         tokio::select! {
             result = socket.recv_from(&mut socket_buf) => {
                 match result {
                     Ok((amt, from)) => {
-                        debug!("=> Server sent {} from {}", amt, from);
-                        if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
-                            debug!(
-                                "{} {} {}",
-                                header.src_ip, header.dst_ip, header.total_length
-                            );
+                        if status == HandshakeStatus::Pending {
+                            if HandshakeRep::deserialize(&socket_buf[..amt]).is_ok() {
+                                status = HandshakeStatus::Initialized;
+                                info!("Initialized");
+                            } else {
+                                error!("Initialization failed");
+                            }
+                        } else {
+                            debug!("=> Server sent {} from {}", amt, from);
+                            if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
+                                debug!(
+                                    "{} {} {}",
+                                    header.src_ip, header.dst_ip, header.total_length
+                                );
+                            }
+                            send_tun(&mut dev, &socket_buf, amt).await;
                         }
-                        send_tun(&mut dev, &socket_buf, amt).await;
-                    }
+                    },
                     Err(_) => todo!()
                 }
-            }
+            },
             tun_ret = dev.read(&mut tun_buf) => {
+                if status != HandshakeStatus::Initialized {
+                    debug!("Ignoring TUN read due to not initialized");
+                    continue;
+                }
                 match tun_ret {
                     Ok(amt) => {
                         debug!("<= Tun read {}", amt);
