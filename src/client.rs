@@ -1,12 +1,11 @@
 use log::{debug, error, info};
-use std::net::Ipv4Addr;
-use std::str::FromStr;
 use anyhow::Result;
 use std::env;
 use tokio::net::UdpSocket;
 use dotenv::dotenv;
 use tokio::signal::unix::{signal, SignalKind};
 //use tray_item::{TrayItem, IconSource};
+use common::HandshakeReq;
 
 pub mod packet;
 pub mod tundev;
@@ -16,11 +15,23 @@ pub mod crypto;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
-pub async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
+async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
     match dev.send(&buf[..nbytes], nbytes).await {
         Ok(_) => {}
         Err(err) => error!("{}", err),
     }
+}
+
+async fn handshake(ip_addr: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
+    let handshake = HandshakeReq::new(ip_addr)?;
+    info!("Sending handshake {}", server_addr.clone());
+    socket
+        .connect(server_addr.clone())
+        .await?;
+    socket
+        .send(&handshake.serialize())
+        .await?;
+    Ok(())
 }
 
 pub async fn run(
@@ -29,7 +40,7 @@ pub async fn run(
     netmask: String,
     ip_addr: String,
     server_addr: String,
-) -> Result<(), ProcessError> {
+) -> Result<()> {
     info!("Starting client");
     let socket = UdpSocket::bind("0.0.0.0:0")
         .await
@@ -50,27 +61,10 @@ pub async fn run(
     // let mut inner = tray.inner_mut();
     // inner.add_quit_item("Quit");
     // inner.display();
-    
+
+    handshake(ip_addr.clone(), server_addr, &socket).await?;
+
     let mut dev = tundev::TunDev::new(tun_name, netmask, destination, ip_addr.clone());
-
-    let ipv4_addr = match Ipv4Addr::from_str(ip_addr.as_str()) {
-        Ok(addr) => addr,
-        Err(_) => return Err(ProcessError(1)),
-    };
-    let handshake = common::Handshake {
-        header: common::HANDSHAKE_HEADER,
-        ipv4_addr,
-    };
-    info!("Sending handshake {}", server_addr.clone());
-    socket
-        .connect(server_addr.clone())
-        .await
-        .expect("Cannot connect");
-    socket
-        .send(&common::handshake_serialize(&handshake))
-        .await
-        .expect("Cannot send handshake");
-
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
     loop {
