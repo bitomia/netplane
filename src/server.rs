@@ -1,3 +1,4 @@
+use common::HandshakeReq;
 use log::{debug, error, info, LevelFilter};
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
@@ -5,6 +6,7 @@ use std::sync::Arc;
 use dotenv::dotenv;
 use std::env;
 use tokio::signal::unix::{signal, SignalKind};
+use anyhow::Result;
 
 pub mod packet;
 pub mod tundev;
@@ -12,7 +14,7 @@ pub mod common;
 pub mod db;
 pub mod webserver;
 
-use crate::common::{handshake_deserialize, HANDSHAKE_HEADER, HANDSHAKE_SIZE};
+use crate::common::HANDSHAKE_REQUEST_HEADER;
 use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
 
@@ -25,14 +27,18 @@ struct Client {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
-async fn reticula_server(db: Arc<db::Db>) {
+async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:5000").expect("Cannot open socket");
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
+    let mut is_initialized = false;
     loop {
         let (amt, src) = socket.recv_from(&mut buf).expect("Cannot receive");
-        if amt == HANDSHAKE_SIZE && buf[..3] == HANDSHAKE_HEADER {
-            let handshake = handshake_deserialize(&buf);
+        if !is_initialized {
+            
+        }
+        if amt == HandshakeReq::size() && buf[..3] == HANDSHAKE_REQUEST_HEADER {
+            let handshake = HandshakeReq::deserialize(&buf)?;
             if db
                 .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
                 .await
