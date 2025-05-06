@@ -22,10 +22,10 @@ async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
     }
 }
 
-async fn handshake(ip_addr: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
+async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
     trace!("Sending handshake {}", server_addr.clone());
     
-    let handshake = HandshakeReq::new(ip_addr)?;
+    let handshake = HandshakeReq::new(&client_key.into_bytes())?;
     socket
         .connect(server_addr.clone())
         .await?;

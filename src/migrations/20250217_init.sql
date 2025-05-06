@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS clients (
     id TEXT PRIMARY KEY NOT NULL,
-    client_ip TEXT NOT NULL UNIQUE,
+    client_key TEXT NOT NULL UNIQUE,
     sdn_client_ip TEXT NOT NULL UNIQUE
 );

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use dotenv::dotenv;
 use tokio::signal::unix::{signal, SignalKind};
 use anyhow::Result;
+use std::str::FromStr;
 
 pub mod packet;
 pub mod tundev;
@@ -60,17 +61,16 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
             HandshakeStatus::Pending => {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
-                        info!("HandshakeReq received {} {}", src, handshake.ipv4_addr);
-                        if db
-                            .check_client(&src.ip().to_string(), &handshake.ipv4_addr.to_string())
-                            .await
-                            == true
+                        info!("HandshakeReq received {}", src);
+                        let client_key = std::str::from_utf8(&handshake.client_key)?;
+                        let client_sdn_ip = db.get_client_sdn_ip(&client_key).await;
+                        if let Some(client_sdn_ip) = client_sdn_ip
                         {
                             clients.insert(Client {
                                 src,
-                                ipv4_addr: handshake.ipv4_addr,
+                                ipv4_addr: Ipv4Addr::from_str(client_sdn_ip.as_str())?
                             });
-                            info!("Client connected {} {}", src, handshake.ipv4_addr);
+                            info!("Client connected {} {}", src, client_sdn_ip);
                             let reply = HandshakeRep::new();
                             if let Ok(_) = socket.send_to(&reply.serialize(), &src) {
                                 clients_status.insert(src, HandshakeStatus::Initialized);
@@ -79,8 +79,8 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                             }
                         } else {
                             error!(
-                                "Ignoring Unknown user pair {} {}",
-                                src.ip(), handshake.ipv4_addr
+                                "Ignoring Unknown user {}",
+                                src.ip()
                             );
                         }
                     },
