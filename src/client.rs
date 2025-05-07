@@ -30,23 +30,17 @@ struct StartParams {
     ip_addr: String,
 }
 
-async fn send_handshake_request(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
-    trace!("Sending handshake {}", server_addr.clone());
-    
-    let handshake = HandshakeReq::new(&client_key);
+async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
     socket
         .connect(server_addr.clone())
         .await?;
+
+    let handshake = HandshakeReq::new(&client_key);
     socket
         .send(&handshake.serialize()?)
         .await?;
-    Ok(())
-}
 
-async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
     let mut socket_buf = [0; 1500];
-    
-    send_handshake_request(client_key, server_addr, &socket).await?;
     loop {
         let (amt, _) = socket.recv_from(&mut socket_buf).await?;
         if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
@@ -107,14 +101,13 @@ pub async fn run(
         tokio::select! {
             result = socket.recv_from(&mut socket_buf) => {
                 match result {
-                    Ok((amt, from)) => {
-                        debug!("=> Server sent {} from {}", amt, from);
-                        if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
-                            debug!(
-                                "{} {} {}",
-                                header.src_ip, header.dst_ip, header.total_length
-                            );
-                        }
+                    Ok((amt, _)) => {
+                        // if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
+                        //     debug!(
+                        //         "{} {} {}",
+                        //         header.src_ip, header.dst_ip, header.total_length
+                        //     );
+                        // }
                         send_tun(&mut dev, &socket_buf, amt).await;
                     },
                     Err(_) => todo!()
@@ -123,8 +116,6 @@ pub async fn run(
             tun_ret = dev.read(&mut tun_buf) => {
                 match tun_ret {
                     Ok(amt) => {
-                        debug!("<= Tun read {}", amt);
-
                         let mut is_loopback = false;
                         if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
                             debug!("{} {}", header.src_ip, header.dst_ip);
