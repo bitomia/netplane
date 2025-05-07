@@ -1,7 +1,6 @@
-use log::{debug, error, info};
-use sqlx::{migrate, sqlite::SqlitePoolOptions, Pool, Sqlite};
+use log::info;
+use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite};
 use std::{env, path::Path as FilePath};
-use anyhow::Result;
 
 pub enum ErrorCode {
     CannotConnect,
