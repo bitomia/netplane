@@ -22,14 +22,17 @@ type ServerError = String;
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 struct Client {
     id: String,
-    client_key: String,
     sdn_client_ip: String,
+    network: String,
+    netmask: String,
 }
 
 #[derive(Deserialize)]
 struct CreateClientRequest {
-    client_ip: String,
+    client_key: String,
     sdn_client_ip: String,
+    network: String,
+    netmask: String,
 }
 
 #[derive(Deserialize)]
@@ -39,7 +42,7 @@ struct DeleteClientRequest {
 
 impl WebServer {
     async fn get_clients(State(state): State<AppState>) -> Json<Vec<Client>> {
-        let clients = sqlx::query_as!(Client, "select * from clients",)
+        let clients = sqlx::query_as!(Client, "select id, sdn_client_ip, network, netmask from clients",)
             .fetch_all(&state.db.pool)
             .await
             .expect("Cannot fetch clients");
@@ -54,15 +57,18 @@ impl WebServer {
         let id = Uuid::new_v4();
         let client = Client {
             id: id.to_string(),
-            client_key: payload.client_ip,
             sdn_client_ip: payload.sdn_client_ip,
+            network: payload.network,
+            netmask: payload.netmask,
         };
 
         let insert_ret =
-            sqlx::query("INSERT INTO clients (id, client_ip, sdn_client_ip) VALUES (?, ?, ?)")
+            sqlx::query("INSERT INTO clients (id, client_key, sdn_client_ip, network, netmask) VALUES (?, ?, ?, ?, ?)")
                 .bind(&client.id)
-                .bind(&client.client_key)
+                .bind(&payload.client_key)
                 .bind(&client.sdn_client_ip)
+                .bind(&client.network)
+                .bind(&client.netmask)
                 .execute(&state.db.pool)
                 .await;
         if let Err(error) = insert_ret {
@@ -83,7 +89,7 @@ impl WebServer {
             return (StatusCode::BAD_REQUEST, Json(Err(error.to_string())));
         }
 
-        let clients = sqlx::query_as!(Client, "select * from clients",)
+        let clients = sqlx::query_as!(Client, "select id, sdn_client_ip, network, netmask from clients",)
             .fetch_all(&state.db.pool)
             .await
             .expect("Cannot fetch clients");

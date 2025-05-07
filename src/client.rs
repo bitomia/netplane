@@ -5,7 +5,8 @@ use tokio::net::UdpSocket;
 use dotenv::dotenv;
 use tokio::signal::unix::{signal, SignalKind};
 //use tray_item::{TrayItem, IconSource};
-use common::{HandshakeReq, HandshakeRep, HandshakeStatus};
+use common::{HandshakeReq, HandshakeRep};
+
 
 pub mod packet;
 pub mod tundev;
@@ -22,24 +23,47 @@ async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
     }
 }
 
-async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
+#[derive(Debug)]
+struct StartParams {
+    netmask: String,
+    destination: String,
+    ip_addr: String,
+}
+
+async fn send_handshake_request(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<()> {
     trace!("Sending handshake {}", server_addr.clone());
     
-    let handshake = HandshakeReq::new(&client_key.into_bytes())?;
+    let handshake = HandshakeReq::new(&client_key);
     socket
         .connect(server_addr.clone())
         .await?;
     socket
-        .send(&handshake.serialize())
+        .send(&handshake.serialize()?)
         .await?;
     Ok(())
 }
 
+async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
+    let mut socket_buf = [0; 1500];
+    
+    send_handshake_request(client_key, server_addr, &socket).await?;
+    loop {
+        let (amt, _) = socket.recv_from(&mut socket_buf).await?;
+        if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
+            return Ok(StartParams {
+                netmask: handshake.netmask,
+                destination: handshake.destination,
+                ip_addr: handshake.sdn_ip_addr,
+            })
+        } else {
+            error!("Initialization failed. Keep trying");
+        }
+    }
+}
+
 pub async fn run(
+    client_key: String,
     tun_name: String,
-    destination: String,
-    netmask: String,
-    ip_addr: String,
     server_addr: String,
 ) -> Result<()> {
     info!("Starting client");
@@ -63,44 +87,40 @@ pub async fn run(
     // inner.add_quit_item("Quit");
     // inner.display();
 
+    let start_params = match handshake(client_key, server_addr, &socket).await {
+        Ok(p) => {
+            info!("Handshake successfully finished {:?}", p);
+            p
+        },
+        Err(err) => {
+            error!("Handshake failed: {}", err);
+            std::process::exit(1)
+        }
+    };
+    
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
-    let mut status = HandshakeStatus::Pending;
 
-    handshake(ip_addr.clone(), server_addr, &socket).await?;
-
-    let mut dev = tundev::TunDev::new(tun_name, netmask, destination, ip_addr.clone());    
+    let mut dev = tundev::TunDev::new(tun_name, start_params.netmask.as_str(), start_params.destination.as_str(), start_params.ip_addr.as_str());
+    
     loop {
         tokio::select! {
             result = socket.recv_from(&mut socket_buf) => {
                 match result {
                     Ok((amt, from)) => {
-                        if status == HandshakeStatus::Pending {
-                            if HandshakeRep::deserialize(&socket_buf[..amt]).is_ok() {
-                                status = HandshakeStatus::Initialized;
-                                info!("Initialized");
-                            } else {
-                                error!("Initialization failed");
-                            }
-                        } else {
-                            debug!("=> Server sent {} from {}", amt, from);
-                            if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
-                                debug!(
-                                    "{} {} {}",
-                                    header.src_ip, header.dst_ip, header.total_length
-                                );
-                            }
-                            send_tun(&mut dev, &socket_buf, amt).await;
+                        debug!("=> Server sent {} from {}", amt, from);
+                        if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
+                            debug!(
+                                "{} {} {}",
+                                header.src_ip, header.dst_ip, header.total_length
+                            );
                         }
+                        send_tun(&mut dev, &socket_buf, amt).await;
                     },
                     Err(_) => todo!()
                 }
             },
             tun_ret = dev.read(&mut tun_buf) => {
-                if status != HandshakeStatus::Initialized {
-                    debug!("Ignoring TUN read due to not initialized");
-                    continue;
-                }
                 match tun_ret {
                     Ok(amt) => {
                         debug!("<= Tun read {}", amt);
@@ -109,7 +129,7 @@ pub async fn run(
                         if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
                             debug!("{} {}", header.src_ip, header.dst_ip);
                             is_loopback =
-                                header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                            header.src_ip == header.dst_ip && header.src_port == header.dst_port;
                         }
                         if is_loopback {
                             send_tun(&mut dev, &tun_buf, amt).await;
@@ -135,7 +155,7 @@ pub async fn run(
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [tun_name] [destination] [netmask] [ip] [server_ip]",
+        "Use {} [client_key] [tun_name] [server_ip]",
         args[0]
     );
 }
@@ -163,13 +183,11 @@ async fn main() -> Result<()> {
         println!("Generating auth keys");
         crypto::try_generate_auth_keys()?;
         println!("Keys saved.");
-    } else if args.len() == 6 {
+    } else if args.len() == 4 {
         let _ = run(
             args[1].clone(),
             args[2].clone(),
             args[3].clone(),
-            args[4].clone(),
-            args[5].clone(),
         ).await;
     } else {
         echo_syntax(&args);
