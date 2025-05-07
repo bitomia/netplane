@@ -1,8 +1,5 @@
-use std::net::Ipv4Addr;
-use std::str::FromStr;
 use anyhow::{anyhow, Result};
-use log::{debug};
-
+use log::debug;
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
 const HANDSHAKE_REQUEST_SIZE: usize = 35;
 

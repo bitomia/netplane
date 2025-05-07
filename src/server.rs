@@ -1,5 +1,5 @@
 use common::{HandshakeReq, HandshakeRep, HandshakeStatus};
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use crate::webserver::WebServer;
 #[derive(Eq, Hash, PartialEq)]
 struct Client {
     pub src: SocketAddr,
-    pub ipv4_addr: Ipv4Addr,
+    pub sdn_ip_addr: Ipv4Addr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +68,7 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                         {
                             clients.insert(Client {
                                 src,
-                                ipv4_addr: Ipv4Addr::from_str(client_sdn_ip.as_str())?
+                                sdn_ip_addr: Ipv4Addr::from_str(client_sdn_ip.as_str())?
                             });
                             info!("Client connected {} {}", src, client_sdn_ip);
                             let reply = HandshakeRep::new();
