@@ -8,12 +8,12 @@ pub struct TunDev {
 
 impl TunDev {
     #[allow(unused_variables)]
-    pub fn new(tun_name: String, netmask: String, destination: String, ip_addr: String) -> Self {
+    pub fn new(tun_name: String, netmask: &str, destination: &str, ip_addr: &str) -> Self {
         info!("TUN initialized for {}", ip_addr);
 
         let mut config = Configuration::default();
         config
-            .address(ip_addr.clone())
+            .address(ip_addr)
             .netmask(netmask)
             .destination(destination)
             .mtu(1500);

@@ -62,8 +62,7 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
                         info!("HandshakeReq received {}", src);
-                        let client_key = std::str::from_utf8(&handshake.client_key)?;
-                        let client_sdn_ip = db.get_client_sdn_ip(&client_key).await;
+                        let client_sdn_ip = db.get_client_sdn_ip(&handshake.client_key).await;
                         if let Some(client_sdn_ip) = client_sdn_ip
                         {
                             clients.insert(Client {
@@ -71,8 +70,10 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                                 sdn_ip_addr: Ipv4Addr::from_str(client_sdn_ip.as_str())?
                             });
                             info!("Client connected {} {}", src, client_sdn_ip);
-                            let reply = HandshakeRep::new();
-                            if let Ok(_) = socket.send_to(&reply.serialize(), &src) {
+                            let netmask = String::from("255.255.255.0");
+                            let destination = String::from("12.0.0.0");
+                            let reply = HandshakeRep::new(&netmask, &destination, &client_sdn_ip);
+                            if let Ok(_) = socket.send_to(&reply.serialize()?, &src) {
                                 clients_status.insert(src, HandshakeStatus::Initialized);
                             } else {
                                 // TODO

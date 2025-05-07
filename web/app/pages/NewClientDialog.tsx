@@ -3,8 +3,10 @@ import { useMemo, useState } from "react";
 export default ({ setNewClient, onCreateClient }) => {
   const [sdnIP, setSDNIP] = useState("");
   const [clientKey, setClientKey] = useState("");
+  const [network, setNetwork] = useState("");
+  const [netmask, setNetmask] = useState("");
   const createDisabled = useMemo(
-    () => sdnIP?.length == 0 || clientKey.length == 0,
+    () => sdnIP?.length == 0 || clientKey.length == 0 ||netmask?.length == 0 || network?.length == 0,
     [sdnIP, clientKey],
   );
 
@@ -65,6 +67,38 @@ export default ({ setNewClient, onCreateClient }) => {
                       pattern="^(?>(\d|[1-9]\d{2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(?1)$"
                       autoComplete="off"
                     />
+                    <label className="mt-3">Network</label>
+                    <input
+                      type="text"
+                      placeholder="xxx.xxx.xxx.xxx"
+                      className="px-3 py-2 border border-slate-200 rounded invalid:border-pink-500 invalid:text-pink-600 focus:invalid:border-pink-500 focus:invalid:outline-pink-500"
+                      onChange={(e) => {
+                        if (e.currentTarget.validity.valid) {
+                          setNetwork(e.currentTarget.value);
+                        }
+                      }}
+                      minLength={7}
+                      maxLength={15}
+                      size={15}
+                      pattern="^(?>(\d|[1-9]\d{2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(?1)$"
+                      autoComplete="off"
+                    />
+                    <label className="mt-3">Netmask</label>
+                    <input
+                      type="text"
+                      placeholder="255.255.255.0"
+                      className="px-3 py-2 border border-slate-200 rounded invalid:border-pink-500 invalid:text-pink-600 focus:invalid:border-pink-500 focus:invalid:outline-pink-500"
+                      onChange={(e) => {
+                        if (e.currentTarget.validity.valid) {
+                          setNetmask(e.currentTarget.value);
+                        }
+                      }}
+                      minLength={7}
+                      maxLength={15}
+                      size={15}
+                      pattern="^(?>(\d|[1-9]\d{2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(?1)$"
+                      autoComplete="off"
+                    />
                   </div>
                 </div>
               </div>
@@ -74,7 +108,7 @@ export default ({ setNewClient, onCreateClient }) => {
                 type="button"
                 disabled={createDisabled}
                 className="inline-flex w-full justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-green-500 sm:ml-3 sm:w-auto disabled:bg-slate-200"
-                onClick={() => onCreateClient(sdnIP, clientKey)}
+                onClick={() => onCreateClient(sdnIP, clientKey, network, netmask)}
               >
                 Create
               </button>

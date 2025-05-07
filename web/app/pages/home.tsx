@@ -15,13 +15,13 @@ export default function () {
   }, []);
 
   const onCreateClient = useCallback(
-    (sdnIP, clientKey) => {
+    (sdnIP, clientKey, network, netmask) => {
       fetch(`/api/clients`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ sdn_client_ip: sdnIP, client_key: clientKey }),
+        body: JSON.stringify({ sdn_client_ip: sdnIP, client_key: clientKey, netmask, network }),
       }).then(async (res) => {
         const data = await res.json();
         if (data.Ok) {
@@ -80,15 +80,21 @@ export default function () {
                     <div className="flex flex-row">
                       <div className="flex flex-col w-full">
                         <span className="font-bold text-xs text-gray-400">
-                          WAN IP
-                        </span>
-                        {c.client_ip}
-                      </div>
-                      <div className="flex flex-col w-full">
-                        <span className="font-bold text-xs text-gray-400">
                           SDN IP
                         </span>
                         {c.sdn_client_ip}
+                      </div>
+                      <div className="flex flex-col w-full">
+                        <span className="font-bold text-xs text-gray-400">
+                          NETWORK
+                        </span>
+                        {c.network}
+                      </div>
+                      <div className="flex flex-col w-full">
+                        <span className="font-bold text-xs text-gray-400">
+                          NETMASK
+                        </span>
+                        {c.netmask}
                       </div>
                     </div>
                     <div className="text-[10px] pb-1 text-gray-500">{c.id}</div>

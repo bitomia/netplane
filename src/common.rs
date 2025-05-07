@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
-use log::debug;
+use bincode::{config, Decode, Encode};
+
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
-const HANDSHAKE_REQUEST_SIZE: usize = 35;
 
 #[derive(PartialEq)]
 pub enum HandshakeStatus {
@@ -9,60 +9,68 @@ pub enum HandshakeStatus {
     Initialized,
 }
 
+#[derive(Encode, Decode, PartialEq, Debug)]
 pub struct HandshakeReq {
     pub header: [u8; 3],
-    pub client_key: [u8; 32],
+    pub client_key: String,
 }
 
 impl HandshakeReq {
-    pub fn new(client_key: &Vec<u8>) -> Result<HandshakeReq> {
-        Ok(HandshakeReq {
+    pub fn new(client_key: &String) -> Self {
+        Self {
             header: HANDSHAKE_REQUEST_HEADER,
-            client_key: client_key[..32].try_into()?
-        })
+            client_key: client_key.clone(),
+        }
     }
-    pub fn serialize(self: &Self) -> Vec<u8> {
-        return [&self.header, &self.client_key[..]].concat();
+    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+        match bincode::encode_to_vec(self, config::standard()) {
+            Ok(v) => Ok(v),
+            Err(err) => Err(anyhow!(err))
+        }
     }
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
-        debug!("{}", buf.len());
-        if buf.len() != HANDSHAKE_REQUEST_SIZE {
-            return Err(anyhow!("Invalid handshake request"));
+        match bincode::decode_from_slice::<Self, _>(buf, config::standard()) {
+            Ok((v, _)) => Ok(v),
+            Err(err) => Err(anyhow!(err))
         }
-        Ok(HandshakeReq {
-            header: HANDSHAKE_REQUEST_HEADER,
-            client_key: buf[3..32].try_into()?,
-        })
     }
-    pub fn size() -> usize {
-        return HANDSHAKE_REQUEST_SIZE;
+    pub fn size(self: &Self) -> Result<usize> {
+        Ok(self.serialize()?.len())
     }
 }
 
 pub const HANDSHAKE_REPLY_HEADER: [u8; 3] = [3, 4, 5];
-const HANDSHAKE_REPLY_SIZE: usize = 3;
 
+#[derive(Encode, Decode, PartialEq, Debug)]
 pub struct HandshakeRep {
     pub header: [u8; 3],
+    pub netmask: String,
+    pub destination: String,
+    pub sdn_ip_addr: String,
 }
+
 impl HandshakeRep {
-    pub fn new() -> HandshakeRep {
-        HandshakeRep {
+    pub fn new(netmask: &String, destination: &String, sdn_ip_addr: &String) -> Self {
+        Self {
             header: HANDSHAKE_REPLY_HEADER,
+            netmask: netmask.clone(),
+            destination: destination.clone(),
+            sdn_ip_addr: sdn_ip_addr.clone(),
         }
     }
-    pub fn serialize(self: &Self) -> Vec<u8> {
-        return self.header.to_vec();
+    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+        match bincode::encode_to_vec(self, config::standard()) {
+            Ok(v) => Ok(v),
+            Err(err) => Err(anyhow!(err))
+        }
     }
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
-        if buf.len() != HANDSHAKE_REPLY_SIZE {
-            return Err(anyhow!("Invalid handshake reply"));
+        match bincode::decode_from_slice::<Self, _>(buf, config::standard()) {
+            Ok((v, _)) => Ok(v),
+            Err(err) => Err(anyhow!(err))
         }
-        Ok(HandshakeRep {
-            header: HANDSHAKE_REPLY_HEADER,
-        })
     }
-    pub fn size() -> usize {
-        return HANDSHAKE_REPLY_SIZE;
+    pub fn size(self: &Self) -> Result<usize> {
+        Ok(self.serialize()?.len())
     }
 }
