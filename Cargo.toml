@@ -40,6 +40,9 @@ base64 = "0.22.1"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 rand = "0.8"
 bincode = "2.0.1"
+snow = "0.9.6"
+hmac = "0.12.1"
+sha2 = "0.10.9"
 
 [build-dependencies]
 embed-resource = { version = "3.0.2", optional = true }
