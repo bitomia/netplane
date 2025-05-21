@@ -2,8 +2,12 @@ use anyhow::{Result, anyhow};
 use std::fs::write;
 use std::path::Path;
 use base64::{engine::general_purpose, Engine};
-use ed25519_dalek::{SigningKey, VerifyingKey, SECRET_KEY_LENGTH, PUBLIC_KEY_LENGTH};
+use ed25519_dalek::{ed25519::signature::SignerMut, SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
 use rand::rngs::OsRng;
+use hmac::{Hmac, Mac}; // Mac is a trait, Hmac is the struct
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
 
 pub fn try_generate_auth_keys() -> Result<()> {
     if Path::new("private.key").exists() || Path::new("public.key").exists() {
@@ -32,4 +36,18 @@ pub fn try_load_auth_keys() -> Result<(SigningKey, VerifyingKey)> {
     let public = VerifyingKey::from_bytes(&<[u8; PUBLIC_KEY_LENGTH]>::try_from(public_key.as_slice())?)?;
     
     Ok((private, public))
+}
+
+pub fn sign_key(key: String) -> Vec<u8> {
+    let secret_key = std::env::var("SECRET_KEY").unwrap();
+    let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
+
+    mac.update(key.as_bytes());
+    mac.finalize().into_bytes().to_vec()
+}
+
+pub fn verify_signed_key(key: String) -> bool {
+    let secret_key = std::env::var("SECRET_KEY").unwrap();
+    let mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
+    mac.verify_slice(key.as_bytes()).is_ok()
 }

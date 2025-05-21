@@ -12,14 +12,14 @@ pub enum HandshakeStatus {
 #[derive(Encode, Decode, PartialEq, Debug)]
 pub struct HandshakeReq {
     pub header: [u8; 3],
-    pub client_key: String,
+    pub public_key: String,
 }
 
 impl HandshakeReq {
-    pub fn new(client_key: &String) -> Self {
+    pub fn new(public_key: &String) -> Self {
         Self {
             header: HANDSHAKE_REQUEST_HEADER,
-            client_key: client_key.clone(),
+            public_key: public_key.clone(),
         }
     }
     pub fn serialize(self: &Self) -> Result<Vec<u8>> {

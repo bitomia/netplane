@@ -62,7 +62,7 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
                         info!("HandshakeReq received {}", src);
-                        let client_sdn_ip = db.get_client_sdn_ip(&handshake.client_key).await;
+                        let client_sdn_ip = db.get_client_sdn_ip(&handshake.public_key).await;
                         if let Some(client_sdn_ip) = client_sdn_ip
                         {
                             clients.insert(Client {
@@ -112,6 +112,7 @@ async fn main() -> Result<(), ProcessError> {
 
     env_logger::init();
     dotenv().ok();
+    std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
 
     let db = Arc::new(db::Db::new().await);
     let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
