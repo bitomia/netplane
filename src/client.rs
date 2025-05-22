@@ -1,4 +1,4 @@
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use anyhow::Result;
 use std::env;
 use tokio::net::UdpSocket;

@@ -1,12 +1,10 @@
 use anyhow::{Result, anyhow};
 use std::fs::write;
 use std::path::Path;
-use base64::{engine::general_purpose, Engine};
-use ed25519_dalek::{ed25519::signature::SignerMut, SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
+use ed25519_dalek::{SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
 use rand::rngs::OsRng;
-use base64::{Engine as _, alphabet, engine::{self, general_purpose}};
-use ed25519_dalek::{SigningKey, SECRET_KEY_LENGTH, PUBLIC_KEY_LENGTH};
-use hmac::{Hmac, Mac}; // Mac is a trait, Hmac is the struct
+use base64::{Engine as _, engine::general_purpose};
+use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -98,16 +96,52 @@ fn snow_test() -> Result<(), anyhow::Error>
     Ok(())
 }
 
-pub fn sign_key(key: String) -> Vec<u8> {
+pub fn sign_key(pubkey: &[u8]) -> String {
     let secret_key = std::env::var("SECRET_KEY").unwrap();
+    
     let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
-
-    mac.update(key.as_bytes());
-    mac.finalize().into_bytes().to_vec()
+    mac.update(pubkey);
+    
+    let signature = mac.finalize().into_bytes();
+    let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature);
+    let key_b64 = general_purpose::URL_SAFE_NO_PAD.encode(pubkey);
+    format!("{}.{}", key_b64, signature_b64)
 }
 
-pub fn verify_signed_key(key: String) -> bool {
+pub fn verify_signed_key(signed_pubkey: String) -> bool {
+    let parts: Vec<&str> = signed_pubkey.split(".").collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    println!("Parts: {} {}", parts[0], parts[1]);
+    
+    let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
+
     let secret_key = std::env::var("SECRET_KEY").unwrap();
-    let mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
-    mac.verify_slice(key.as_bytes()).is_ok()
+    let mut  mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
+
+    mac.update(general_purpose::URL_SAFE_NO_PAD.decode(parts[0]).unwrap().as_slice());
+    mac.verify_slice(&signature[..]).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_noise() {
+        assert!(snow_test().is_ok(), "snow test failed");
+    }
+
+    #[test]
+    fn test_sign_key() {
+        unsafe {
+            std::env::set_var("SECRET_KEY", "secret_key");
+        }
+        let key = String::from("test123");
+        let signed_key = sign_key(key.as_bytes());
+
+        assert!(signed_key.len() != 0, "empty signed key");
+        assert!(verify_signed_key(signed_key), "verify signed key failed");
+    }
 }
