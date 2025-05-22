@@ -1,52 +1,40 @@
 use anyhow::{Result, anyhow};
 use std::fs::write;
 use std::path::Path;
-use ed25519_dalek::{SigningKey, VerifyingKey, PUBLIC_KEY_LENGTH, SECRET_KEY_LENGTH};
-use rand::rngs::OsRng;
 use base64::{Engine as _, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
+static PATTERN: &'static str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
-pub fn try_generate_auth_keys() -> Result<()> {
-    if Path::new("private.key").exists() || Path::new("public.key").exists() {
+pub fn try_generate_auth_keys(public_filepath: &str, private_filepath: &str) -> Result<()> {
+    if Path::new(private_filepath).exists() || Path::new(public_filepath).exists() {
         return Err(anyhow!("auth key files already exist"));
     }
+    
+    let keypair = snow::Builder::new(PATTERN.parse()?)
+        .generate_keypair()?;
+    let public_b64 = general_purpose::URL_SAFE_NO_PAD.encode(keypair.public);
+    let private_b64 = general_purpose::URL_SAFE_NO_PAD.encode(keypair.private);
 
-    let signing_key: SigningKey = SigningKey::generate(&mut OsRng);
-    let verify_key = VerifyingKey::from(&signing_key);
-
-    let private_key_b64 = general_purpose::STANDARD.encode(signing_key.as_bytes());
-    let public_key_b64 = general_purpose::STANDARD.encode(verify_key.as_bytes());
-    write("private.key", private_key_b64)?;
-    write("public.key", public_key_b64)?;
+    write(public_filepath, public_b64)?;
+    write(private_filepath, private_b64)?;
     
     Ok(())
 }
 
-pub fn try_load_auth_keys() -> Result<(SigningKey, VerifyingKey)> {
-    let priv_b64 = std::fs::read_to_string("private.key")?;
-    let pub_b64 = std::fs::read_to_string("public.key")?;
+pub fn try_load_auth_keys(public_filepath: &str, private_filepath: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+    let pub_b64 = std::fs::read_to_string(public_filepath)?;
+    let priv_b64 = std::fs::read_to_string(private_filepath)?;
+    let private_key = general_purpose::URL_SAFE_NO_PAD.decode(priv_b64.trim())?;
+    let public_key = general_purpose::URL_SAFE_NO_PAD.decode(pub_b64.trim())?;
 
-    let private_key = general_purpose::STANDARD.decode(priv_b64.trim())?;
-    let public_key = general_purpose::STANDARD.decode(pub_b64.trim())?;
-
-    let private = SigningKey::from_bytes(&<[u8; SECRET_KEY_LENGTH]>::try_from(private_key.as_slice())?);
-    let public = VerifyingKey::from_bytes(&<[u8; PUBLIC_KEY_LENGTH]>::try_from(public_key.as_slice())?)?;
-    
-    Ok((private, public))
+    Ok((private_key, public_key))
 }
-
 
 fn snow_test() -> Result<(), anyhow::Error>
 {
-    let signing_key= "VJC7IabdEbYQvb88ulpjx6VrtCTYuuT+t6ww6/31XkA=";
-    let signing_key = general_purpose::STANDARD.decode(signing_key).unwrap();
-    let signing_key: [u8;32] = signing_key.try_into().unwrap();
-    let signing_key: SigningKey = SigningKey::from_bytes(&signing_key);
-    
-    static PATTERN: &'static str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
     let initiator_keypair = snow::Builder::new(PATTERN.parse()?)
         .generate_keypair()?;
 
@@ -113,8 +101,6 @@ pub fn verify_signed_key(signed_pubkey: String) -> bool {
     if parts.len() != 2 {
         return false;
     }
-    println!("Parts: {} {}", parts[0], parts[1]);
-    
     let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
 
     let secret_key = std::env::var("SECRET_KEY").unwrap();
@@ -130,6 +116,11 @@ mod tests {
 
     #[test]
     fn test_noise() {
+        let _ = std::fs::remove_file("public_test");
+        let _ = std::fs::remove_file("private_test");
+        assert!(try_generate_auth_keys("public_test", "private_test").is_ok(), "cannot generate auth key files");
+        let keys = try_load_auth_keys("public_test", "private_test");
+        assert!(keys.is_ok(), "cannot load keys");
         assert!(snow_test().is_ok(), "snow test failed");
     }
 

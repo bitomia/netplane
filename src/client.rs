@@ -172,7 +172,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() == 2 && args[1] == "--auth" {
         println!("Generating auth keys");
-        crypto::try_generate_auth_keys()?;
+        crypto::try_generate_auth_keys("public.key", "private.key")?;
         println!("Keys saved.");
     } else if args.len() == 4 {
         let _ = run(
