@@ -33,57 +33,6 @@ pub fn try_load_auth_keys(public_filepath: &str, private_filepath: &str) -> Resu
     Ok((private_key, public_key))
 }
 
-fn snow_test() -> Result<(), anyhow::Error>
-{
-    let initiator_keypair = snow::Builder::new(PATTERN.parse()?)
-        .generate_keypair()?;
-
-    let responder_keypair = snow::Builder::new(PATTERN.parse()?)
-        .generate_keypair()?;
-
-    // ====
-    
-    let mut initiator = snow::Builder::new(PATTERN.parse()?)
-        .local_private_key(&initiator_keypair.private)
-        .remote_public_key(&responder_keypair.public)
-        .build_initiator()?;
-    
-    let mut responder = snow::Builder::new(PATTERN.parse()?)
-        .local_private_key(&responder_keypair.private)
-        .remote_public_key(&initiator_keypair.public)
-        .build_responder()?;
-
-    let (mut read_buf, mut first_msg, mut second_msg) =
-        ([0u8; 1024], [0u8; 1024], [0u8; 1024]);
-
-    let mut buf = [0u8; 1024];
-    
-    // -> e
-    let len = initiator.write_message(&[], &mut first_msg)?;
-    
-    // responder processes the first message...
-    responder.read_message(&first_msg[..len], &mut read_buf)?;
-
-    // <- e, ee
-    let len = responder.write_message(&[], &mut second_msg)?;
-
-    // initiator processes the response...
-    initiator.read_message(&second_msg[..len], &mut read_buf)?;
-
-    // NN handshake complete, transition into transport mode.
-    let mut initiator = initiator.into_transport_mode()?;
-    let mut responder = responder.into_transport_mode()?;
-
-    let len = initiator.write_message(b"test\0", &mut buf).unwrap();
-    println!("{}", len);
-    
-    let mut read_buf = [0u8; 1024];
-    responder.read_message(&buf[..len], &mut read_buf).unwrap();
-    println!("client said: {}", String::from_utf8_lossy(&read_buf[..len]));
-
-    Ok(())
-}
-
 pub fn sign_key(pubkey: &[u8]) -> String {
     let secret_key = std::env::var("SECRET_KEY").unwrap();
     
@@ -134,5 +83,55 @@ mod tests {
 
         assert!(signed_key.len() != 0, "empty signed key");
         assert!(verify_signed_key(signed_key), "verify signed key failed");
+    }
+
+    fn snow_test() -> Result<(), anyhow::Error> {
+        let initiator_keypair = snow::Builder::new(PATTERN.parse()?)
+            .generate_keypair()?;
+
+        let responder_keypair = snow::Builder::new(PATTERN.parse()?)
+            .generate_keypair()?;
+
+        // ====
+    
+        let mut initiator = snow::Builder::new(PATTERN.parse()?)
+            .local_private_key(&initiator_keypair.private)
+            .remote_public_key(&responder_keypair.public)
+            .build_initiator()?;
+    
+        let mut responder = snow::Builder::new(PATTERN.parse()?)
+            .local_private_key(&responder_keypair.private)
+            .remote_public_key(&initiator_keypair.public)
+            .build_responder()?;
+
+        let (mut read_buf, mut first_msg, mut second_msg) =
+            ([0u8; 1024], [0u8; 1024], [0u8; 1024]);
+
+        let mut buf = [0u8; 1024];
+    
+        // -> e
+        let len = initiator.write_message(&[], &mut first_msg)?;
+    
+        // responder processes the first message...
+        responder.read_message(&first_msg[..len], &mut read_buf)?;
+
+        // <- e, ee
+        let len = responder.write_message(&[], &mut second_msg)?;
+
+        // initiator processes the response...
+        initiator.read_message(&second_msg[..len], &mut read_buf)?;
+
+        // NN handshake complete, transition into transport mode.
+        let mut initiator = initiator.into_transport_mode()?;
+        let mut responder = responder.into_transport_mode()?;
+
+        let len = initiator.write_message(b"test\0", &mut buf).unwrap();
+        println!("{}", len);
+    
+        let mut read_buf = [0u8; 1024];
+        responder.read_message(&buf[..len], &mut read_buf).unwrap();
+        println!("client said: {}", String::from_utf8_lossy(&read_buf[..len]));
+
+        Ok(())
     }
 }
