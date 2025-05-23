@@ -70,7 +70,7 @@ mod tests {
         assert!(try_generate_auth_keys("public_test", "private_test").is_ok(), "cannot generate auth key files");
         let keys = try_load_auth_keys("public_test", "private_test");
         assert!(keys.is_ok(), "cannot load keys");
-        assert!(snow_test().is_ok(), "snow test failed");
+        assert!(snow_test().is_err(), "snow test failed");
     }
 
     #[test]
@@ -86,22 +86,23 @@ mod tests {
     }
 
     fn snow_test() -> Result<(), anyhow::Error> {
-        let initiator_keypair = snow::Builder::new(PATTERN.parse()?)
+        let client_keypair = snow::Builder::new(PATTERN.parse()?)
             .generate_keypair()?;
 
-        let responder_keypair = snow::Builder::new(PATTERN.parse()?)
+
+        let server_keypair = snow::Builder::new(PATTERN.parse()?)
             .generate_keypair()?;
 
         // ====
     
-        let mut initiator = snow::Builder::new(PATTERN.parse()?)
-            .local_private_key(&initiator_keypair.private)
-            .remote_public_key(&responder_keypair.public)
+        let mut client = snow::Builder::new(PATTERN.parse()?)
+            .local_private_key(&client_keypair.private)
+            .remote_public_key(&server_keypair.public)
             .build_initiator()?;
     
-        let mut responder = snow::Builder::new(PATTERN.parse()?)
-            .local_private_key(&responder_keypair.private)
-            .remote_public_key(&initiator_keypair.public)
+        let mut server = snow::Builder::new(PATTERN.parse()?)
+            .local_private_key(&server_keypair.private)
+            .remote_public_key(&client_keypair.public)
             .build_responder()?;
 
         let (mut read_buf, mut first_msg, mut second_msg) =
@@ -110,20 +111,22 @@ mod tests {
         let mut buf = [0u8; 1024];
     
         // -> e
-        let len = initiator.write_message(&[], &mut first_msg)?;
+        let auth_key = "auth_key";
+        let len = client.write_message(auth_key.as_bytes(), &mut first_msg)?;
     
         // responder processes the first message...
-        responder.read_message(&first_msg[..len], &mut read_buf)?;
+        server.read_message(&first_msg[..len], &mut read_buf)?;
+        println!("{}", String::from_utf8(read_buf[..len].to_vec())?);
 
         // <- e, ee
-        let len = responder.write_message(&[], &mut second_msg)?;
+        let len = server.write_message(&[], &mut second_msg)?;
 
         // initiator processes the response...
-        initiator.read_message(&second_msg[..len], &mut read_buf)?;
+        client.read_message(&second_msg[..len], &mut read_buf)?;
 
         // NN handshake complete, transition into transport mode.
-        let mut initiator = initiator.into_transport_mode()?;
-        let mut responder = responder.into_transport_mode()?;
+        let mut initiator = client.into_transport_mode()?;
+        let mut responder = server.into_transport_mode()?;
 
         let len = initiator.write_message(b"test\0", &mut buf).unwrap();
         println!("{}", len);

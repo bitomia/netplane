@@ -1,11 +1,9 @@
-use crate::db::Db;
 use axum::{
-    extract::State, http::StatusCode, response::Json, routing::get, serve::Serve,
+    extract::State, http::StatusCode, response::Json, routing::get, routing::post, serve::Serve,
     Router,
 };
 use log::info;
-use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 use uuid::Uuid;
@@ -18,14 +16,6 @@ struct AppState {
 }
 
 type ServerError = String;
-
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-struct Client {
-    id: String,
-    sdn_client_ip: String,
-    network: String,
-    netmask: String,
-}
 
 #[derive(Deserialize)]
 struct CreateClientRequest {
@@ -40,61 +30,56 @@ struct DeleteClientRequest {
     id: String,
 }
 
-impl WebServer {
-    async fn get_clients(State(state): State<AppState>) -> Json<Vec<Client>> {
-        let clients = sqlx::query_as!(Client, "select id, sdn_client_ip, network, netmask from clients",)
-            .fetch_all(&state.db.pool)
-            .await
-            .expect("Cannot fetch clients");
+#[derive(Deserialize)]
+struct AuthClientRequest {
+    public_key: String,
+}
 
-        Json(clients)
+impl WebServer {
+    async fn get_clients(State(state): State<AppState>) -> (StatusCode, Json<Result<Vec<crate::db::Client>, ServerError>>) {
+        match state.db.get_all_clients().await {
+            Ok(clients) => (StatusCode::OK, Json(Ok(clients))),
+            Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+        }
     }
 
     async fn create_client(
         State(state): State<AppState>,
         Json(payload): Json<CreateClientRequest>,
-    ) -> (StatusCode, Json<Result<Client, ServerError>>) {
+    ) -> (StatusCode, Json<Result<crate::db::Client, ServerError>>) {
         let id = Uuid::new_v4();
-        let client = Client {
+
+        let client = crate::db::Client {
             id: id.to_string(),
             sdn_client_ip: payload.sdn_client_ip,
             network: payload.network,
             netmask: payload.netmask,
         };
-
-        let insert_ret =
-            sqlx::query("INSERT INTO clients (id, client_key, sdn_client_ip, network, netmask) VALUES (?, ?, ?, ?, ?)")
-                .bind(&client.id)
-                .bind(&payload.client_key)
-                .bind(&client.sdn_client_ip)
-                .bind(&client.network)
-                .bind(&client.netmask)
-                .execute(&state.db.pool)
-                .await;
-        if let Err(error) = insert_ret {
-            return (StatusCode::BAD_REQUEST, Json(Err(error.to_string())));
+        match state.db.create_client(&client).await {
+            Ok(_) => (StatusCode::CREATED, Json(Ok(client))),
+            Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
         }
-        (StatusCode::CREATED, Json(Ok(client)))
     }
 
     async fn delete_client(
         State(state): State<AppState>,
         Json(payload): Json<DeleteClientRequest>,
-    ) -> (StatusCode, Json<Result<Vec<Client>, ServerError>>) {
-        let delete_ret = sqlx::query("DELETE FROM clients WHERE id=? RETURNING *")
-            .bind(&payload.id)
-            .execute(&state.db.pool)
-            .await;
+    ) -> (StatusCode, Json<Result<Vec<crate::db::Client>, ServerError>>) {
+        let delete_ret = state.db.delete_client(payload.id).await;
         if let Err(error) = delete_ret {
             return (StatusCode::BAD_REQUEST, Json(Err(error.to_string())));
         }
+z
+        match state.db.get_all_clients().await {
+            Ok(clients) => (StatusCode::OK, Json(Ok(clients))),
+            Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+        }
+    }
 
-        let clients = sqlx::query_as!(Client, "select id, sdn_client_ip, network, netmask from clients",)
-            .fetch_all(&state.db.pool)
-            .await
-            .expect("Cannot fetch clients");
-
-        (StatusCode::OK, Json(Ok(clients)))
+    async fn auth_client(
+        State(AppState): State<AppState>,
+        Json(payload): Json<AuthClientRequest>
+    ) -> (StatusCode, Json<Result<(), ServerError>>) {
     }
 
     pub async fn new(addr: &str, db: Arc<Db>) -> Serve<tokio::net::TcpListener, Router, Router> {
@@ -108,6 +93,7 @@ impl WebServer {
                     .post(Self::create_client)
                     .delete(Self::delete_client),
             )
+            .route("/auth/:auth_key", post(Self::auth_client))
             .with_state(state)
             .fallback_service(serve_dir);
 
