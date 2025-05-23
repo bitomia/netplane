@@ -1,5 +1,5 @@
 use axum::{
-    extract::State, http::StatusCode, response::Json, routing::get, routing::post, serve::Serve,
+    extract::State, http::StatusCode, response::Json, routing::get, routing::post, serve::Serve, extract::Path,
     Router,
 };
 use log::info;
@@ -12,14 +12,13 @@ pub struct WebServer {}
 
 #[derive(Clone)]
 struct AppState {
-    db: Arc<Db>,
+    db: Arc<crate::db::Db>,
 }
 
 type ServerError = String;
 
 #[derive(Deserialize)]
 struct CreateClientRequest {
-    client_key: String,
     sdn_client_ip: String,
     network: String,
     netmask: String,
@@ -65,11 +64,11 @@ impl WebServer {
         State(state): State<AppState>,
         Json(payload): Json<DeleteClientRequest>,
     ) -> (StatusCode, Json<Result<Vec<crate::db::Client>, ServerError>>) {
-        let delete_ret = state.db.delete_client(payload.id).await;
+        let delete_ret = state.db.delete_client(&payload.id).await;
         if let Err(error) = delete_ret {
             return (StatusCode::BAD_REQUEST, Json(Err(error.to_string())));
         }
-z
+
         match state.db.get_all_clients().await {
             Ok(clients) => (StatusCode::OK, Json(Ok(clients))),
             Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
@@ -77,13 +76,19 @@ z
     }
 
     async fn auth_client(
-        State(AppState): State<AppState>,
+        State(state): State<AppState>,
+        Path(auth_key): Path<String>,
         Json(payload): Json<AuthClientRequest>
     ) -> (StatusCode, Json<Result<(), ServerError>>) {
+        match state.db.auth_client(&auth_key, &payload.public_key).await {
+            Ok(_) => (StatusCode::NOT_IMPLEMENTED, Json(Ok(()))),
+            Err(error) =>  (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+        }
     }
 
-    pub async fn new(addr: &str, db: Arc<Db>) -> Serve<tokio::net::TcpListener, Router, Router> {
+    pub async fn new(addr: &str, db: Arc<crate::db::Db>) -> Serve<tokio::net::TcpListener, Router, Router> {
         info!("Starting web server {}", addr);
+        
         let state = AppState { db };
         let serve_dir = ServeDir::new("web/build/client");
         let app = Router::new()
@@ -93,7 +98,7 @@ z
                     .post(Self::create_client)
                     .delete(Self::delete_client),
             )
-            .route("/auth/:auth_key", post(Self::auth_client))
+            .route("/auth/{auth_key}", post(Self::auth_client))
             .with_state(state)
             .fallback_service(serve_dir);
 

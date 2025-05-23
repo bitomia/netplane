@@ -23,6 +23,7 @@ pub struct Client {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct AuthClient {
     pub client_id: Option<String>,
+    pub used: Option<bool>,
 }
 
 impl Db {
@@ -76,19 +77,22 @@ impl Db {
     }
 
     pub async fn is_auth(self: &Self, auth_id: &String) -> Result<AuthClient, anyhow::Error> {
-        let auth_entries = sqlx::query_as!(AuthClient, "SELECT client_id FROM auth_links WHERE id=? AND used=false LIMIT 1", auth_id)
+        let auth_entry = sqlx::query_as!(AuthClient, "SELECT client_id, used FROM auth_links WHERE id=? LIMIT 1", auth_id)
             .fetch_one(&self.pool)
             .await?;
-        Ok(auth_entries)
+        Ok(auth_entry)
     }
     
     pub async fn auth_client(self: &Self, auth_id: &String, pub_key: &String) -> Result<(), anyhow::Error> {
         let is_authed = self.is_auth(&auth_id).await?;
-        if is_authed.client_id.is_none() { return Err(anyhow!("Not authed")); }
+        if is_authed.client_id.is_none() { return Err(anyhow!("No user")); }
+        if is_authed.used.is_none() { return Err(anyhow!("Unexpected error on auth")); }
+        if is_authed.used.unwrap() == true { return Err(anyhow!("Auth already used")); }
 
-        let tx = self.pool.begin().await?;
+        let mut tx = self.pool.begin().await?;
 
-        // TODO
+        sqlx::query("UPDATE auth_links SET used=true WHERE id=?").bind(&auth_id).execute(&mut *tx).await?;
+        sqlx::query("UPDATE clients SET pub_key=? WHERE id=?").bind(&pub_key).bind(&is_authed.client_id).execute(&mut *tx).await?;
         
         tx.commit().await?;
         Ok(())
