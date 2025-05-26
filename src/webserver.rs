@@ -36,18 +36,27 @@ struct AuthClientRequest {
 
 type WebResult<T> = (StatusCode, Result<Json<T>, Json<ServerError>>);
 
+macro_rules! web_ok {
+    ($expression:expr) => { (StatusCode::OK, Ok(Json($expression))) };
+}
+
+macro_rules! web_err {
+    ($status:expr, $value:expr) => { ($status, Err(Json($value))) };
+    ($value:expr) => { (StatusCode::BAD_REQUEST, Err(Json($value))) };
+}
+
 impl WebServer {
     async fn get_clients(State(state): State<AppState>) -> WebResult<Vec<crate::db::Client>> {
         match state.db.get_all_clients().await {
-            Ok(clients) => (StatusCode::OK, Ok(Json(clients))),
-            Err(error) => (StatusCode::BAD_REQUEST, Err(Json(error.to_string())))
+            Ok(clients) => web_ok!(clients),
+            Err(error) => web_err!(error.to_string())
         }
     }
 
     async fn create_client(
         State(state): State<AppState>,
         Json(payload): Json<CreateClientRequest>,
-    ) -> (StatusCode, Json<Result<crate::db::Client, ServerError>>) {
+    ) -> WebResult<crate::db::Client> {
         let id = Uuid::new_v4();
 
         let client = crate::db::Client {
@@ -57,23 +66,23 @@ impl WebServer {
             netmask: payload.netmask,
         };
         match state.db.create_client(&client).await {
-            Ok(_) => (StatusCode::CREATED, Json(Ok(client))),
-            Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+            Ok(_) => web_ok!(client),
+            Err(error) => web_err!(error.to_string())
         }
     }
 
     async fn delete_client(
         State(state): State<AppState>,
         Json(payload): Json<DeleteClientRequest>,
-    ) -> (StatusCode, Json<Result<Vec<crate::db::Client>, ServerError>>) {
+    ) -> WebResult<Vec<crate::db::Client>> {
         let delete_ret = state.db.delete_client(&payload.id).await;
         if let Err(error) = delete_ret {
-            return (StatusCode::BAD_REQUEST, Json(Err(error.to_string())));
+            return web_err!(StatusCode::BAD_REQUEST, error.to_string());
         }
 
         match state.db.get_all_clients().await {
-            Ok(clients) => (StatusCode::OK, Json(Ok(clients))),
-            Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+            Ok(clients) => web_ok!(clients),
+            Err(error) => web_err!(error.to_string())
         }
     }
 
@@ -81,10 +90,10 @@ impl WebServer {
         State(state): State<AppState>,
         Path(auth_key): Path<String>,
         Json(payload): Json<AuthClientRequest>
-    ) -> (StatusCode, Json<Result<(), ServerError>>) {
+    ) -> WebResult<&'static str> {
         match state.db.auth_client(&auth_key, &payload.public_key).await {
-            Ok(_) => (StatusCode::NOT_IMPLEMENTED, Json(Ok(()))),
-            Err(error) =>  (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+            Ok(_) => web_ok!("done"),
+            Err(error) =>  web_err!(error.to_string()),
         }
     }
 
