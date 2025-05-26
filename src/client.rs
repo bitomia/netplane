@@ -196,7 +196,11 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().collect();
     if args.len() >= 3 {
-        crypto::try_generate_crypto_keys("public.key", "private.key")?;
+        if let Err(err) = crypto::try_generate_crypto_keys("public.key", "private.key") {
+            if  err.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(anyhow!(err));
+            }
+        }
         if args.len() == 4 {
             let auth_key = auth_client(args[3].clone()).await?;
             std::fs::write("auth.key", auth_key)?;

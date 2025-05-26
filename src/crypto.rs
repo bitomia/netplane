@@ -5,6 +5,7 @@ use base64::{Engine as _, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use serde::{Deserialize, Serialize};
+use std::io::{Error, ErrorKind};
 
 type HmacSha256 = Hmac<Sha256>;
 static PATTERN: &'static str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
@@ -19,13 +20,24 @@ pub fn load_auth_key() -> Result<String> {
     Ok(key)
 }
 
-pub fn try_generate_crypto_keys(public_filepath: &str, private_filepath: &str) -> Result<()> {
+
+pub fn try_generate_crypto_keys(public_filepath: &str, private_filepath: &str) -> Result<(), std::io::Error> {
     if Path::new(private_filepath).exists() || Path::new(public_filepath).exists() {
-        return Err(anyhow!("auth key files already exist"));
+        return Err(Error::new(ErrorKind::AlreadyExists, "key files already exist"));
     }
-    
-    let keypair = snow::Builder::new(PATTERN.parse()?)
-        .generate_keypair()?;
+
+    let parsed_pattern = match PATTERN.parse() {
+        Ok(value) => value,
+        Err(_)=> {
+            return Err(Error::new(ErrorKind::Other, "Error parsing pattern"));
+        }
+    };
+    let keypair = match snow::Builder::new(parsed_pattern).generate_keypair() {
+        Ok(value) => value,
+        Err(_) => {
+            return Err(Error::new(ErrorKind::Other, "Error generating keypair"));
+        }
+    };
     let public_b64 = general_purpose::URL_SAFE_NO_PAD.encode(keypair.public);
     let private_b64 = general_purpose::URL_SAFE_NO_PAD.encode(keypair.private);
 
