@@ -4,11 +4,22 @@ use std::path::Path;
 use base64::{Engine as _, engine::general_purpose};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use serde::{Deserialize, Serialize};
 
 type HmacSha256 = Hmac<Sha256>;
 static PATTERN: &'static str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
-pub fn try_generate_auth_keys(public_filepath: &str, private_filepath: &str) -> Result<()> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthData {
+    pub client_id: String,
+}
+
+pub fn load_auth_key() -> Result<String> {
+    let key = std::fs::read_to_string("auth.key")?;
+    Ok(key)
+}
+
+pub fn try_generate_crypto_keys(public_filepath: &str, private_filepath: &str) -> Result<()> {
     if Path::new(private_filepath).exists() || Path::new(public_filepath).exists() {
         return Err(anyhow!("auth key files already exist"));
     }
@@ -24,7 +35,7 @@ pub fn try_generate_auth_keys(public_filepath: &str, private_filepath: &str) -> 
     Ok(())
 }
 
-pub fn try_load_auth_keys(public_filepath: &str, private_filepath: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+pub fn try_load_crypto_keys(public_filepath: &str, private_filepath: &str) -> Result<(Vec<u8>, Vec<u8>)> {
     let pub_b64 = std::fs::read_to_string(public_filepath)?;
     let priv_b64 = std::fs::read_to_string(private_filepath)?;
     let private_key = general_purpose::URL_SAFE_NO_PAD.decode(priv_b64.trim())?;
@@ -33,22 +44,22 @@ pub fn try_load_auth_keys(public_filepath: &str, private_filepath: &str) -> Resu
     Ok((private_key, public_key))
 }
 
-pub fn sign_key(pubkey: &[u8]) -> String {
+pub fn sign_key(key: &[u8]) -> String {
     let secret_key = std::env::var("SECRET_KEY").unwrap();
     
     let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
-    mac.update(pubkey);
+    mac.update(key);
     
     let signature = mac.finalize().into_bytes();
     let signature_b64 = general_purpose::URL_SAFE_NO_PAD.encode(signature);
-    let key_b64 = general_purpose::URL_SAFE_NO_PAD.encode(pubkey);
+    let key_b64 = general_purpose::URL_SAFE_NO_PAD.encode(key);
     format!("{}.{}", key_b64, signature_b64)
 }
 
-pub fn verify_signed_key(signed_pubkey: String) -> bool {
-    let parts: Vec<&str> = signed_pubkey.split(".").collect();
+pub fn verify_signed_key(signed_key: String) -> Result<AuthData> {
+    let parts: Vec<&str> = signed_key.split(".").collect();
     if parts.len() != 2 {
-        return false;
+        return Err(anyhow!("Malformed key"));
     }
     let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
 
@@ -56,7 +67,13 @@ pub fn verify_signed_key(signed_pubkey: String) -> bool {
     let mut  mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
 
     mac.update(general_purpose::URL_SAFE_NO_PAD.decode(parts[0]).unwrap().as_slice());
-    mac.verify_slice(&signature[..]).is_ok()
+    match mac.verify_slice(&signature[..]) {
+        Ok(_) => {
+            let auth_data = serde_json::from_str::<AuthData>(&parts[0])?;
+            Ok(auth_data)
+        },
+        Err(err) => Err(anyhow!(err))
+    }
 }
 
 #[cfg(test)]
@@ -67,8 +84,8 @@ mod tests {
     fn test_noise() {
         let _ = std::fs::remove_file("public_test");
         let _ = std::fs::remove_file("private_test");
-        assert!(try_generate_auth_keys("public_test", "private_test").is_ok(), "cannot generate auth key files");
-        let keys = try_load_auth_keys("public_test", "private_test");
+        assert!(try_generate_crypto_keys("public_test", "private_test").is_ok(), "cannot generate auth key files");
+        let keys = try_load_crypto_keys("public_test", "private_test");
         assert!(keys.is_ok(), "cannot load keys");
         assert!(snow_test().is_err(), "snow test failed");
     }

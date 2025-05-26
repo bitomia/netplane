@@ -1,6 +1,12 @@
 use anyhow::{anyhow, Result};
 use bincode::{config, Decode, Encode};
 use std::net::Ipv4Addr;
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+pub struct AuthClientRequest {
+    pub public_key: String,
+}
 
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
 
@@ -13,14 +19,14 @@ pub enum HandshakeStatus {
 #[derive(Encode, Decode, PartialEq, Debug)]
 pub struct HandshakeReq {
     pub header: [u8; 3],
-    pub public_key: String,
+    pub auth_key: String,
 }
 
 impl HandshakeReq {
-    pub fn new(public_key: &String) -> Self {
+    pub fn new(auth_key: &String) -> Self {
         Self {
             header: HANDSHAKE_REQUEST_HEADER,
-            public_key: public_key.clone(),
+            auth_key: auth_key.clone(),
         }
     }
     pub fn serialize(self: &Self) -> Result<Vec<u8>> {

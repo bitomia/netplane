@@ -1,13 +1,14 @@
+use crypto::load_auth_key;
 use log::{debug, error, info};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use std::env;
 use tokio::net::UdpSocket;
 use dotenv::dotenv;
+use reqwest::Client;
 use tokio::signal::unix::{signal, SignalKind};
 //use tray_item::{TrayItem, IconSource};
 use common::{HandshakeReq, HandshakeRep};
-
-
+use axum::http::StatusCode;
 pub mod packet;
 pub mod tundev;
 pub mod common;
@@ -30,12 +31,12 @@ struct StartParams {
     ip_addr: String,
 }
 
-async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
+async fn handshake(auth_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
     socket
         .connect(server_addr.clone())
         .await?;
 
-    let handshake = HandshakeReq::new(&client_key);
+    let handshake = HandshakeReq::new(&auth_key);
     socket
         .send(&handshake.serialize()?)
         .await?;
@@ -56,8 +57,7 @@ async fn handshake(client_key: String, server_addr: String, socket: &UdpSocket) 
 }
 
 pub async fn run(
-    client_key: String,
-    tun_name: String,
+    tun_dev: String,
     server_addr: String,
 ) -> Result<()> {
     info!("Starting client");
@@ -80,8 +80,9 @@ pub async fn run(
     // let mut inner = tray.inner_mut();
     // inner.add_quit_item("Quit");
     // inner.display();
-
-    let start_params = match handshake(client_key, server_addr, &socket).await {
+    
+    let auth_key = load_auth_key()?;
+    let start_params = match handshake(auth_key, server_addr, &socket).await {
         Ok(p) => {
             info!("Handshake successfully finished {:?}", p);
             p
@@ -95,7 +96,7 @@ pub async fn run(
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
 
-    let mut dev = tundev::TunDev::new(tun_name, start_params.netmask.as_str(), start_params.destination.as_str(), start_params.ip_addr.as_str());
+    let mut dev = tundev::TunDev::new(tun_dev, start_params.netmask.as_str(), start_params.destination.as_str(), start_params.ip_addr.as_str());
     
     loop {
         tokio::select! {
@@ -146,9 +147,33 @@ pub async fn run(
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [client_key] [tun_name] [server_ip]",
+        "Use {} [tun_dev] [server_ip] [--auth=link]",
         args[0]
     );
+}
+
+async fn auth_client(arg: String) -> Result<String> {
+    let parts:Vec<&str> = arg.split("=").collect();
+    if parts.len() != 2 {
+        return Err(anyhow!("Invalid auth argument"));
+    }
+    
+    let (public_key, _) = crate::crypto::try_load_crypto_keys("public.key", "private.key")?;
+    let payload = crate::common::AuthClientRequest { public_key: String::from_utf8(public_key)? };
+    
+    let res = Client::new()
+        .post(parts[1].to_string())
+        .json(&payload)
+        .send()
+        .await?;
+    
+    match res.status() {
+        StatusCode::OK => {
+            let auth_key = res.text().await?;
+            Ok(auth_key)
+        },
+        _ => Err(anyhow!("Auth failed"))
+    }
 }
 
 #[tokio::main]
@@ -170,15 +195,15 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let args: Vec<String> = env::args().collect();
-    if args.len() == 2 && args[1] == "--auth" {
-        println!("Generating auth keys");
-        crypto::try_generate_auth_keys("public.key", "private.key")?;
-        println!("Keys saved.");
-    } else if args.len() == 4 {
+    if args.len() >= 3 {
+        crypto::try_generate_crypto_keys("public.key", "private.key")?;
+        if args.len() == 4 {
+            let auth_key = auth_client(args[3].clone()).await?;
+            std::fs::write("auth.key", auth_key)?;
+        }
         let _ = run(
             args[1].clone(),
             args[2].clone(),
-            args[3].clone(),
         ).await;
     } else {
         echo_syntax(&args);
