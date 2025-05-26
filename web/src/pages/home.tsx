@@ -1,4 +1,6 @@
 import { useState, useCallback } from "react";
+import { data } from "react-router";
+
 import logo from "../assets/reticula.svg";
 import DeleteClientDialog from "./DeleteClientDialog";
 import NewClientDialog from "./NewClientDialog";
@@ -14,25 +16,6 @@ export default function () {
     });
   }, []);
 
-  const onCreateClient = useCallback(
-    (sdnIP, clientKey, network, netmask) => {
-      fetch(`/api/clients`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ sdn_client_ip: sdnIP, client_key: clientKey, netmask, network }),
-      }).then(async (res) => {
-        const data = await res.json();
-        if (data.Ok) {
-          setClients([...clients, data.Ok]);
-          setNewClient(false);
-        }
-      });
-    },
-    [clients],
-  );
-
   const onDeleteClient = (clientId) => {
     fetch(`/api/clients`, {
       method: "DELETE",
@@ -42,10 +25,8 @@ export default function () {
       body: JSON.stringify({ id: clientId }),
     }).then(async (res) => {
       const data = await res.json();
-      if (data.Ok) {
-        setClients(data.Ok);
-        setDeleteClient(false);
-      }
+      setClients(data);
+      setDeleteClient(false);
     });
   };
 
@@ -86,12 +67,6 @@ export default function () {
                       </div>
                       <div className="flex flex-col w-full">
                         <span className="font-bold text-xs text-gray-400">
-                          NETWORK
-                        </span>
-                        {c.network}
-                      </div>
-                      <div className="flex flex-col w-full">
-                        <span className="font-bold text-xs text-gray-400">
                           NETMASK
                         </span>
                         {c.netmask}
@@ -107,8 +82,9 @@ export default function () {
       </div>
       {newClient && (
         <NewClientDialog
+          clients={clients}
           setNewClient={setNewClient}
-          onCreateClient={onCreateClient}
+          setClients={setClients}
         />
       )}
       {deleteClient && (

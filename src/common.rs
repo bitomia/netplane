@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use bincode::{config, Decode, Encode};
+use std::net::Ipv4Addr;
 
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
 
@@ -73,4 +74,21 @@ impl HandshakeRep {
     pub fn size(self: &Self) -> Result<usize> {
         Ok(self.serialize()?.len())
     }
+}
+
+pub fn calculate_network_address(ip_str: &str, netmask_str: &str) -> Result<Ipv4Addr, String> {
+    let ip: Ipv4Addr = ip_str.parse().map_err(|_| "Invalid IP address format")?;
+    let netmask: Ipv4Addr = netmask_str.parse().map_err(|_| "Invalid netmask format")?;
+
+    let ip_octets = ip.octets();
+    let netmask_octets = netmask.octets();
+
+    let network_octets = [
+        ip_octets[0] & netmask_octets[0],
+        ip_octets[1] & netmask_octets[1],
+        ip_octets[2] & netmask_octets[2],
+        ip_octets[3] & netmask_octets[3],
+    ];
+
+    Ok(Ipv4Addr::from(network_octets))
 }
