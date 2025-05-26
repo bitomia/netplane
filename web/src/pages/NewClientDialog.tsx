@@ -1,13 +1,32 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 
-export default ({ setNewClient, onCreateClient }) => {
+export default ({ setNewClient, setClients, clients }) => {
+  const [error, setError] = useState();
   const [sdnIP, setSDNIP] = useState("");
-  const [clientKey, setClientKey] = useState("");
-  const [network, setNetwork] = useState("");
   const [netmask, setNetmask] = useState("");
-  const createDisabled = useMemo(
-    () => sdnIP?.length == 0 || clientKey.length == 0 ||netmask?.length == 0 || network?.length == 0,
-    [sdnIP, clientKey],
+    const createDisabled = useMemo(
+    () => sdnIP?.length == 0 || netmask?.length == 0,
+    [sdnIP, netmask],
+  );
+  const onCreateClient = useCallback(
+    (sdnIP, netmask) => {
+      fetch(`/api/clients`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sdn_client_ip: sdnIP, netmask }),
+      }).then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setClients([...clients, data]);
+          setNewClient(false);
+        } else {
+          setError(await res.json());
+        }
+      });
+    },
+    [clients],
   );
 
   return (
@@ -35,46 +54,14 @@ export default ({ setNewClient, onCreateClient }) => {
                     Create client
                   </h3>
                   <div className="mt-2 text-sm text-gray-700 flex flex-col">
-                    <label className="mt-3">Client Key</label>
-                    <input
-                      type="text"
-                      placeholder="Signed key"
-                      className="px-3 py-2 border border-slate-200 rounded invalid:border-pink-500 invalid:text-pink-600 focus:invalid:border-pink-500 focus:invalid:outline-pink-500"
-                      onChange={(e) => {
-                        if (e.currentTarget.validity.valid) {
-                          setClientKey(e.currentTarget.value);
-                        }
-                      }}
-                      minLength={7}
-                      maxLength={15}
-                      size={15}
-                      pattern="^(?>(\d|[1-9]\d{2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(?1)$"
-                      autoComplete="off"
-                    />
                     <label className="mt-3">SDN IP Address</label>
                     <input
                       type="text"
-                      placeholder="xxx.xxx.xxx.xxx"
+                      placeholder="10.0.0.1"
                       className="px-3 py-2 border border-slate-200 rounded invalid:border-pink-500 invalid:text-pink-600 focus:invalid:border-pink-500 focus:invalid:outline-pink-500"
                       onChange={(e) => {
                         if (e.currentTarget.validity.valid) {
                           setSDNIP(e.currentTarget.value);
-                        }
-                      }}
-                      minLength={7}
-                      maxLength={15}
-                      size={15}
-                      pattern="^(?>(\d|[1-9]\d{2}|1\d\d|2[0-4]\d|25[0-5])\.){3}(?1)$"
-                      autoComplete="off"
-                    />
-                    <label className="mt-3">Network</label>
-                    <input
-                      type="text"
-                      placeholder="xxx.xxx.xxx.xxx"
-                      className="px-3 py-2 border border-slate-200 rounded invalid:border-pink-500 invalid:text-pink-600 focus:invalid:border-pink-500 focus:invalid:outline-pink-500"
-                      onChange={(e) => {
-                        if (e.currentTarget.validity.valid) {
-                          setNetwork(e.currentTarget.value);
                         }
                       }}
                       minLength={7}
@@ -103,12 +90,17 @@ export default ({ setNewClient, onCreateClient }) => {
                 </div>
               </div>
             </div>
+            {error && (
+              <div className="mx-5 px-5 py-2 bg-red-200 text-red-950 rounded text-sm">
+                {error}
+              </div>
+            )}
             <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
               <button
                 type="button"
                 disabled={createDisabled}
                 className="inline-flex w-full justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-green-500 sm:ml-3 sm:w-auto disabled:bg-slate-200"
-                onClick={() => onCreateClient(sdnIP, clientKey, network, netmask)}
+                onClick={() => onCreateClient(sdnIP, netmask)}
               >
                 Create
               </button>

@@ -7,6 +7,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 use uuid::Uuid;
+use crate::common::calculate_network_address;
 
 pub struct WebServer {}
 
@@ -20,7 +21,6 @@ type ServerError = String;
 #[derive(Deserialize)]
 struct CreateClientRequest {
     sdn_client_ip: String,
-    network: String,
     netmask: String,
 }
 
@@ -57,16 +57,15 @@ impl WebServer {
         State(state): State<AppState>,
         Json(payload): Json<CreateClientRequest>,
     ) -> WebResult<crate::db::Client> {
-        let id = Uuid::new_v4();
-
-        let client = crate::db::Client {
-            id: id.to_string(),
-            sdn_client_ip: payload.sdn_client_ip,
-            network: payload.network,
-            netmask: payload.netmask,
+        let network_address = calculate_network_address(payload.sdn_client_ip.as_str(), payload.netmask.as_str());
+        let network_address = match network_address {
+            Ok(value) => value.to_string(),
+            Err(err) => { return web_err!(format!("Invalid netmask or IP: {}", err)); } 
         };
-        match state.db.create_client(&client).await {
-            Ok(_) => web_ok!(client),
+        
+        let id = Uuid::new_v4();
+        match state.db.create_client(&id.to_string().as_str(), &payload.sdn_client_ip, &network_address.as_str(), &payload.netmask.as_str()).await {
+            Ok(client) => web_ok!(client),
             Err(error) => web_err!(error.to_string())
         }
     }
