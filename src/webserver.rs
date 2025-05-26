@@ -34,11 +34,13 @@ struct AuthClientRequest {
     public_key: String,
 }
 
+type WebResult<T> = (StatusCode, Result<Json<T>, Json<ServerError>>);
+
 impl WebServer {
-    async fn get_clients(State(state): State<AppState>) -> (StatusCode, Json<Result<Vec<crate::db::Client>, ServerError>>) {
+    async fn get_clients(State(state): State<AppState>) -> WebResult<Vec<crate::db::Client>> {
         match state.db.get_all_clients().await {
-            Ok(clients) => (StatusCode::OK, Json(Ok(clients))),
-            Err(error) => (StatusCode::BAD_REQUEST, Json(Err(error.to_string())))
+            Ok(clients) => (StatusCode::OK, Ok(Json(clients))),
+            Err(error) => (StatusCode::BAD_REQUEST, Err(Json(error.to_string())))
         }
     }
 
