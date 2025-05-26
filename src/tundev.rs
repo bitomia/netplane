@@ -8,7 +8,7 @@ pub struct TunDev {
 
 impl TunDev {
     #[allow(unused_variables)]
-    pub fn new(tun_name: String, netmask: &str, destination: &str, ip_addr: &str) -> Self {
+    pub fn new(tun_dev: String, netmask: &str, destination: &str, ip_addr: &str) -> Self {
         info!("TUN initialized for {}", ip_addr);
 
         let mut config = Configuration::default();
@@ -23,7 +23,7 @@ impl TunDev {
         });
 
         #[cfg(not(target_os = "macos"))]
-        config.tun_name(tun_name);
+        config.tun_name(tun_dev);
 
         config.up();
         let dev = tun::create_as_async(&config).expect("Cannot create TUN device");

@@ -13,6 +13,7 @@ pub mod tundev;
 pub mod common;
 pub mod db;
 pub mod webserver;
+pub mod crypto;
 
 use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
@@ -62,17 +63,17 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
                         info!("HandshakeReq received {}", src);
-                        let client_sdn_ip = db.get_client_sdn_ip(&handshake.public_key).await;
-                        if let Some(client_sdn_ip) = client_sdn_ip
+                        let auth_client = crate::crypto::verify_signed_key(handshake.auth_key)?;
+                        if let Ok(client) = db.get_client(&auth_client.client_id).await
                         {
                             clients.insert(Client {
                                 src,
-                                sdn_ip_addr: Ipv4Addr::from_str(client_sdn_ip.as_str())?
+                                sdn_ip_addr: Ipv4Addr::from_str(&client.sdn_client_ip.as_str())?
                             });
-                            info!("Client connected {} {}", src, client_sdn_ip);
+                            info!("Client connected {} {}", src, client.sdn_client_ip);
                             let netmask = String::from("255.255.255.0");
                             let destination = String::from("12.0.0.0");
-                            let reply = HandshakeRep::new(&netmask, &destination, &client_sdn_ip);
+                            let reply = HandshakeRep::new(&netmask, &destination, &client.sdn_client_ip);
                             if let Ok(_) = socket.send_to(&reply.serialize()?, &src) {
                                 clients_status.insert(src, HandshakeStatus::Initialized);
                             } else {

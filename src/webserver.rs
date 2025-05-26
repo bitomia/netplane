@@ -29,11 +29,6 @@ struct DeleteClientRequest {
     id: String,
 }
 
-#[derive(Deserialize)]
-struct AuthClientRequest {
-    public_key: String,
-}
-
 type WebResult<T> = (StatusCode, Result<Json<T>, Json<ServerError>>);
 
 macro_rules! web_ok {
@@ -87,11 +82,11 @@ impl WebServer {
 
     async fn auth_client(
         State(state): State<AppState>,
-        Path(auth_key): Path<String>,
-        Json(payload): Json<AuthClientRequest>
-    ) -> WebResult<&'static str> {
-        match state.db.auth_client(&auth_key, &payload.public_key).await {
-            Ok(_) => web_ok!("done"),
+        Path(auth_link_id): Path<String>,
+        Json(payload): Json<crate::common::AuthClientRequest>
+    ) -> WebResult<String> {
+        match state.db.auth_client(&auth_link_id, &payload.public_key).await {
+            Ok(auth_key) => web_ok!(auth_key),
             Err(error) =>  web_err!(error.to_string()),
         }
     }

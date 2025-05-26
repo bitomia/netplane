@@ -4,6 +4,8 @@ use std::{env, path::Path as FilePath};
 use serde::{Deserialize, Serialize};
 use log::info;
 
+use crate::crypto::sign_key;
+
 pub enum ErrorCode {
     CannotConnect,
 }
@@ -49,13 +51,6 @@ impl Db {
         Db { pool }
     }
 
-    pub async fn get_client_sdn_ip(self: &Self, client_key: &str) -> Option<String> {
-        sqlx::query_scalar("SELECT sdn_client_ip FROM clients WHERE public_key = $1")
-            .bind(client_key)
-            .fetch_optional(&self.pool)
-            .await.ok()?
-    }
-
     pub async fn create_client(self: &Self, client_id: &str, sdn_client_ip: &str, network: &str, netmask: &str) -> Result<Client, anyhow::Error> {
         let auth_link_id = uuid::Uuid::new_v4();
         
@@ -84,7 +79,7 @@ impl Db {
         Ok(auth_entry)
     }
     
-    pub async fn auth_client(self: &Self, auth_id: &String, pub_key: &String) -> Result<Client, anyhow::Error> {
+    pub async fn auth_client(self: &Self, auth_id: &String, pub_key: &String) -> Result<String, anyhow::Error> {
         match self.is_auth(&auth_id).await {
             Ok(is_authed) => {
                 let has_used = match is_authed.used {
@@ -105,7 +100,9 @@ impl Db {
                 sqlx::query("UPDATE clients SET pub_key=? WHERE id=?").bind(&pub_key).bind(&client_id).execute(&mut *tx).await?;
                 tx.commit().await?;
 
-                self.get_client(&client_id).await
+                let auth_data = crate::crypto::AuthData { client_id };
+                let auth_data = serde_json::json!(auth_data).to_string();
+                Ok(sign_key(auth_data.as_bytes()))
             },
             Err(err) => Err(anyhow!(err))
         }
