@@ -16,7 +16,9 @@ pub struct AuthData {
 }
 
 pub fn load_auth_key() -> Result<String> {
-    let key = std::fs::read_to_string("auth.key")?;
+    let key = std::fs::read_to_string("auth.key").map_err(
+        |err| std::io::Error::new(err.kind(), format!("Opening auth.key file failed: {}", err))
+    )?;
     Ok(key)
 }
 
@@ -72,8 +74,8 @@ pub fn verify_signed_key(signed_key: String) -> Result<AuthData> {
     if parts.len() != 2 {
         return Err(anyhow!("Malformed key"));
     }
-    let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
-    let secret_key = std::env::var("SECRET_KEY").unwrap();
+    let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1])?;
+    let secret_key = std::env::var("SECRET_KEY")?;
     let mut  mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
     mac.update(general_purpose::URL_SAFE_NO_PAD.decode(parts[0]).unwrap().as_slice());
 

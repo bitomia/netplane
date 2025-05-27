@@ -63,27 +63,29 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
                         info!("HandshakeReq received {}", src);
-                        let auth_client = crate::crypto::verify_signed_key(handshake.auth_key)?;
-                        if let Ok(client) = db.get_client(&auth_client.client_id).await
-                        {
-                            clients.insert(Client {
-                                src,
-                                sdn_ip_addr: Ipv4Addr::from_str(&client.sdn_client_ip.as_str())?
-                            });
-                            info!("Client connected {} {}", src, client.sdn_client_ip);
-                            let netmask = String::from("255.255.255.0");
-                            let destination = String::from("12.0.0.0");
-                            let reply = HandshakeRep::new(&netmask, &destination, &client.sdn_client_ip);
-                            if let Ok(_) = socket.send_to(&reply.serialize()?, &src) {
-                                clients_status.insert(src, HandshakeStatus::Initialized);
-                            } else {
-                                // TODO
+                        match crate::crypto::verify_signed_key(handshake.auth_key) {
+                            Ok(auth_client) => {
+                                if let Ok(client) = db.get_client(&auth_client.client_id).await {
+                                    clients.insert(Client {
+                                        src,
+                                        sdn_ip_addr: Ipv4Addr::from_str(&client.sdn_client_ip.as_str())?
+                                    });
+                                    info!("Client connected {} {}", src, client.sdn_client_ip);
+                                    let netmask = String::from("255.255.255.0");
+                                    let destination = String::from("12.0.0.0");
+                                    let reply = HandshakeRep::new(&netmask, &destination, &client.sdn_client_ip);
+                                    if let Ok(_) = socket.send_to(&reply.serialize()?, &src) {
+                                        clients_status.insert(src, HandshakeStatus::Initialized);
+                                    } else {
+                                        // TODO
+                                    }
+                                } else {
+                                    error!("Ignoring Unknown user {}", src.ip());
+                                }                                
+                            },
+                            Err(error) => {
+                                error!("Unexpected verifying key error: {} {}", src.ip(), error);
                             }
-                        } else {
-                            error!(
-                                "Ignoring Unknown user {}",
-                                src.ip()
-                            );
                         }
                     },
                     Err(err) => {

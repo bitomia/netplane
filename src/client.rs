@@ -32,6 +32,7 @@ struct StartParams {
 }
 
 async fn handshake(auth_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
+    info!("Starting handshake with {}", server_addr);
     socket
         .connect(server_addr.clone())
         .await?;
@@ -61,6 +62,8 @@ pub async fn run(
     server_addr: String,
 ) -> Result<()> {
     info!("Starting client");
+    let auth_key = load_auth_key()?;
+    
     let socket = UdpSocket::bind("0.0.0.0:0")
         .await
         .expect("Cannot open socket");
@@ -81,7 +84,6 @@ pub async fn run(
     // inner.add_quit_item("Quit");
     // inner.display();
     
-    let auth_key = load_auth_key()?;
     let start_params = match handshake(auth_key, server_addr, &socket).await {
         Ok(p) => {
             info!("Handshake successfully finished {:?}", p);
@@ -161,7 +163,6 @@ async fn auth_client(arg: String) -> Result<String> {
     let (public_key, _) = crate::crypto::try_load_crypto_keys("public.key", "private.key")?;
     let payload = crate::common::AuthClientRequest { public_key };
     
-    println!("1");
     let res = Client::new()
         .post(parts[1].to_string())
         .json(&payload)
@@ -173,7 +174,13 @@ async fn auth_client(arg: String) -> Result<String> {
             let auth_key = res.text().await?;
             Ok(auth_key)
         },
-        _ => Err(anyhow!("Auth failed"))
+        _ => {
+            if let Ok(text) = res.text().await {
+                Err(anyhow!(format!("Auth failed: {}", text)))
+            } else {
+                Err(anyhow!(format!("Auth failed: Unknown error")))
+            }
+        }
     }
 }
 
@@ -209,7 +216,7 @@ async fn main() -> Result<()> {
         let _ = run(
             args[1].clone(),
             args[2].clone(),
-        ).await;
+        ).await?;
     } else {
         echo_syntax(&args);
         std::process::exit(1);

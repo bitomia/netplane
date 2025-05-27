@@ -14,6 +14,7 @@ pub struct WebServer {}
 #[derive(Clone)]
 struct AppState {
     db: Arc<crate::db::Db>,
+    server_url: String,
 }
 
 type ServerError = String;
@@ -43,7 +44,16 @@ macro_rules! web_err {
 impl WebServer {
     async fn get_clients(State(state): State<AppState>) -> WebResult<Vec<crate::db::Client>> {
         match state.db.get_all_clients().await {
-            Ok(clients) => web_ok!(clients),
+            Ok(clients) => web_ok!(
+                clients.iter().map(|c| crate::db::Client {
+                    id: c.id.clone(),
+                    auth_link_id: format!("http://{}/auth/{}", state.server_url, c.auth_link_id),
+                    sdn_client_ip: c.sdn_client_ip.clone(),
+                    network: c.network.clone(),
+                    netmask: c.netmask.clone(),
+                    used: c.used,
+                }).collect::<Vec<crate::db::Client>>()
+            ),
             Err(error) => web_err!(error.to_string())
         }
     }
@@ -93,8 +103,12 @@ impl WebServer {
 
     pub async fn new(addr: &str, db: Arc<crate::db::Db>) -> Serve<tokio::net::TcpListener, Router, Router> {
         info!("Starting web server {}", addr);
-        
-        let state = AppState { db };
+        let server_url = std::env::var("SERVER_URL").unwrap_or_else(|_| {
+            info!("Couldn't find SERVER_URL env var. Using default value.");
+            return "http://localhost:3000".to_string(); 
+        });
+
+        let state = AppState { db, server_url };
         let serve_dir = ServeDir::new("web/build/client");
         let app = Router::new()
             .route(
