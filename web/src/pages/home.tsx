@@ -5,7 +5,7 @@ import logo from "../assets/reticula.svg";
 import DeleteClientDialog from "./DeleteClientDialog";
 import NewClientDialog from "./NewClientDialog";
 
-export default function () {
+export default function() {
   const [deleteClient, setDeleteClient] = useState(null);
   const [newClient, setNewClient] = useState(false);
   const [clients, setClients] = useState([]);
@@ -16,7 +16,7 @@ export default function () {
     });
   }, []);
 
-  const onDeleteClient = (clientId) => {
+  const onDeleteClient = (clientId, authLink) => {
     fetch(`/api/clients`, {
       method: "DELETE",
       headers: {
@@ -55,7 +55,7 @@ export default function () {
                 <div
                   className="flex flex-row w-full mb-5 bg-gray-700 hover:bg-gray-600 hover:cursor-pointer  px-4 py-3 rounded"
                   key={c.id}
-                  onClick={() => setDeleteClient(c.id)}
+                  onClick={() => setDeleteClient([c.id, c.auth_link_id])}
                 >
                   <div className="w-full">
                     <div className="flex flex-row">
@@ -70,6 +70,12 @@ export default function () {
                           NETMASK
                         </span>
                         {c.netmask}
+                      </div>
+                      <div className="flex flex-col w-full">
+                        <span className="font-bold text-xs text-gray-400">
+                          Authed
+                        </span>
+                        {c.used ? "✅" : "⚠️"}
                       </div>
                     </div>
                     <div className="text-[10px] pb-1 text-gray-500">{c.id}</div>
@@ -89,7 +95,8 @@ export default function () {
       )}
       {deleteClient && (
         <DeleteClientDialog
-          client={deleteClient}
+          client={deleteClient[0]}
+          authLink={deleteClient[1]}
           setDeleteClient={setDeleteClient}
           onDeleteClient={onDeleteClient}
         />
