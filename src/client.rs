@@ -159,8 +159,9 @@ async fn auth_client(arg: String) -> Result<String> {
     }
     
     let (public_key, _) = crate::crypto::try_load_crypto_keys("public.key", "private.key")?;
-    let payload = crate::common::AuthClientRequest { public_key: String::from_utf8(public_key)? };
+    let payload = crate::common::AuthClientRequest { public_key };
     
+    println!("1");
     let res = Client::new()
         .post(parts[1].to_string())
         .json(&payload)
@@ -197,7 +198,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() >= 3 {
         if let Err(err) = crypto::try_generate_crypto_keys("public.key", "private.key") {
-            if  err.kind() != std::io::ErrorKind::AlreadyExists {
+            if err.kind() != std::io::ErrorKind::AlreadyExists {
                 return Err(anyhow!(err));
             }
         }
