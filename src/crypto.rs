@@ -38,6 +38,7 @@ pub fn try_generate_crypto_keys(public_filepath: &str, private_filepath: &str) -
             return Err(Error::new(ErrorKind::Other, "Error generating keypair"));
         }
     };
+
     let public_b64 = general_purpose::URL_SAFE_NO_PAD.encode(keypair.public);
     let private_b64 = general_purpose::URL_SAFE_NO_PAD.encode(keypair.private);
 
@@ -47,13 +48,11 @@ pub fn try_generate_crypto_keys(public_filepath: &str, private_filepath: &str) -
     Ok(())
 }
 
-pub fn try_load_crypto_keys(public_filepath: &str, private_filepath: &str) -> Result<(Vec<u8>, Vec<u8>)> {
+pub fn try_load_crypto_keys(public_filepath: &str, private_filepath: &str) -> Result<(String, String)> {
     let pub_b64 = std::fs::read_to_string(public_filepath)?;
     let priv_b64 = std::fs::read_to_string(private_filepath)?;
-    let private_key = general_purpose::URL_SAFE_NO_PAD.decode(priv_b64.trim())?;
-    let public_key = general_purpose::URL_SAFE_NO_PAD.decode(pub_b64.trim())?;
 
-    Ok((private_key, public_key))
+    Ok((pub_b64, priv_b64))
 }
 
 pub fn sign_key(key: &[u8]) -> String {
@@ -74,14 +73,14 @@ pub fn verify_signed_key(signed_key: String) -> Result<AuthData> {
         return Err(anyhow!("Malformed key"));
     }
     let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
-
     let secret_key = std::env::var("SECRET_KEY").unwrap();
     let mut  mac = HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
-
     mac.update(general_purpose::URL_SAFE_NO_PAD.decode(parts[0]).unwrap().as_slice());
+
     match mac.verify_slice(&signature[..]) {
         Ok(_) => {
-            let auth_data = serde_json::from_str::<AuthData>(&parts[0])?;
+            let key_b64 = general_purpose::URL_SAFE_NO_PAD.decode(parts[0])?;
+            let auth_data = serde_json::from_slice::<AuthData>(key_b64.as_slice())?;
             Ok(auth_data)
         },
         Err(err) => Err(anyhow!(err))
@@ -99,7 +98,7 @@ mod tests {
         assert!(try_generate_crypto_keys("public_test", "private_test").is_ok(), "cannot generate auth key files");
         let keys = try_load_crypto_keys("public_test", "private_test");
         assert!(keys.is_ok(), "cannot load keys");
-        assert!(snow_test().is_err(), "snow test failed");
+        assert!(snow_test().is_ok(), "snow test failed");
     }
 
     #[test]
@@ -107,45 +106,43 @@ mod tests {
         unsafe {
             std::env::set_var("SECRET_KEY", "secret_key");
         }
-        let key = String::from("test123");
-        let signed_key = sign_key(key.as_bytes());
+        let client_id = "1234".to_string();
+        let auth_data = crate::crypto::AuthData { client_id };
+        let auth_data = serde_json::json!(auth_data).to_string();
+        let signed_key = sign_key(auth_data.as_bytes());
 
         assert!(signed_key.len() != 0, "empty signed key");
-        assert!(verify_signed_key(signed_key), "verify signed key failed");
+        assert!(verify_signed_key(signed_key).is_ok(), "verify signed key failed");
     }
 
     fn snow_test() -> Result<(), anyhow::Error> {
         let client_keypair = snow::Builder::new(PATTERN.parse()?)
             .generate_keypair()?;
-
-
         let server_keypair = snow::Builder::new(PATTERN.parse()?)
             .generate_keypair()?;
 
         // ====
-    
         let mut client = snow::Builder::new(PATTERN.parse()?)
             .local_private_key(&client_keypair.private)
             .remote_public_key(&server_keypair.public)
             .build_initiator()?;
-    
         let mut server = snow::Builder::new(PATTERN.parse()?)
             .local_private_key(&server_keypair.private)
             .remote_public_key(&client_keypair.public)
             .build_responder()?;
-
+        println!("3");
         let (mut read_buf, mut first_msg, mut second_msg) =
             ([0u8; 1024], [0u8; 1024], [0u8; 1024]);
-
+        println!("4");
         let mut buf = [0u8; 1024];
     
         // -> e
         let auth_key = "auth_key";
         let len = client.write_message(auth_key.as_bytes(), &mut first_msg)?;
-    
+
         // responder processes the first message...
         server.read_message(&first_msg[..len], &mut read_buf)?;
-        println!("{}", String::from_utf8(read_buf[..len].to_vec())?);
+        //println!("{}", String::from_utf8(read_buf[..len].to_vec())?);
 
         // <- e, ee
         let len = server.write_message(&[], &mut second_msg)?;
@@ -158,7 +155,7 @@ mod tests {
         let mut responder = server.into_transport_mode()?;
 
         let len = initiator.write_message(b"test\0", &mut buf).unwrap();
-        println!("{}", len);
+        //println!("{}", len);
     
         let mut read_buf = [0u8; 1024];
         responder.read_message(&buf[..len], &mut read_buf).unwrap();
