@@ -94,9 +94,9 @@ impl WebServer {
         State(state): State<AppState>,
         Path(auth_link_id): Path<String>,
         Json(payload): Json<crate::common::AuthClientRequest>
-    ) -> WebResult<String> {
+    ) -> (StatusCode, Result<String, Json<ServerError>>) {
         match state.db.auth_client(&auth_link_id, &payload.public_key).await {
-            Ok(auth_key) => web_ok!(auth_key),
+            Ok(auth_key) => (StatusCode::OK, Ok(auth_key)),
             Err(error) =>  web_err!(error.to_string()),
         }
     }
