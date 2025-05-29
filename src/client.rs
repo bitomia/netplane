@@ -211,6 +211,7 @@ async fn main() -> Result<()> {
         }
         if args.len() == 4 {
             let auth_key = auth_client(args[3].clone()).await?;
+            println!("{}", auth_key);
             std::fs::write("auth.key", auth_key)?;
         }
         let _ = run(
