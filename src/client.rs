@@ -1,16 +1,17 @@
 use anyhow::{Result, anyhow};
 use crypto::load_auth_key;
 use dotenv::dotenv;
+use http_post::http_post_json;
 use log::{debug, error, info};
-use reqwest::Client;
 use std::env;
 use tokio::net::UdpSocket;
 use tokio::signal::unix::{SignalKind, signal};
 //use tray_item::{TrayItem, IconSource};
-use axum::http::StatusCode;
 use common::{HandshakeRep, HandshakeReq};
+
 pub mod common;
 pub mod crypto;
+pub mod http_post;
 pub mod packet;
 pub mod tundev;
 
@@ -162,24 +163,13 @@ async fn auth_client(arg: String) -> Result<String> {
     let (public_key, _) = crate::crypto::try_load_crypto_keys("public.key", "private.key")?;
     let payload = crate::common::AuthClientRequest { public_key };
 
-    let res = Client::new()
-        .post(parts[1].to_string())
-        .json(&payload)
-        .send()
-        .await?;
-
-    match res.status() {
-        StatusCode::OK => {
-            let auth_key = res.text().await?;
+    let res = http_post_json(parts[1], &payload)?;
+    match res.status_code {
+        axum::http::StatusCode::OK => {
+            let auth_key = res.payload;
             Ok(auth_key)
         }
-        _ => {
-            if let Ok(text) = res.text().await {
-                Err(anyhow!(format!("Auth failed: {}", text)))
-            } else {
-                Err(anyhow!(format!("Auth failed: Unknown error")))
-            }
-        }
+        _ => Err(anyhow!(format!("Auth failed: {}", res.payload))),
     }
 }
 

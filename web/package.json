@@ -28,5 +28,6 @@
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
     "vite-tsconfig-paths": "^5.1.4"
-  }
+  },
+  "packageManager": "pnpm@8.10.2+sha1.e0b68270e89c817ff88b7be62466a2128c53af02"
 }
