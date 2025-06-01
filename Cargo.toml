@@ -21,10 +21,7 @@ path = "src/migrate.rs"
     
 [dependencies]
 axum = { version = "0.8.1", features = ["ws"] }
-libc = "0.2.169"
 log = "0.4.22"
-mio = "1.0.3"
-nix = { version = "0.27", features = ["socket"] }
 tokio = { version = "1", features = ["full"] }
 tun = { version = "0.7", features = ["async"] }
 serde = { version = "1", features = ["derive"] }
@@ -33,12 +30,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tower-http = { version = "0.6.1", features = ["cors", "fs"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid"] }
 dotenv = "0.15.0"
-tray-item = { version = "0.10.0", optional = true }
 anyhow = "1.0.98"
 env_logger = "0.11.8"
 base64 = "0.22.1"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
-rand = "0.8"
 bincode = "2.0.1"
 snow = "0.9.6"
 hmac = "0.12.1"
