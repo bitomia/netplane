@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
-use bincode::{config, Decode, Encode};
+use anyhow::{Result, anyhow};
+use bincode::{Decode, Encode, config};
+use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct AuthClientRequest {
@@ -32,13 +32,13 @@ impl HandshakeReq {
     pub fn serialize(self: &Self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
             Ok(v) => Ok(v),
-            Err(err) => Err(anyhow!(err))
+            Err(err) => Err(anyhow!(err)),
         }
     }
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
         match bincode::decode_from_slice::<Self, _>(buf, config::standard()) {
             Ok((v, _)) => Ok(v),
-            Err(err) => Err(anyhow!(err))
+            Err(err) => Err(anyhow!(err)),
         }
     }
     pub fn size(self: &Self) -> Result<usize> {
@@ -68,13 +68,13 @@ impl HandshakeRep {
     pub fn serialize(self: &Self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
             Ok(v) => Ok(v),
-            Err(err) => Err(anyhow!(err))
+            Err(err) => Err(anyhow!(err)),
         }
     }
     pub fn deserialize(buf: &[u8]) -> Result<Self> {
         match bincode::decode_from_slice::<Self, _>(buf, config::standard()) {
             Ok((v, _)) => Ok(v),
-            Err(err) => Err(anyhow!(err))
+            Err(err) => Err(anyhow!(err)),
         }
     }
     pub fn size(self: &Self) -> Result<usize> {
