@@ -1,18 +1,18 @@
-use crypto::load_auth_key;
-use log::{debug, error, info};
 use anyhow::{Result, anyhow};
+use crypto::load_auth_key;
+use dotenv::dotenv;
+use log::{debug, error, info};
+use reqwest::Client;
 use std::env;
 use tokio::net::UdpSocket;
-use dotenv::dotenv;
-use reqwest::Client;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 //use tray_item::{TrayItem, IconSource};
-use common::{HandshakeReq, HandshakeRep};
 use axum::http::StatusCode;
-pub mod packet;
-pub mod tundev;
+use common::{HandshakeRep, HandshakeReq};
 pub mod common;
 pub mod crypto;
+pub mod packet;
+pub mod tundev;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -31,16 +31,16 @@ struct StartParams {
     ip_addr: String,
 }
 
-async fn handshake(auth_key: String, server_addr: String, socket: &UdpSocket) -> Result<StartParams> {
+async fn handshake(
+    auth_key: String,
+    server_addr: String,
+    socket: &UdpSocket,
+) -> Result<StartParams> {
     info!("Starting handshake with {}", server_addr);
-    socket
-        .connect(server_addr.clone())
-        .await?;
+    socket.connect(server_addr.clone()).await?;
 
     let handshake = HandshakeReq::new(&auth_key);
-    socket
-        .send(&handshake.serialize()?)
-        .await?;
+    socket.send(&handshake.serialize()?).await?;
 
     let mut socket_buf = [0; 1500];
     loop {
@@ -50,20 +50,17 @@ async fn handshake(auth_key: String, server_addr: String, socket: &UdpSocket) ->
                 netmask: handshake.netmask,
                 destination: handshake.destination,
                 ip_addr: handshake.sdn_ip_addr,
-            })
+            });
         } else {
             error!("Initialization failed. Keep trying");
         }
     }
 }
 
-pub async fn run(
-    tun_dev: String,
-    server_addr: String,
-) -> Result<()> {
+pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
     info!("Starting client");
     let auth_key = load_auth_key()?;
-    
+
     let socket = UdpSocket::bind("0.0.0.0:0")
         .await
         .expect("Cannot open socket");
@@ -83,23 +80,28 @@ pub async fn run(
     // let mut inner = tray.inner_mut();
     // inner.add_quit_item("Quit");
     // inner.display();
-    
+
     let start_params = match handshake(auth_key, server_addr, &socket).await {
         Ok(p) => {
             info!("Handshake successfully finished {:?}", p);
             p
-        },
+        }
         Err(err) => {
             error!("Handshake failed: {}", err);
             std::process::exit(1)
         }
     };
-    
+
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
 
-    let mut dev = tundev::TunDev::new(tun_dev, start_params.netmask.as_str(), start_params.destination.as_str(), start_params.ip_addr.as_str());
-    
+    let mut dev = tundev::TunDev::new(
+        tun_dev,
+        start_params.netmask.as_str(),
+        start_params.destination.as_str(),
+        start_params.ip_addr.as_str(),
+    );
+
     loop {
         tokio::select! {
             result = socket.recv_from(&mut socket_buf) => {
@@ -148,32 +150,29 @@ pub async fn run(
 }
 
 fn echo_syntax(args: &Vec<String>) {
-    println!(
-        "Use {} [tun_dev] [server_ip] [--auth=link]",
-        args[0]
-    );
+    println!("Use {} [tun_dev] [server_ip] [--auth=link]", args[0]);
 }
 
 async fn auth_client(arg: String) -> Result<String> {
-    let parts:Vec<&str> = arg.split("=").collect();
+    let parts: Vec<&str> = arg.split("=").collect();
     if parts.len() != 2 {
         return Err(anyhow!("Invalid auth argument"));
     }
-    
+
     let (public_key, _) = crate::crypto::try_load_crypto_keys("public.key", "private.key")?;
     let payload = crate::common::AuthClientRequest { public_key };
-    
+
     let res = Client::new()
         .post(parts[1].to_string())
         .json(&payload)
         .send()
         .await?;
-    
+
     match res.status() {
         StatusCode::OK => {
             let auth_key = res.text().await?;
             Ok(auth_key)
-        },
+        }
         _ => {
             if let Ok(text) = res.text().await {
                 Err(anyhow!(format!("Auth failed: {}", text)))
@@ -214,10 +213,7 @@ async fn main() -> Result<()> {
             println!("{}", auth_key);
             std::fs::write("auth.key", auth_key)?;
         }
-        let _ = run(
-            args[1].clone(),
-            args[2].clone(),
-        ).await?;
+        let _ = run(args[1].clone(), args[2].clone()).await?;
     } else {
         echo_syntax(&args);
         std::process::exit(1);

@@ -1,8 +1,8 @@
 use anyhow::anyhow;
-use sqlx::{sqlite::SqlitePoolOptions, Pool, Sqlite, FromRow};
-use std::{env, path::Path as FilePath};
-use serde::{Deserialize, Serialize};
 use log::info;
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, Pool, Sqlite, sqlite::SqlitePoolOptions};
+use std::{env, path::Path as FilePath};
 
 use crate::crypto::sign_key;
 
@@ -51,17 +51,25 @@ impl Db {
         Db { pool }
     }
 
-    pub async fn create_client(self: &Self, client_id: &str, sdn_client_ip: &str, network: &str, netmask: &str) -> Result<Client, anyhow::Error> {
+    pub async fn create_client(
+        self: &Self,
+        client_id: &str,
+        sdn_client_ip: &str,
+        network: &str,
+        netmask: &str,
+    ) -> Result<Client, anyhow::Error> {
         let auth_link_id = uuid::Uuid::new_v4();
-        
+
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT INTO clients (id, sdn_client_ip, network, netmask) VALUES (?, ?, ?, ?)")
-            .bind(&client_id)
-            .bind(&sdn_client_ip)
-            .bind(&network)
-            .bind(&netmask)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "INSERT INTO clients (id, sdn_client_ip, network, netmask) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&client_id)
+        .bind(&sdn_client_ip)
+        .bind(&network)
+        .bind(&netmask)
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("INSERT INTO auth_links (id, client_id) VALUES (?, ?)")
             .bind(&auth_link_id.to_string())
             .bind(&client_id)
@@ -73,61 +81,87 @@ impl Db {
     }
 
     pub async fn is_auth(self: &Self, auth_id: &String) -> Result<AuthClient, anyhow::Error> {
-        let auth_entry = sqlx::query_as!(AuthClient, "SELECT client_id, used FROM auth_links WHERE id=? LIMIT 1", auth_id)
-            .fetch_one(&self.pool)
-            .await?;
+        let auth_entry = sqlx::query_as!(
+            AuthClient,
+            "SELECT client_id, used FROM auth_links WHERE id=? LIMIT 1",
+            auth_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
         Ok(auth_entry)
     }
-    
-    pub async fn auth_client(self: &Self, auth_id: &String, pub_key: &String) -> Result<String, anyhow::Error> {
+
+    pub async fn auth_client(
+        self: &Self,
+        auth_id: &String,
+        pub_key: &String,
+    ) -> Result<String, anyhow::Error> {
         match self.is_auth(&auth_id).await {
             Ok(is_authed) => {
                 let has_used = match is_authed.used {
                     Some(value) => value,
-                    _ => { return Err(anyhow!("Unexpected error on auth")); }
+                    _ => {
+                        return Err(anyhow!("Unexpected error on auth"));
+                    }
                 };
                 if has_used == true {
                     return Err(anyhow!("Auth link already used"));
                 }
-                
+
                 let client_id = match is_authed.client_id {
                     Some(value) => value,
-                    _ => { return Err(anyhow!("No user")); }
+                    _ => {
+                        return Err(anyhow!("No user"));
+                    }
                 };
-                
+
                 let mut tx = self.pool.begin().await?;
-                sqlx::query("UPDATE auth_links SET used=true WHERE id=?").bind(&auth_id).execute(&mut *tx).await?;
-                sqlx::query("UPDATE clients SET pub_key=? WHERE id=?").bind(&pub_key).bind(&client_id).execute(&mut *tx).await?;
+                sqlx::query("UPDATE auth_links SET used=true WHERE id=?")
+                    .bind(&auth_id)
+                    .execute(&mut *tx)
+                    .await?;
+                sqlx::query("UPDATE clients SET pub_key=? WHERE id=?")
+                    .bind(&pub_key)
+                    .bind(&client_id)
+                    .execute(&mut *tx)
+                    .await?;
                 tx.commit().await?;
 
                 let auth_data = crate::crypto::AuthData { client_id };
                 let auth_data = serde_json::json!(auth_data).to_string();
                 Ok(sign_key(auth_data.as_bytes()))
-            },
-            Err(err) => Err(anyhow!(err))
+            }
+            Err(err) => Err(anyhow!(err)),
         }
     }
-    
+
     pub async fn get_all_clients(self: &Self) -> Result<Vec<Client>, anyhow::Error> {
-        let clients = sqlx::query_as!(Client, r#"
+        let clients = sqlx::query_as!(
+            Client,
+            r#"
 SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients
 INNER JOIN auth_links ON clients.id=auth_links.client_id
-"#,)
-            .fetch_all(&self.pool)
-            .await?;
+"#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
         Ok(clients)
     }
 
     pub async fn get_client(self: &Self, client_id: &str) -> Result<Client, anyhow::Error> {
-        let client = sqlx::query_as!(Client, r#"
+        let client = sqlx::query_as!(
+            Client,
+            r#"
 SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients
 INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
-"#, client_id)
-            .fetch_one(&self.pool)
-            .await?;
+"#,
+            client_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
         Ok(client)
     }
-    
+
     pub async fn delete_client(self: &Self, client_id: &String) -> Result<(), anyhow::Error> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM auth_links WHERE client_id=?")

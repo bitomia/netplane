@@ -1,7 +1,7 @@
 use dotenv::dotenv;
+use log::info;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::{env, path::Path as FilePath};
-use log::info;
 
 #[tokio::main]
 async fn main() {

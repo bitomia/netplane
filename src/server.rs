@@ -1,19 +1,19 @@
-use common::{HandshakeReq, HandshakeRep, HandshakeStatus};
+use anyhow::Result;
+use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
+use dotenv::dotenv;
 use log::{debug, error, info};
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::Arc;
-use dotenv::dotenv;
-use tokio::signal::unix::{signal, SignalKind};
-use anyhow::Result;
 use std::str::FromStr;
+use std::sync::Arc;
+use tokio::signal::unix::{SignalKind, signal};
 
+pub mod common;
+pub mod crypto;
+pub mod db;
 pub mod packet;
 pub mod tundev;
-pub mod common;
-pub mod db;
 pub mod webserver;
-pub mod crypto;
 
 use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
@@ -32,11 +32,13 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
     let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
-    
+
     loop {
         let (amt, src) = socket.recv_from(&mut buf).expect("Cannot receive");
         debug!("BYTES received {}", amt);
-        let status = clients_status.entry(src).or_insert(HandshakeStatus::Pending);
+        let status = clients_status
+            .entry(src)
+            .or_insert(HandshakeStatus::Pending);
         match status {
             HandshakeStatus::Initialized => {
                 if let Some(header) = parse_ipv4_header(&buf[..amt]) {
@@ -57,8 +59,8 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                     }
                 } else {
                     error!("Packet not supported");
-                }                
-            },
+                }
+            }
             HandshakeStatus::Pending => {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
@@ -68,12 +70,18 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                                 if let Ok(client) = db.get_client(&auth_client.client_id).await {
                                     clients.insert(Client {
                                         src,
-                                        sdn_ip_addr: Ipv4Addr::from_str(&client.sdn_client_ip.as_str())?
+                                        sdn_ip_addr: Ipv4Addr::from_str(
+                                            &client.sdn_client_ip.as_str(),
+                                        )?,
                                     });
                                     info!("Client connected {} {}", src, client.sdn_client_ip);
                                     let netmask = String::from("255.255.255.0");
                                     let destination = String::from("12.0.0.0");
-                                    let reply = HandshakeRep::new(&netmask, &destination, &client.sdn_client_ip);
+                                    let reply = HandshakeRep::new(
+                                        &netmask,
+                                        &destination,
+                                        &client.sdn_client_ip,
+                                    );
                                     if let Ok(_) = socket.send_to(&reply.serialize()?, &src) {
                                         clients_status.insert(src, HandshakeStatus::Initialized);
                                     } else {
@@ -81,19 +89,18 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                                     }
                                 } else {
                                     error!("Ignoring Unknown user {}", src.ip());
-                                }                                
-                            },
+                                }
+                            }
                             Err(error) => {
                                 error!("Unexpected verifying key error: {} {}", src.ip(), error);
                             }
                         }
-                    },
+                    }
                     Err(err) => {
                         error!("HandshakeReq failed: {}", err);
                     }
                 }
-            },
-
+            }
         }
     }
 }
