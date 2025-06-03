@@ -6,7 +6,7 @@ RUN corepack enable
 WORKDIR /usr/src/web
 COPY web/package.json ./
 COPY web/pnpm-lock.yaml ./
-COPY web/app ./app
+COPY web/src ./src
 COPY web/public ./public
 COPY web/tsconfig.json ./
 COPY web/vite.config.ts ./

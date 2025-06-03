@@ -28,7 +28,8 @@ struct Client {
 pub struct ProcessError(u32);
 
 async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
-    let socket = UdpSocket::bind("0.0.0.0:5000").expect("Cannot open socket");
+    let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
+    let socket = UdpSocket::bind(server_addr).expect("Cannot open socket");
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
     let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
@@ -125,7 +126,7 @@ async fn main() -> Result<(), ProcessError> {
     std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
 
     let db = Arc::new(db::Db::new().await);
-    let web_server = WebServer::new("0.0.0.0:3000", db.clone()).await;
+    let web_server = WebServer::new(db.clone()).await;
 
     info!("Starting reticula server");
     let reticula_server = tokio::spawn(reticula_server(db.clone()));
