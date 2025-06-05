@@ -3,7 +3,7 @@ use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
 use std::collections::{HashMap, HashSet};
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::signal::unix::{SignalKind, signal};
@@ -29,13 +29,13 @@ pub struct ProcessError(u32);
 
 async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
     let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-    let socket = UdpSocket::bind(server_addr).expect("Cannot open socket");
+    let socket = tokio::net::UdpSocket::bind(server_addr).await?;
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
     let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
 
     loop {
-        let (amt, src) = socket.recv_from(&mut buf).expect("Cannot receive");
+        let (amt, src) = socket.recv_from(&mut buf).await?;
         debug!("BYTES received {}", amt);
         let status = clients_status
             .entry(src)
@@ -54,8 +54,8 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                             // TODO this is broadcasting, parse IP header and send only to target
                             debug!("...relying");
                             socket
-                                .send_to(&buf[..amt], &client.src)
-                                .expect("Cannot send");
+                                .send_to(&buf[..amt], &client.src).await?;
+
                         }
                     }
                 } else {
@@ -83,10 +83,13 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                                         &destination,
                                         &client.sdn_client_ip,
                                     );
-                                    if let Ok(_) = socket.send_to(&reply.serialize()?, &src) {
-                                        clients_status.insert(src, HandshakeStatus::Initialized);
-                                    } else {
-                                        // TODO
+                                    match socket.send_to(&reply.serialize()?, &src).await {
+                                        Ok(_) => {
+                                            clients_status.insert(src, HandshakeStatus::Initialized);
+                                        },
+                                        Err(_) => {
+                                            // TODO
+                                        }
                                     }
                                 } else {
                                     error!("Ignoring Unknown user {}", src.ip());
