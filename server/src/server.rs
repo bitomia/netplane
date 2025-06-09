@@ -8,7 +8,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path as FilePath;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 
 pub mod common;
 pub mod crypto;
@@ -164,15 +164,22 @@ async fn main() -> Result<(), ProcessError> {
     }
 
     let db = Arc::new(db::Db::new().await);
-    let web_server = WebServer::new(db.clone()).await;
 
     info!("Starting reticula server");
     let reticula_server = tokio::spawn(reticula_server(db.clone()));
     info!("UDP server listening on 0.0.0.0:5000");
 
-    tokio::select! {
-        _ = web_server => info!("Web server stopped"),
-        _ = reticula_server => info!("Reticula server stopped")
+    let is_webserver_enabled = std::env::var("WEBSERVER_ENABLED").unwrap_or("true".to_string());
+    if is_webserver_enabled == "true" {
+        let web_server = WebServer::new(db.clone()).await;
+        tokio::select! {
+            _ = web_server => info!("Web server stopped"),
+            _ = reticula_server => info!("Reticula server stopped")
+        }
+    } else {
+        tokio::select! {
+            _ = reticula_server => info!("Reticula server stopped")
+        }
     }
     Ok(())
 }
