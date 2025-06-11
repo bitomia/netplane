@@ -1,4 +1,5 @@
 use rusqlite::{Connection, Result};
+use rpassword::read_password;
 
 struct User {
     id: i32,
@@ -30,8 +31,16 @@ fn main() -> Result<()> {
 }
 
 fn create_user(username: &str) -> Result<()> {
+    println!("Enter password:");
+    let password = read_password().unwrap();
+    println!("Confirm password:");
+    let password_confirmation = read_password().unwrap();
+    if password != password_confirmation {
+        println!("Passwords do not match");
+        return Ok(());
+    }
     let conn = Connection::open("users.db")?;
-    conn.execute("INSERT INTO users (username) VALUES (?1)", &[username])?;
+    conn.execute("INSERT INTO users (username, password) VALUES (?1, ?2)", &[username, &password])?;
     println!("User '{}' created", username);
     Ok(())
 }
