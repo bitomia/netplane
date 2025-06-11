@@ -15,10 +15,24 @@ fn main() -> Result<()> {
         "list" => {
             list_users()?;
         },
+        "create" => {
+            if args.len() < 3 {
+                println!("Usage: {} create <username>", args[0]);
+            } else {
+                create_user(&args[2])?;
+            }
+        },
         _ => {
             println!("Unknown command: {}", args[1]);
         }
     }
+    Ok(())
+}
+
+fn create_user(username: &str) -> Result<()> {
+    let conn = Connection::open("users.db")?;
+    conn.execute("INSERT INTO users (username) VALUES (?1)", &[username])?;
+    println!("User '{}' created", username);
     Ok(())
 }
 
