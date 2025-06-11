@@ -14,7 +14,6 @@ pub mod common;
 pub mod crypto;
 pub mod db;
 pub mod packet;
-pub mod tundev;
 pub mod webserver;
 
 use crate::packet::parse_ipv4_header;
