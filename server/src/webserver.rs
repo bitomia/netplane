@@ -1,4 +1,3 @@
-use crate::common::calculate_network_address;
 use axum::{
     Router, extract::Path, extract::State, http::StatusCode, response::Json, routing::get,
     routing::post, serve::Serve,
@@ -74,8 +73,10 @@ impl WebServer {
         State(state): State<AppState>,
         Json(payload): Json<CreateClientRequest>,
     ) -> WebResult<crate::db::Client> {
-        let network_address =
-            calculate_network_address(payload.sdn_client_ip.as_str(), payload.netmask.as_str());
+        let network_address = common::calculate_network_address(
+            payload.sdn_client_ip.as_str(),
+            payload.netmask.as_str(),
+        );
         let network_address = match network_address {
             Ok(value) => value.to_string(),
             Err(err) => {
@@ -117,7 +118,7 @@ impl WebServer {
     async fn auth_client(
         State(state): State<AppState>,
         Path(auth_link_id): Path<String>,
-        Json(payload): Json<crate::common::AuthClientRequest>,
+        Json(payload): Json<common::AuthClientRequest>,
     ) -> (StatusCode, Result<String, Json<ServerError>>) {
         match state
             .db

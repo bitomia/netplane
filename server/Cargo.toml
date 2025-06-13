@@ -6,8 +6,13 @@ edition = "2024"
 [[bin]]
 name = "server"
 path = "src/server.rs"
-  
+
+# [[bin]]
+# name = "admin"
+# path = "src/admin.rs"
+
 [dependencies]
+common = { path = "../common" }
 axum = { version = "0.8.1", features = ["ws"] }
 log = "0.4.22"
 tokio = { version = "1", features = ["full"] }
@@ -20,12 +25,7 @@ sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid"] 
 dotenv = "0.15.0"
 anyhow = "1.0.98"
 env_logger = "0.11.8"
-base64 = "0.22.1"
-ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
-bincode = "2.0.1"
-snow = "0.9.6"
-hmac = "0.12.1"
-sha2 = "0.10.9"
+
 
 [build-dependencies]
 embed-resource = { version = "3.0.2", optional = true }
