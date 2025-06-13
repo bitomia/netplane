@@ -4,12 +4,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, Sqlite, sqlite::SqlitePoolOptions};
 use std::{env, path::Path as FilePath};
 
-use crate::crypto::sign_key;
-
-pub enum ErrorCode {
-    CannotConnect,
-}
-
 pub struct Db {
     pub pool: Pool<Sqlite>,
 }
@@ -127,9 +121,9 @@ impl Db {
                     .await?;
                 tx.commit().await?;
 
-                let auth_data = crate::crypto::AuthData { client_id };
+                let auth_data = common::crypto::AuthData { client_id };
                 let auth_data = serde_json::json!(auth_data).to_string();
-                Ok(sign_key(auth_data.as_bytes()))
+                Ok(common::crypto::sign_key(auth_data.as_bytes()))
             }
             Err(err) => Err(anyhow!(err)),
         }

@@ -12,6 +12,7 @@ path = "src/client.rs"
 #required-features = ["client"]
     
 [dependencies]
+common = { path = "../common" }
 axum = { version = "0.8.1", features = ["ws"] }
 log = "0.4.22"
 tokio = { version = "1", features = ["full"] }

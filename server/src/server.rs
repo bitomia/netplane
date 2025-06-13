@@ -1,4 +1,6 @@
 use anyhow::Result;
+use common::packet::parse_ipv4_header;
+use common::transport::{Transport, UdpTransport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
@@ -10,13 +12,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::signal::unix::{SignalKind, signal};
 
-pub mod common;
-pub mod crypto;
-pub mod db;
-pub mod packet;
-pub mod webserver;
+mod db;
+mod webserver;
 
-use crate::packet::parse_ipv4_header;
 use crate::webserver::WebServer;
 
 #[derive(Eq, Hash, PartialEq)]
@@ -28,19 +26,27 @@ struct Client {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
-async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
-    let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-    let socket = tokio::net::UdpSocket::bind(server_addr).await?;
+async fn reticula_server(listen_addr: String, db: Arc<db::Db>) -> Result<()> {
+    WebSocketTransport::bind(&listen_addr, {
+        let db = Arc::clone(&db);
+        move |socket, addr| handle_connection(socket, addr, Arc::clone(&db))
+    })
+    .await;
+    Ok(())
+}
+
+async fn handle_connection(mut socket: WebSocketTransport, addr: SocketAddr, db: Arc<db::Db>) {
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
     let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
 
     loop {
-        let (amt, src) = socket.recv_from(&mut buf).await?;
-        debug!("BYTES received {}", amt);
+        let (amt, src) = socket.recv(&mut buf).await.unwrap();
+
         let status = clients_status
             .entry(src)
             .or_insert(HandshakeStatus::Pending);
+
         match status {
             HandshakeStatus::Initialized => {
                 if let Some(header) = parse_ipv4_header(&buf[..amt]) {
@@ -54,7 +60,7 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                         if src != client.src {
                             // TODO this is broadcasting, parse IP header and send only to target
                             debug!("...relying");
-                            socket.send_to(&buf[..amt], &client.src).await?;
+                            socket.send(&buf[..amt], Some(&client.src)).await;
                         }
                     }
                 } else {
@@ -65,14 +71,15 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                 match HandshakeReq::deserialize(&buf[..amt]) {
                     Ok(handshake) => {
                         info!("HandshakeReq received {}", src);
-                        match crate::crypto::verify_signed_key(handshake.auth_key) {
+                        match common::crypto::verify_signed_key(handshake.auth_key) {
                             Ok(auth_client) => {
                                 if let Ok(client) = db.get_client(&auth_client.client_id).await {
                                     clients.insert(Client {
                                         src,
                                         sdn_ip_addr: Ipv4Addr::from_str(
                                             &client.sdn_client_ip.as_str(),
-                                        )?,
+                                        )
+                                        .unwrap(),
                                     });
                                     info!("Client connected {} {}", src, client.sdn_client_ip);
                                     let netmask = String::from("255.255.255.0");
@@ -82,7 +89,8 @@ async fn reticula_server(db: Arc<db::Db>) -> Result<()> {
                                         &destination,
                                         &client.sdn_client_ip,
                                     );
-                                    match socket.send_to(&reply.serialize()?, &src).await {
+                                    match socket.send(&reply.serialize().unwrap(), Some(&src)).await
+                                    {
                                         Ok(_) => {
                                             clients_status
                                                 .insert(src, HandshakeStatus::Initialized);
@@ -165,8 +173,9 @@ async fn main() -> Result<(), ProcessError> {
     let db = Arc::new(db::Db::new().await);
 
     info!("Starting reticula server");
-    let reticula_server = tokio::spawn(reticula_server(db.clone()));
-    info!("UDP server listening on 0.0.0.0:5000");
+    let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
+    let reticula_server = tokio::spawn(reticula_server(listen_addr.clone(), db.clone()));
+    info!("TCP server listening on {}", listen_addr);
 
     let is_webserver_enabled = std::env::var("WEBSERVER_ENABLED").unwrap_or("true".to_string());
     if is_webserver_enabled == "true" {

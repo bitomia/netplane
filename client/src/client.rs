@@ -1,16 +1,14 @@
 use anyhow::{Result, anyhow};
-use crypto::load_auth_key;
+use common::{crypto::load_auth_key, transport::WebSocketTransport};
 use dotenv::dotenv;
 use http_post::http_post_json;
 use log::{debug, error, info};
 use std::env;
-use tokio::net::UdpSocket;
+
 use tokio::signal::unix::{SignalKind, signal};
 //use tray_item::{TrayItem, IconSource};
-use common::{HandshakeRep, HandshakeReq};
+use common::{HandshakeRep, HandshakeReq, transport::Transport};
 
-pub mod common;
-pub mod crypto;
 pub mod http_post;
 pub mod packet;
 pub mod tundev;
@@ -32,20 +30,19 @@ struct StartParams {
     ip_addr: String,
 }
 
-async fn handshake(
+async fn handshake<T: Transport>(
     auth_key: String,
     server_addr: String,
-    socket: &UdpSocket,
+    transport: &mut T,
 ) -> Result<StartParams> {
     info!("Starting handshake with {}", server_addr);
-    socket.connect(server_addr.clone()).await?;
 
     let handshake = HandshakeReq::new(&auth_key);
-    socket.send(&handshake.serialize()?).await?;
+    transport.send(&handshake.serialize()?, None).await?;
 
     let mut socket_buf = [0; 1500];
     loop {
-        let (amt, _) = socket.recv_from(&mut socket_buf).await?;
+        let (amt, _) = transport.recv(&mut socket_buf).await?;
         if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
             return Ok(StartParams {
                 netmask: handshake.netmask,
@@ -58,18 +55,15 @@ async fn handshake(
     }
 }
 
-pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
+pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
     info!("Starting client");
     let auth_key = load_auth_key()?;
 
-    let socket = UdpSocket::bind("0.0.0.0:0")
+    let mut transport = WebSocketTransport::connect(control_addr.as_str())
         .await
-        .expect("Cannot open socket");
+        .expect("Cannot open WebSocket");
 
-    info!(
-        "Client bound to {:?}",
-        socket.local_addr().expect("Cannot get the local addr")
-    );
+    info!("Client connected to control");
 
     // let icon_raw = include_bytes!("../icons/icon-red.ico");
     // let connected_icon_raw = include_bytes!("../icons/icon-green.ico");
@@ -82,7 +76,7 @@ pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
     // inner.add_quit_item("Quit");
     // inner.display();
 
-    let start_params = match handshake(auth_key, server_addr, &socket).await {
+    let start_params = match handshake(auth_key, control_addr, &mut transport).await {
         Ok(p) => {
             info!("Handshake successfully finished {:?}", p);
             p
@@ -106,16 +100,16 @@ pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
 
     loop {
         tokio::select! {
-            result = socket.recv_from(&mut socket_buf) => {
+            result = transport.recv(&mut socket_buf) => {
                 match result {
-                    Ok((amt, _)) => {
+                    Ok(amt) => {
                         if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
                             debug!(
                                 "{} {} {}",
                                 header.src_ip, header.dst_ip, header.total_length
                             );
                         }
-                        send_tun(&mut dev, &socket_buf, amt).await;
+                        send_tun(&mut dev, &socket_buf, amt.0).await;
                     },
                     Err(_) => todo!()
                 }
@@ -131,7 +125,7 @@ pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
                         if is_loopback {
                             send_tun(&mut dev, &tun_buf, amt).await;
                         } else {
-                            match socket.send(&tun_buf[..amt]).await {
+                            match transport.send(&tun_buf[..amt], None).await {
                                 Ok(bytes_sent) => {
                                     if bytes_sent != amt {
                                         error!("Less bytes sent than expected to socket");
@@ -160,8 +154,8 @@ async fn auth_client(arg: String) -> Result<String> {
         return Err(anyhow!("Invalid auth argument"));
     }
 
-    let (public_key, _) = crate::crypto::try_load_crypto_keys("public.key", "private.key")?;
-    let payload = crate::common::AuthClientRequest { public_key };
+    let (public_key, _) = common::crypto::try_load_crypto_keys("public.key", "private.key")?;
+    let payload = common::AuthClientRequest { public_key };
 
     let res = http_post_json(parts[1], &payload)?;
     match res.status_code {
@@ -193,7 +187,7 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().collect();
     if args.len() >= 3 {
-        if let Err(err) = crypto::try_generate_crypto_keys("public.key", "private.key") {
+        if let Err(err) = common::crypto::try_generate_crypto_keys("public.key", "private.key") {
             if err.kind() != std::io::ErrorKind::AlreadyExists {
                 return Err(anyhow!(err));
             }

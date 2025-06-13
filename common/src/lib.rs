@@ -3,6 +3,10 @@ use bincode::{Decode, Encode, config};
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
+pub mod crypto;
+pub mod packet;
+pub mod transport;
+
 #[derive(Serialize, Deserialize)]
 pub struct AuthClientRequest {
     pub public_key: String,

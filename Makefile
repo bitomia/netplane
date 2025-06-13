@@ -1,6 +1,7 @@
 .PHONY: client server admin
 
-all: client server admin
+#all: client server admin
+all: client server
 
 client:
 	cargo build -p client
@@ -8,8 +9,8 @@ client:
 server: reticuladb
 	cargo build -p server
 
-admin:
-	cargo build -p admin
+# admin:
+# 	cargo build -p server --bin admin
 
 reticuladb:
 	sqlx database create
