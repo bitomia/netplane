@@ -102,14 +102,14 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
         tokio::select! {
             result = transport.recv(&mut socket_buf) => {
                 match result {
-                    Ok(amt) => {
+                    Ok((amt, _)) => {
                         if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
                             debug!(
                                 "{} {} {}",
                                 header.src_ip, header.dst_ip, header.total_length
                             );
                         }
-                        send_tun(&mut dev, &socket_buf, amt.0).await;
+                        send_tun(&mut dev, &socket_buf, amt).await;
                     },
                     Err(_) => todo!()
                 }
