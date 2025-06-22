@@ -7,9 +7,13 @@ use log::{debug, error, info};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
+<<<<<<< Updated upstream
+=======
+use std::ops::{Deref, DerefMut};
+>>>>>>> Stashed changes
 use std::path::Path as FilePath;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::signal::unix::{SignalKind, signal};
 
 mod db;
@@ -26,6 +30,7 @@ struct Client {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
+<<<<<<< Updated upstream
 async fn reticula_server(listen_addr: String, db: Arc<db::Db>) -> Result<()> {
     WebSocketTransport::bind(&listen_addr, {
         let db = Arc::clone(&db);
@@ -39,6 +44,22 @@ async fn handle_connection(mut socket: WebSocketTransport, addr: SocketAddr, db:
     let mut clients: HashSet<Client> = HashSet::new();
     let mut buf = [0; 1500];
     let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
+=======
+struct Server {
+    clients: Arc<Mutex<HashSet<Client>>>,
+    clients_status: Arc<Mutex<HashMap<SocketAddr, HandshakeStatus>>>,
+    db: Arc<db::Db>,
+}
+
+impl Server {
+    pub fn new(db: Arc<db::Db>) -> Server {
+        Server {
+            clients: Arc::new(Mutex::new(HashSet::<Client>::new())),
+            clients_status: Arc::new(Mutex::new(HashMap::<SocketAddr, HandshakeStatus>::new())),
+            db,
+        }
+    }
+>>>>>>> Stashed changes
 
     loop {
         let (amt, src) = socket.recv(&mut buf).await.unwrap();
@@ -47,6 +68,7 @@ async fn handle_connection(mut socket: WebSocketTransport, addr: SocketAddr, db:
             .entry(src)
             .or_insert(HandshakeStatus::Pending);
 
+<<<<<<< Updated upstream
         match status {
             HandshakeStatus::Initialized => {
                 if let Some(header) = parse_ipv4_header(&buf[..amt]) {
@@ -61,11 +83,49 @@ async fn handle_connection(mut socket: WebSocketTransport, addr: SocketAddr, db:
                             // TODO this is broadcasting, parse IP header and send only to target
                             debug!("...relying");
                             socket.send(&buf[..amt], Some(&client.src)).await;
+=======
+    async fn handle_connection(
+        mut socket: WebSocketTransport,
+        addr: SocketAddr,
+        db: Arc<db::Db>,
+        clients: Arc<Mutex<HashSet<Client>>>,
+        clients_status: Arc<Mutex<HashMap<SocketAddr, HandshakeStatus>>>,
+    ) {
+        let mut buf = [0; 1500];
+
+        loop {
+            let (amt, src) = socket.recv(&mut buf).await.unwrap();
+
+            let mut status = clients_status.lock().unwrap();
+            let status = status
+                .entry(src)
+                .or_insert(HandshakeStatus::Pending)
+                .clone();
+
+            match status {
+                HandshakeStatus::Initialized => {
+                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                        debug!(
+                            "{} {} {}",
+                            header.src_ip, header.dst_ip, header.total_length
+                        );
+
+                        for client in clients.lock().unwrap().iter() {
+                            debug!("Sending data to {}", src);
+                            if src != client.src {
+                                // TODO this is broadcasting, parse IP header and send only to target
+                                debug!("...relying");
+
+                                // TODO fix this in websocket
+                                //                                socket.send(&buf[..amt], Some(&client.src)).await;
+                            }
+>>>>>>> Stashed changes
                         }
                     }
                 } else {
                     error!("Packet not supported");
                 }
+<<<<<<< Updated upstream
             }
             HandshakeStatus::Pending => {
                 match HandshakeReq::deserialize(&buf[..amt]) {
@@ -88,6 +148,54 @@ async fn handle_connection(mut socket: WebSocketTransport, addr: SocketAddr, db:
                                         &netmask,
                                         &destination,
                                         &client.sdn_client_ip,
+=======
+                HandshakeStatus::Pending => {
+                    match HandshakeReq::deserialize(&buf[..amt]) {
+                        Ok(handshake) => {
+                            info!("HandshakeReq received {}", src);
+                            match common::crypto::verify_signed_key(handshake.auth_key) {
+                                Ok(auth_client) => {
+                                    let client = db.get_client(&auth_client.client_id).await;
+                                    if let Ok(client) = client {
+                                        clients.lock().unwrap().insert(Client {
+                                            src,
+                                            sdn_ip_addr: Ipv4Addr::from_str(
+                                                &client.sdn_client_ip.as_str(),
+                                            )
+                                            .unwrap(),
+                                        });
+                                        info!("Client connected {} {}", src, client.sdn_client_ip);
+                                        let netmask = String::from("255.255.255.0");
+                                        let destination = String::from("12.0.0.0");
+                                        let reply = HandshakeRep::new(
+                                            &netmask,
+                                            &destination,
+                                            &client.sdn_client_ip,
+                                        );
+                                        match socket
+                                            .send(&reply.serialize().unwrap(), Some(&src))
+                                            .await
+                                        {
+                                            Ok(_) => {
+                                                clients_status
+                                                    .lock()
+                                                    .unwrap()
+                                                    .insert(src, HandshakeStatus::Initialized);
+                                            }
+                                            Err(_) => {
+                                                // TODO
+                                            }
+                                        }
+                                    } else {
+                                        error!("Ignoring Unknown user {}", src.ip());
+                                    }
+                                }
+                                Err(error) => {
+                                    error!(
+                                        "Unexpected verifying key error: {} {}",
+                                        src.ip(),
+                                        error
+>>>>>>> Stashed changes
                                     );
                                     match socket.send(&reply.serialize().unwrap(), Some(&src)).await
                                     {
