@@ -96,6 +96,7 @@ pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
 
+    debug!("{:?}", start_params);
     let mut dev = tundev::TunDev::new(
         tun_dev,
         start_params.netmask.as_str(),
@@ -108,12 +109,12 @@ pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
             result = socket.recv_from(&mut socket_buf) => {
                 match result {
                     Ok((amt, _)) => {
-                        // if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
-                        //     debug!(
-                        //         "{} {} {}",
-                        //         header.src_ip, header.dst_ip, header.total_length
-                        //     );
-                        // }
+                        if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
+                            debug!(
+                                "{} {} {}",
+                                header.src_ip, header.dst_ip, header.total_length
+                            );
+                        }
                         send_tun(&mut dev, &socket_buf, amt).await;
                     },
                     Err(_) => todo!()
@@ -124,9 +125,8 @@ pub async fn run(tun_dev: String, server_addr: String) -> Result<()> {
                     Ok(amt) => {
                         let mut is_loopback = false;
                         if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
-                            debug!("{} {}", header.src_ip, header.dst_ip);
-                            is_loopback =
-                            header.src_ip == header.dst_ip && header.src_port == header.dst_port;
+                            is_loopback = header.src_ip == header.dst_ip;
+                            debug!("> {} {} lo={:?}", header.src_ip, header.dst_ip, is_loopback);
                         }
                         if is_loopback {
                             send_tun(&mut dev, &tun_buf, amt).await;
