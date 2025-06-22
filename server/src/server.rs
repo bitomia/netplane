@@ -1,6 +1,6 @@
 use anyhow::Result;
 use common::packet::parse_ipv4_header;
-use common::transport::{Transport, UdpTransport, WebSocketTransport};
+use common::transport::{Transport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path as FilePath;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::signal::unix::{SignalKind, signal};
 
 mod db;
@@ -17,7 +17,7 @@ mod webserver;
 
 use crate::webserver::WebServer;
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 struct Client {
     pub src: SocketAddr,
     pub sdn_ip_addr: Ipv4Addr,
@@ -26,90 +26,135 @@ struct Client {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
-async fn reticula_server(listen_addr: String, db: Arc<db::Db>) -> Result<()> {
-    WebSocketTransport::bind(&listen_addr, {
-        let db = Arc::clone(&db);
-        move |socket, addr| handle_connection(socket, addr, Arc::clone(&db))
-    })
-    .await;
-    Ok(())
+struct Server {
+    clients: Arc<Mutex<HashSet<Client>>>,
+    clients_status: Arc<Mutex<HashMap<SocketAddr, HandshakeStatus>>>,
+    db: Arc<db::Db>,
 }
 
-async fn handle_connection(mut socket: WebSocketTransport, addr: SocketAddr, db: Arc<db::Db>) {
-    let mut clients: HashSet<Client> = HashSet::new();
-    let mut buf = [0; 1500];
-    let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
+impl Server {
+    pub fn new(db: Arc<db::Db>) -> Server {
+        Server {
+            clients: Arc::new(Mutex::new(HashSet::<Client>::new())),
+            clients_status: Arc::new(Mutex::new(HashMap::<SocketAddr, HandshakeStatus>::new())),
+            db,
+        }
+    }
 
-    loop {
-        let (amt, src) = socket.recv(&mut buf).await.unwrap();
+    pub async fn start(self: &Self) -> Result<()> {
+        let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
+        WebSocketTransport::bind(&listen_addr, {
+            let db = Arc::clone(&self.db);
+            let clients = Arc::clone(&self.clients);
+            let clients_status = Arc::clone(&self.clients_status);
 
-        let status = clients_status
-            .entry(src)
-            .or_insert(HandshakeStatus::Pending);
-
-        match status {
-            HandshakeStatus::Initialized => {
-                if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                    debug!(
-                        "{} {} {}",
-                        header.src_ip, header.dst_ip, header.total_length
-                    );
-
-                    for client in &clients {
-                        debug!("Sending data to {}", src);
-                        if src != client.src {
-                            // TODO this is broadcasting, parse IP header and send only to target
-                            debug!("...relying");
-                            socket.send(&buf[..amt], Some(&client.src)).await;
-                        }
-                    }
-                } else {
-                    error!("Packet not supported");
-                }
+            move |socket, addr| {
+                Server::handle_connection(
+                    socket,
+                    addr,
+                    Arc::clone(&db),
+                    Arc::clone(&clients),
+                    Arc::clone(&clients_status),
+                )
             }
-            HandshakeStatus::Pending => {
-                match HandshakeReq::deserialize(&buf[..amt]) {
-                    Ok(handshake) => {
-                        info!("HandshakeReq received {}", src);
-                        match common::crypto::verify_signed_key(handshake.auth_key) {
-                            Ok(auth_client) => {
-                                if let Ok(client) = db.get_client(&auth_client.client_id).await {
-                                    clients.insert(Client {
-                                        src,
-                                        sdn_ip_addr: Ipv4Addr::from_str(
-                                            &client.sdn_client_ip.as_str(),
-                                        )
-                                        .unwrap(),
-                                    });
-                                    info!("Client connected {} {}", src, client.sdn_client_ip);
-                                    let netmask = String::from("255.255.255.0");
-                                    let destination = String::from("12.0.0.0");
-                                    let reply = HandshakeRep::new(
-                                        &netmask,
-                                        &destination,
-                                        &client.sdn_client_ip,
-                                    );
-                                    match socket.send(&reply.serialize().unwrap(), Some(&src)).await
-                                    {
-                                        Ok(_) => {
-                                            clients_status
-                                                .insert(src, HandshakeStatus::Initialized);
+        })
+        .await;
+        Ok(())
+    }
+
+    async fn handle_connection(
+        mut socket: WebSocketTransport,
+        addr: SocketAddr,
+        db: Arc<db::Db>,
+        clients: Arc<Mutex<HashSet<Client>>>,
+        clients_status: Arc<Mutex<HashMap<SocketAddr, HandshakeStatus>>>,
+    ) {
+        let mut buf = [0; 1500];
+
+        loop {
+            let (amt, _) = socket.recv(&mut buf).await.unwrap();
+
+            let status = {
+                let mut status_map = clients_status.lock().unwrap();
+                status_map
+                    .entry(addr)
+                    .or_insert(HandshakeStatus::Pending)
+                    .clone()
+            };
+
+            match status {
+                HandshakeStatus::Initialized => {
+                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                        debug!(
+                            "{} {} {}",
+                            header.src_ip, header.dst_ip, header.total_length
+                        );
+
+                        let clients = {
+                            let clients = clients.lock().unwrap();
+                            clients.clone()
+                        };
+                        for client in clients {
+                            debug!("Sending data to {} {}", header.dst_ip, client.sdn_ip_addr);
+                            if addr.to_string() == header.dst_ip.to_string() {
+                                debug!("...relying");
+                                let _ = socket.send(&buf[..amt], None).await;
+                            }
+                        }
+                    } else {
+                        error!("Packet not supported");
+                    }
+                }
+                HandshakeStatus::Pending => {
+                    match HandshakeReq::deserialize(&buf[..amt]) {
+                        Ok(handshake) => {
+                            info!("HandshakeReq received {}", addr);
+                            match common::crypto::verify_signed_key(handshake.auth_key) {
+                                Ok(auth_client) => {
+                                    let client = db.get_client(&auth_client.client_id).await;
+                                    if let Ok(client) = client {
+                                        clients.lock().unwrap().insert(Client {
+                                            src: addr,
+                                            sdn_ip_addr: Ipv4Addr::from_str(
+                                                &client.sdn_client_ip.as_str(),
+                                            )
+                                            .unwrap(),
+                                        });
+                                        info!("Client connected {} {}", addr, client.sdn_client_ip);
+                                        let netmask = String::from("255.255.255.0");
+                                        let destination = String::from("12.0.0.0");
+                                        let reply = HandshakeRep::new(
+                                            &netmask,
+                                            &destination,
+                                            &client.sdn_client_ip,
+                                        );
+                                        match socket.send(&reply.serialize().unwrap(), None).await {
+                                            Ok(_) => {
+                                                clients_status
+                                                    .lock()
+                                                    .unwrap()
+                                                    .insert(addr, HandshakeStatus::Initialized);
+                                            }
+                                            Err(_) => {
+                                                // TODO
+                                            }
                                         }
-                                        Err(_) => {
-                                            // TODO
-                                        }
+                                    } else {
+                                        error!("Ignoring Unknown user {}", addr.ip());
                                     }
-                                } else {
-                                    error!("Ignoring Unknown user {}", src.ip());
+                                }
+                                Err(error) => {
+                                    error!(
+                                        "Unexpected verifying key error: {} {}",
+                                        addr.ip(),
+                                        error
+                                    );
                                 }
                             }
-                            Err(error) => {
-                                error!("Unexpected verifying key error: {} {}", src.ip(), error);
-                            }
                         }
-                    }
-                    Err(err) => {
-                        error!("HandshakeReq failed: {}", err);
+                        Err(err) => {
+                            error!("HandshakeReq failed: {}", err);
+                        }
                     }
                 }
             }
@@ -174,7 +219,8 @@ async fn main() -> Result<(), ProcessError> {
 
     info!("Starting reticula server");
     let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-    let reticula_server = tokio::spawn(reticula_server(listen_addr.clone(), db.clone()));
+    let reticula_server = Server::new(Arc::clone(&db));
+    let reticula_server = tokio::spawn(async move { reticula_server.start().await });
     info!("TCP server listening on {}", listen_addr);
 
     let is_webserver_enabled = std::env::var("WEBSERVER_ENABLED").unwrap_or("true".to_string());
