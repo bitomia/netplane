@@ -86,6 +86,7 @@ impl Transport for WebSocketTransport {
                     if let Message::Binary(msg) = msg {
                         let len = msg.len();
                         buf[..len].copy_from_slice(&msg);
+
                         return Ok((len, "0.0.0.0:0".parse().unwrap()));
                     } else {
                         let len = msg.len();
