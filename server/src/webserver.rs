@@ -129,9 +129,7 @@ impl WebServer {
         }
     }
 
-    pub async fn new(
-        db: Arc<crate::db::Db>,
-    ) -> Serve<tokio::net::TcpListener, Router, Router> {
+    pub async fn new(db: Arc<crate::db::Db>) -> Serve<tokio::net::TcpListener, Router, Router> {
         let addr = std::env::var("WEBSERVER").unwrap_or("0.0.0.0:8000".to_string());
         info!("Starting web server {}", addr);
         let server_url = std::env::var("WEBSERVER_URL").unwrap_or_else(|_| {
@@ -140,7 +138,8 @@ impl WebServer {
         });
 
         let state = AppState { db, server_url };
-        let serve_dir = ServeDir::new("web/build/client");
+        let static_web_path = std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var");
+        let serve_dir = ServeDir::new(static_web_path);
         let app = Router::new()
             .route(
                 "/api/clients",
