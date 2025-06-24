@@ -1,12 +1,12 @@
 use anyhow::Result;
-use bytes::{Buf, Bytes};
+use bytes::Bytes;
 use common::packet::parse_ipv4_header;
 use common::transport::{Transport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
 use sqlx::sqlite::SqlitePoolOptions;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path as FilePath;
 use std::str::FromStr;
@@ -86,15 +86,15 @@ impl Server {
 
             let status = {
                 let mut peers_guard = peers.lock().unwrap();
-                peers_guard.entry(peer_id).or_insert(Peer {
+                let peer = peers_guard.entry(peer_id).or_insert(Peer {
                     src: addr,
                     sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
                     status: HandshakeStatus::Pending,
                     tx: tx.clone(),
                 });
-                HandshakeStatus::Pending
+                peer.status.clone()
             };
-            info!("{:?}", status);
+            info!("{} {:?} {}", peer_id, status, amt);
 
             while let Ok(msg) = rx.try_recv() {
                 info!("{:?}", msg);
@@ -156,6 +156,7 @@ impl Server {
                                                 });
                                             }
                                             Err(_) => {
+                                                error!("Send handhsake reply failed");
                                                 // TODO
                                             }
                                         }
