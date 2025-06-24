@@ -121,7 +121,7 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
                         let mut is_loopback = false;
                         if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
                             //is_loopback = header.src_ip == header.dst_ip;
-                            debug!("> {} {} lo={:?}", header.src_ip, header.dst_ip, is_loopback);
+                            debug!("{} > {} lo={:?}", header.src_ip, header.dst_ip, is_loopback);
                         }
                         if is_loopback {
                             send_tun(&mut dev, &tun_buf, amt).await;
