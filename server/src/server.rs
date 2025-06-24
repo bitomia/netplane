@@ -1,5 +1,5 @@
 use anyhow::Result;
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use common::packet::parse_ipv4_header;
 use common::transport::{Transport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
@@ -92,7 +92,9 @@ impl Server {
                 });
                 HandshakeStatus::Pending
             };
-
+            while let Some(msg) = rx.recv().await {
+                socket.send(msg.as_ref(), None).await.unwrap();
+            }
             match status {
                 HandshakeStatus::Initialized => {
                     if let Some(header) = parse_ipv4_header(&buf[..amt]) {
@@ -106,7 +108,9 @@ impl Server {
                             debug!("Sending data to {} {}", header.dst_ip, peer.sdn_ip_addr);
                             if addr.to_string() == header.dst_ip.to_string() {
                                 debug!("...relying");
-                                // let _ = socket.send(&buf[..amt], None).await;
+                                peer.tx
+                                    .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
+                                    .unwrap();
                             }
                         }
                     } else {
