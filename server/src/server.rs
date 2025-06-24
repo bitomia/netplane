@@ -75,7 +75,7 @@ impl Server {
 
     async fn handle_connection(
         peer_id: i32,
-        mut socket: WebSocketTransport,
+        socket: WebSocketTransport,
         addr: SocketAddr,
         db: Arc<db::Db>,
         peers: Peers,
@@ -84,18 +84,20 @@ impl Server {
 
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
 
+        let mut send_socket = socket.clone();
         let send_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 info!("Socket send {}", addr);
-                socket.send(msg.as_ref(), None).await.unwrap();
+                send_socket.send(msg.as_ref(), None).await.unwrap();
             }
         });
 
+        let mut recv_socket = socket.clone();
         let forward_task = tokio::spawn(async move {
             let mut buf = [0; 1500];
 
             loop {
-                let (amt, _) = socket.recv(&mut buf).await.unwrap();
+                let (amt, _) = recv_socket.recv(&mut buf).await.unwrap();
 
                 let status = {
                     let mut peers_guard = peers.lock().unwrap();
@@ -156,7 +158,11 @@ impl Server {
                                             &destination,
                                             &client.sdn_client_ip,
                                         );
-                                        match socket.send(&reply.serialize().unwrap(), None).await {
+                                        let mut reply_socket = socket.clone();
+                                        match reply_socket
+                                            .send(&reply.serialize().unwrap(), None)
+                                            .await
+                                        {
                                             Ok(_) => {
                                                 let mut peers_guard = peers.lock().unwrap();
                                                 peers_guard.entry(peer_id).and_modify(|p| {
