@@ -24,7 +24,6 @@ type Tx = mpsc::UnboundedSender<Bytes>;
 type Rx = mpsc::UnboundedReceiver<Bytes>;
 
 struct Peer {
-    pub src: SocketAddr,
     pub sdn_ip_addr: Ipv4Addr,
     pub status: HandshakeStatus,
     pub tx: Tx,
@@ -87,6 +86,12 @@ impl Server {
         info!("Connection started {} {:?}", peer_id, addr);
 
         loop {
+            while let Ok(msg) = rx.try_recv() {
+                info!("Socket send {}", addr);
+                let amt = socket.send(msg.as_ref(), None).await.unwrap();
+                info!("=> Total sent {}", amt);
+            }
+
             let (amt, _) = socket.recv(&mut buf).await.unwrap();
 
             let status = {
@@ -99,31 +104,28 @@ impl Server {
                 });
                 peer.status.clone()
             };
-            info!("{} {:?} {}", peer_id, status, amt);
-
-            while let Ok(msg) = rx.try_recv() {
-                info!("{:?}", msg);
-                socket.send(msg.as_ref(), None).await.unwrap();
-            }
+            info!("Loop step: {} {:?} {}", peer_id, status, amt);
 
             match status {
                 HandshakeStatus::Initialized => {
                     if let Some(header) = parse_ipv4_header(&buf[..amt]) {
                         debug!(
-                            "{} {} {}",
+                            "=====> {} > {} [size={}]",
                             header.src_ip, header.dst_ip, header.total_length
                         );
 
                         let peers_guard = peers.lock().unwrap();
                         for (&_peer_id, peer) in peers_guard.iter() {
-                            debug!("Sending data to {} {}", header.dst_ip, peer.sdn_ip_addr);
-                            if addr.to_string() == header.dst_ip.to_string() {
+                            debug!("-> {}", peer.sdn_ip_addr);
+                            if peer.sdn_ip_addr.to_string() == header.dst_ip.to_string() {
                                 debug!("...relying");
                                 peer.tx
                                     .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
                                     .unwrap();
+                                break;
                             }
                         }
+                        debug!("<=======");
                     } else {
                         error!("Packet not supported");
                     }

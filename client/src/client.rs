@@ -104,9 +104,10 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
             result = transport.recv(&mut socket_buf) => {
                 match result {
                     Ok((amt, _)) => {
+                        debug!("Received {}:", amt);
                         if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
                             debug!(
-                                "{} {} {}",
+                                "> {} {} {}",
                                 header.src_ip, header.dst_ip, header.total_length
                             );
                         }
