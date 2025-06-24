@@ -1,4 +1,5 @@
 use anyhow::Result;
+use bytes::Bytes;
 use common::packet::parse_ipv4_header;
 use common::transport::{Transport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
@@ -11,50 +12,56 @@ use std::path::Path as FilePath;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use tokio::signal::unix::{SignalKind, signal};
+use tokio::sync::mpsc;
 
 mod db;
 mod webserver;
 
 use crate::webserver::WebServer;
 
-#[derive(Clone, Eq, Hash, PartialEq)]
-struct Client {
+type Tx = mpsc::UnboundedSender<Bytes>;
+type Rx = mpsc::UnboundedReceiver<Bytes>;
+
+struct Peer {
     pub src: SocketAddr,
     pub sdn_ip_addr: Ipv4Addr,
+    pub status: HandshakeStatus,
+    pub tx: Tx,
 }
+
+type Peers = Arc<Mutex<HashMap<i32, Peer>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
 struct Server {
-    clients: Arc<Mutex<HashSet<Client>>>,
-    clients_status: Arc<Mutex<HashMap<SocketAddr, HandshakeStatus>>>,
+    peers: Peers,
     db: Arc<db::Db>,
 }
 
 impl Server {
     pub fn new(db: Arc<db::Db>) -> Server {
         Server {
-            clients: Arc::new(Mutex::new(HashSet::<Client>::new())),
-            clients_status: Arc::new(Mutex::new(HashMap::<SocketAddr, HandshakeStatus>::new())),
+            peers: Arc::new(Mutex::new(HashMap::new())),
             db,
         }
     }
 
     pub async fn start(self: &Self) -> Result<()> {
         let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
+
+        let mut next_peer_id = -1;
         WebSocketTransport::bind(&listen_addr, {
             let db = Arc::clone(&self.db);
-            let clients = Arc::clone(&self.clients);
-            let clients_status = Arc::clone(&self.clients_status);
-
+            let peers = Arc::clone(&self.peers);
+            next_peer_id += 1;
             move |socket, addr| {
                 Server::handle_connection(
+                    next_peer_id,
                     socket,
                     addr,
                     Arc::clone(&db),
-                    Arc::clone(&clients),
-                    Arc::clone(&clients_status),
+                    Arc::clone(&peers),
                 )
             }
         })
@@ -63,23 +70,27 @@ impl Server {
     }
 
     async fn handle_connection(
+        peer_id: i32,
         mut socket: WebSocketTransport,
         addr: SocketAddr,
         db: Arc<db::Db>,
-        clients: Arc<Mutex<HashSet<Client>>>,
-        clients_status: Arc<Mutex<HashMap<SocketAddr, HandshakeStatus>>>,
+        peers: Peers,
     ) {
         let mut buf = [0; 1500];
+        let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
 
         loop {
             let (amt, _) = socket.recv(&mut buf).await.unwrap();
 
             let status = {
-                let mut status_map = clients_status.lock().unwrap();
-                status_map
-                    .entry(addr)
-                    .or_insert(HandshakeStatus::Pending)
-                    .clone()
+                let mut peers_guard = peers.lock().unwrap();
+                peers_guard.entry(peer_id).or_insert(Peer {
+                    src: addr,
+                    sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
+                    status: HandshakeStatus::Pending,
+                    tx: tx.clone(),
+                });
+                HandshakeStatus::Pending
             };
 
             match status {
@@ -90,15 +101,12 @@ impl Server {
                             header.src_ip, header.dst_ip, header.total_length
                         );
 
-                        let clients = {
-                            let clients = clients.lock().unwrap();
-                            clients.clone()
-                        };
-                        for client in clients {
-                            debug!("Sending data to {} {}", header.dst_ip, client.sdn_ip_addr);
+                        let peers_guard = peers.lock().unwrap();
+                        for (&_peer_id, peer) in peers_guard.iter() {
+                            debug!("Sending data to {} {}", header.dst_ip, peer.sdn_ip_addr);
                             if addr.to_string() == header.dst_ip.to_string() {
                                 debug!("...relying");
-                                let _ = socket.send(&buf[..amt], None).await;
+                                // let _ = socket.send(&buf[..amt], None).await;
                             }
                         }
                     } else {
@@ -113,13 +121,15 @@ impl Server {
                                 Ok(auth_client) => {
                                     let client = db.get_client(&auth_client.client_id).await;
                                     if let Ok(client) = client {
-                                        clients.lock().unwrap().insert(Client {
-                                            src: addr,
-                                            sdn_ip_addr: Ipv4Addr::from_str(
-                                                &client.sdn_client_ip.as_str(),
-                                            )
-                                            .unwrap(),
-                                        });
+                                        {
+                                            let mut peers_guard = peers.lock().unwrap();
+                                            peers_guard.entry(peer_id).and_modify(|p| {
+                                                p.sdn_ip_addr = Ipv4Addr::from_str(
+                                                    &client.sdn_client_ip.as_str(),
+                                                )
+                                                .unwrap()
+                                            });
+                                        }
                                         info!("Client connected {} {}", addr, client.sdn_client_ip);
                                         let netmask = String::from("255.255.255.0");
                                         let destination = String::from("12.0.0.0");
@@ -130,10 +140,10 @@ impl Server {
                                         );
                                         match socket.send(&reply.serialize().unwrap(), None).await {
                                             Ok(_) => {
-                                                clients_status
-                                                    .lock()
-                                                    .unwrap()
-                                                    .insert(addr, HandshakeStatus::Initialized);
+                                                let mut peers_guard = peers.lock().unwrap();
+                                                peers_guard.entry(peer_id).and_modify(|p| {
+                                                    p.status = HandshakeStatus::Initialized
+                                                });
                                             }
                                             Err(_) => {
                                                 // TODO
