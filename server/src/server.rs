@@ -80,103 +80,116 @@ impl Server {
         db: Arc<db::Db>,
         peers: Peers,
     ) {
-        let mut buf = [0; 1500];
-        let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
-
         info!("Connection started {} {:?}", peer_id, addr);
 
-        loop {
-            while let Ok(msg) = rx.try_recv() {
+        let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
+
+        let send_task = tokio::spawn(async move {
+            while let Some(msg) = rx.recv().await {
                 info!("Socket send {}", addr);
-                let amt = socket.send(msg.as_ref(), None).await.unwrap();
-                info!("=> Total sent {}", amt);
+                socket.send(msg.as_ref(), None).await.unwrap();
             }
+        });
 
-            let (amt, _) = socket.recv(&mut buf).await.unwrap();
+        let forward_task = tokio::spawn(async move {
+            let mut buf = [0; 1500];
 
-            let status = {
-                let mut peers_guard = peers.lock().unwrap();
-                let peer = peers_guard.entry(peer_id).or_insert(Peer {
-                    sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
-                    status: HandshakeStatus::Pending,
-                    tx: tx.clone(),
-                });
-                peer.status.clone()
-            };
-            info!("Loop step: {} {:?} {}", peer_id, status, amt);
+            loop {
+                let (amt, _) = socket.recv(&mut buf).await.unwrap();
 
-            match status {
-                HandshakeStatus::Initialized => {
-                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                        debug!(
-                            "=====> {} > {} [size={}]",
-                            header.src_ip, header.dst_ip, header.total_length
-                        );
+                let status = {
+                    let mut peers_guard = peers.lock().unwrap();
+                    let peer = peers_guard.entry(peer_id).or_insert(Peer {
+                        sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
+                        status: HandshakeStatus::Pending,
+                        tx: tx.clone(),
+                    });
+                    peer.status.clone()
+                };
+                info!("Loop step: {} {:?} {}", peer_id, status, amt);
 
-                        let peers_guard = peers.lock().unwrap();
-                        for (&_peer_id, peer) in peers_guard.iter() {
-                            debug!("-> {}", peer.sdn_ip_addr);
-                            if peer.sdn_ip_addr.to_string() == header.dst_ip.to_string() {
-                                debug!("...relying");
-                                peer.tx
-                                    .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
-                                    .unwrap();
-                                break;
-                            }
-                        }
-                        debug!("<=======");
-                    } else {
-                        error!("Packet not supported");
-                    }
-                }
-                HandshakeStatus::Pending => match HandshakeReq::deserialize(&buf[..amt]) {
-                    Ok(handshake) => {
-                        info!("HandshakeReq received {}", addr);
-                        match common::crypto::verify_signed_key(handshake.auth_key) {
-                            Ok(auth_client) => {
-                                let client = db.get_client(&auth_client.client_id).await;
-                                if let Ok(client) = client {
-                                    {
-                                        let mut peers_guard = peers.lock().unwrap();
-                                        peers_guard.entry(peer_id).and_modify(|p| {
-                                            p.sdn_ip_addr =
-                                                Ipv4Addr::from_str(&client.sdn_client_ip.as_str())
-                                                    .unwrap()
-                                        });
-                                    }
-                                    info!("Client connected {} {}", addr, client.sdn_client_ip);
-                                    let netmask = String::from("255.255.255.0");
-                                    let destination = String::from("12.0.0.0");
-                                    let reply = HandshakeRep::new(
-                                        &netmask,
-                                        &destination,
-                                        &client.sdn_client_ip,
-                                    );
-                                    match socket.send(&reply.serialize().unwrap(), None).await {
-                                        Ok(_) => {
-                                            let mut peers_guard = peers.lock().unwrap();
-                                            peers_guard.entry(peer_id).and_modify(|p| {
-                                                p.status = HandshakeStatus::Initialized
-                                            });
-                                        }
-                                        Err(_) => {
-                                            error!("Send handhsake reply failed");
-                                        }
-                                    }
-                                } else {
-                                    error!("Ignoring Unknown user {}", addr.ip());
+                match status {
+                    HandshakeStatus::Initialized => {
+                        if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                            debug!(
+                                "=====> {} > {} [size={}]",
+                                header.src_ip, header.dst_ip, header.total_length
+                            );
+
+                            let peers_guard = peers.lock().unwrap();
+                            for (&_peer_id, peer) in peers_guard.iter() {
+                                debug!("-> {}", peer.sdn_ip_addr);
+                                if peer.sdn_ip_addr.to_string() == header.dst_ip.to_string() {
+                                    debug!("...relying");
+                                    peer.tx
+                                        .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
+                                        .unwrap();
+                                    break;
                                 }
                             }
-                            Err(error) => {
-                                error!("Unexpected verifying key error: {} {}", addr.ip(), error);
-                            }
+                            debug!("<=======");
+                        } else {
+                            error!("Packet not supported");
                         }
                     }
-                    Err(err) => {
-                        error!("HandshakeReq failed: {}", err);
-                    }
-                },
+                    HandshakeStatus::Pending => match HandshakeReq::deserialize(&buf[..amt]) {
+                        Ok(handshake) => {
+                            info!("HandshakeReq received {}", addr);
+                            match common::crypto::verify_signed_key(handshake.auth_key) {
+                                Ok(auth_client) => {
+                                    let client = db.get_client(&auth_client.client_id).await;
+                                    if let Ok(client) = client {
+                                        {
+                                            let mut peers_guard = peers.lock().unwrap();
+                                            peers_guard.entry(peer_id).and_modify(|p| {
+                                                p.sdn_ip_addr = Ipv4Addr::from_str(
+                                                    &client.sdn_client_ip.as_str(),
+                                                )
+                                                .unwrap()
+                                            });
+                                        }
+                                        info!("Client connected {} {}", addr, client.sdn_client_ip);
+                                        let netmask = String::from("255.255.255.0");
+                                        let destination = String::from("12.0.0.0");
+                                        let reply = HandshakeRep::new(
+                                            &netmask,
+                                            &destination,
+                                            &client.sdn_client_ip,
+                                        );
+                                        match socket.send(&reply.serialize().unwrap(), None).await {
+                                            Ok(_) => {
+                                                let mut peers_guard = peers.lock().unwrap();
+                                                peers_guard.entry(peer_id).and_modify(|p| {
+                                                    p.status = HandshakeStatus::Initialized
+                                                });
+                                            }
+                                            Err(_) => {
+                                                error!("Send handhsake reply failed");
+                                            }
+                                        }
+                                    } else {
+                                        error!("Ignoring Unknown user {}", addr.ip());
+                                    }
+                                }
+                                Err(error) => {
+                                    error!(
+                                        "Unexpected verifying key error: {} {}",
+                                        addr.ip(),
+                                        error
+                                    );
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!("HandshakeReq failed: {}", err);
+                        }
+                    },
+                }
             }
+        });
+        tokio::select! {
+            _ = forward_task => {},
+            _ = send_task => {},
         }
     }
 }
