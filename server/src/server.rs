@@ -97,7 +97,6 @@ impl Server {
             let status = {
                 let mut peers_guard = peers.lock().unwrap();
                 let peer = peers_guard.entry(peer_id).or_insert(Peer {
-                    src: addr,
                     sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
                     status: HandshakeStatus::Pending,
                     tx: tx.clone(),
