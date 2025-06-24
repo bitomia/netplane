@@ -44,6 +44,7 @@ async fn handshake<T: Transport>(
     loop {
         let (amt, _) = transport.recv(&mut socket_buf).await?;
         if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
+            info!("Successful handshake {:?}", handshake);
             return Ok(StartParams {
                 netmask: handshake.netmask,
                 destination: handshake.destination,

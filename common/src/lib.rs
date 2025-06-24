@@ -14,7 +14,7 @@ pub struct AuthClientRequest {
 
 pub const HANDSHAKE_REQUEST_HEADER: [u8; 3] = [0, 1, 2];
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum HandshakeStatus {
     Pending,
     Initialized,
