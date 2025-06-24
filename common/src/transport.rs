@@ -1,7 +1,9 @@
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::Mutex;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
@@ -24,9 +26,10 @@ pub trait Transport: Sized {
     ) -> impl std::future::Future<Output = tokio::io::Result<(usize, SocketAddr)>> + Send;
 }
 
+#[derive(Clone)]
 pub struct WebSocketTransport {
-    write: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
-    read: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    write: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
+    read: Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>,
 }
 
 impl WebSocketTransport {
@@ -38,7 +41,10 @@ impl WebSocketTransport {
             }
         };
         let (write, read) = ws_stream.split();
-        Ok(WebSocketTransport { write, read })
+        Ok(WebSocketTransport {
+            write: Arc::new(Mutex::new(write)),
+            read: Arc::new(Mutex::new(read)),
+        })
     }
 
     pub async fn bind<F, Fut>(addr: &str, callback: F)
@@ -58,7 +64,13 @@ impl WebSocketTransport {
                     }
                 };
                 let (write, read) = ws_stream.split();
-                tokio::spawn(callback(WebSocketTransport { write, read }, addr));
+                tokio::spawn(callback(
+                    WebSocketTransport {
+                        write: Arc::new(Mutex::new(write)),
+                        read: Arc::new(Mutex::new(read)),
+                    },
+                    addr,
+                ));
             }
         }
     }
@@ -66,8 +78,8 @@ impl WebSocketTransport {
 
 impl Transport for WebSocketTransport {
     async fn send(&mut self, buf: &[u8], _addr: Option<&SocketAddr>) -> tokio::io::Result<usize> {
-        match self
-            .write
+        let mut write = self.write.lock().await;
+        match write
             .send(Message::Binary(Bytes::copy_from_slice(buf)))
             .await
         {
@@ -80,7 +92,8 @@ impl Transport for WebSocketTransport {
     }
 
     async fn recv(&mut self, buf: &mut [u8]) -> tokio::io::Result<(usize, SocketAddr)> {
-        if let Some(message) = self.read.next().await {
+        let mut read = self.read.lock().await;
+        if let Some(message) = read.next().await {
             match message {
                 Ok(msg) => {
                     if let Message::Binary(msg) = msg {
