@@ -79,6 +79,8 @@ impl Server {
         let mut buf = [0; 1500];
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
 
+        info!("Connection started {} {:?}", peer_id, addr);
+
         loop {
             let (amt, _) = socket.recv(&mut buf).await.unwrap();
 
@@ -92,9 +94,13 @@ impl Server {
                 });
                 HandshakeStatus::Pending
             };
-            while let Some(msg) = rx.recv().await {
+            info!("{:?}", status);
+
+            while let Ok(msg) = rx.try_recv() {
+                info!("{:?}", msg);
                 socket.send(msg.as_ref(), None).await.unwrap();
             }
+
             match status {
                 HandshakeStatus::Initialized => {
                     if let Some(header) = parse_ipv4_header(&buf[..amt]) {
