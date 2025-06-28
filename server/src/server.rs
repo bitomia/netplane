@@ -1,7 +1,7 @@
 use anyhow::Result;
 use bytes::Bytes;
 use common::packet::parse_ipv4_header;
-use common::transport::{AnyTransport, Transport, WebSocketTransport};
+use common::transport::{AnyTransport, Transport, UdpTransport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
@@ -56,13 +56,14 @@ impl Server {
 
     pub async fn udp_start(self: &Self) -> Result<()> {
         let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-        let socket = tokio::net::UdpSocket::bind(server_addr).await?;
+        let mut transport = UdpTransport::bind(&server_addr).await.unwrap();
+
         let mut clients: HashSet<UdpClient> = HashSet::new();
         let mut buf = [0; 1500];
         let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
 
         loop {
-            let (amt, src) = socket.recv_from(&mut buf).await?;
+            let (amt, src) = transport.recv(&mut buf).await?;
             debug!("BYTES received {}", amt);
             let status = clients_status
                 .entry(src)
@@ -80,7 +81,7 @@ impl Server {
                             if src != client.src {
                                 // TODO this is broadcasting, parse IP header and send only to target
                                 debug!("...relying");
-                                socket.send_to(&buf[..amt], &client.src).await?;
+                                transport.send(&buf[..amt], Some(&client.src)).await?;
                             }
                         }
                     } else {
@@ -110,7 +111,8 @@ impl Server {
                                             &destination,
                                             &client.sdn_client_ip,
                                         );
-                                        match socket.send_to(&reply.serialize()?, &src).await {
+                                        match transport.send(&reply.serialize()?, Some(&src)).await
+                                        {
                                             Ok(_) => {
                                                 clients_status
                                                     .insert(src, HandshakeStatus::Initialized);
