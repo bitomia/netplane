@@ -38,6 +38,7 @@ pub struct ProcessError(u32);
 struct Server {
     peers: Peers,
     db: Arc<db::Db>,
+    transport: String,
 }
 
 #[derive(Eq, Hash, PartialEq)]
@@ -47,14 +48,24 @@ struct UdpClient {
 }
 
 impl Server {
-    pub fn new(db: Arc<db::Db>, transport: &str) -> Server {
+    pub fn new(db: Arc<db::Db>, transport: &String) -> Server {
+        let mut transport = transport.clone();
+        transport.make_ascii_lowercase();
         Server {
             peers: Arc::new(Mutex::new(HashMap::new())),
             db,
+            transport,
         }
     }
 
-    pub async fn udp_start(self: &Self) -> Result<()> {
+    pub async fn start(self: &Self) -> Result<()> {
+        match self.transport.as_str() {
+            "websocket" => self.ws_start().await,
+            _ => self.udp_start().await,
+        }
+    }
+
+    async fn udp_start(self: &Self) -> Result<()> {
         let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
         let mut transport = UdpTransport::bind(&server_addr).await.unwrap();
 
@@ -143,7 +154,7 @@ impl Server {
         }
     }
 
-    pub async fn start(self: &Self) -> Result<()> {
+    async fn ws_start(self: &Self) -> Result<()> {
         let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
 
         WebSocketTransport::bind(&listen_addr, {
@@ -156,7 +167,7 @@ impl Server {
             move |socket, addr| {
                 let peer_id = next_peer_id_clone.fetch_add(1, Ordering::SeqCst);
 
-                Server::handle_connection(
+                Server::ws_handle_connection(
                     peer_id,
                     socket,
                     addr,
@@ -169,7 +180,7 @@ impl Server {
         Ok(())
     }
 
-    async fn handle_connection(
+    async fn ws_handle_connection(
         peer_id: i32,
         socket: WebSocketTransport,
         addr: SocketAddr,
@@ -355,9 +366,7 @@ async fn main() -> Result<(), ProcessError> {
     let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
     let reticula_server = Server::new(
         Arc::clone(&db),
-        std::env::var("TRANSPORT")
-            .unwrap_or("UDP".to_string())
-            .as_str(),
+        &std::env::var("TRANSPORT").unwrap_or("UDP".to_string()),
     );
     let reticula_server = tokio::spawn(async move { reticula_server.start().await });
     info!("TCP server listening on {}", listen_addr);
