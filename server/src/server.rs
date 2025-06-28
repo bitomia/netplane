@@ -1,13 +1,12 @@
 use anyhow::Result;
 use bytes::Bytes;
 use common::packet::parse_ipv4_header;
-use common::transport::{AnyTransport, Transport, UdpTransport, WebSocketTransport};
+use common::transport::{Transport, UdpTransport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
-use log::{debug, error, info};
-use sqlx::any::AnyTransactionManager;
+use log::{error, info};
 use sqlx::sqlite::SqlitePoolOptions;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path as FilePath;
 use std::str::FromStr;
@@ -24,13 +23,38 @@ use crate::webserver::WebServer;
 type Tx = mpsc::UnboundedSender<Bytes>;
 type Rx = mpsc::UnboundedReceiver<Bytes>;
 
-struct Peer {
+struct TcpPeer {
     pub sdn_ip_addr: Ipv4Addr,
     pub status: HandshakeStatus,
     pub tx: Tx,
 }
 
-type Peers = Arc<Mutex<HashMap<i32, Peer>>>;
+#[derive(Clone)]
+struct UdpPeer {
+    pub sdn_ip_addr: Ipv4Addr,
+    pub status: HandshakeStatus,
+}
+
+enum Peers {
+    UdpPeers(HashMap<SocketAddr, UdpPeer>),
+    TcpPeers(Arc<Mutex<HashMap<i32, TcpPeer>>>),
+}
+
+fn try_get_tcp(peers: &mut Peers) -> Option<&mut Arc<Mutex<HashMap<i32, TcpPeer>>>> {
+    if let Peers::TcpPeers(peers) = peers {
+        Some(peers)
+    } else {
+        None
+    }
+}
+
+fn try_get_udp(peers: &mut Peers) -> Option<&mut HashMap<SocketAddr, UdpPeer>> {
+    if let Peers::UdpPeers(peers) = peers {
+        Some(peers)
+    } else {
+        None
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -41,58 +65,57 @@ struct Server {
     transport: String,
 }
 
-#[derive(Eq, Hash, PartialEq)]
-struct UdpClient {
-    pub src: SocketAddr,
-    pub sdn_ip_addr: Ipv4Addr,
-}
-
 impl Server {
     pub fn new(db: Arc<db::Db>, transport: &String) -> Server {
         let mut transport = transport.clone();
         transport.make_ascii_lowercase();
+
+        let peers = match transport.as_str() {
+            "websocket" => {
+                info!("Initializing with WebSocket transport");
+                Peers::TcpPeers(Arc::new(Mutex::new(HashMap::new())))
+            }
+            _ => {
+                info!("Initializing with UDP transport");
+                Peers::UdpPeers(HashMap::new())
+            }
+        };
+
         Server {
-            peers: Arc::new(Mutex::new(HashMap::new())),
+            peers,
             db,
             transport,
         }
     }
 
-    pub async fn start(self: &Self) -> Result<()> {
+    pub async fn start(&mut self) -> Result<()> {
         match self.transport.as_str() {
             "websocket" => self.ws_start().await,
             _ => self.udp_start().await,
         }
     }
 
-    async fn udp_start(self: &Self) -> Result<()> {
+    async fn udp_start(&mut self) -> Result<()> {
         let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
         let mut transport = UdpTransport::bind(&server_addr).await.unwrap();
-
-        let mut clients: HashSet<UdpClient> = HashSet::new();
         let mut buf = [0; 1500];
-        let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
 
         loop {
             let (amt, src) = transport.recv(&mut buf).await?;
-            debug!("BYTES received {}", amt);
-            let status = clients_status
-                .entry(src)
-                .or_insert(HandshakeStatus::Pending);
-            match status {
-                HandshakeStatus::Initialized => {
-                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                        debug!(
-                            "{} {} {}",
-                            header.src_ip, header.dst_ip, header.total_length
-                        );
 
-                        for client in &clients {
-                            debug!("Sending data to {}", src);
-                            if src != client.src {
+            let peers = try_get_udp(&mut self.peers).unwrap();
+            let peer = peers.entry(src).or_insert(UdpPeer {
+                sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
+                status: HandshakeStatus::Pending,
+            });
+
+            match peer.status {
+                HandshakeStatus::Initialized => {
+                    if let Some(_header) = parse_ipv4_header(&buf[..amt]) {
+                        for (other_peer_addr, _) in peers.clone() {
+                            if src != other_peer_addr {
                                 // TODO this is broadcasting, parse IP header and send only to target
-                                debug!("...relying");
-                                transport.send(&buf[..amt], Some(&client.src)).await?;
+                                transport.send(&buf[..amt], Some(&other_peer_addr)).await?;
                             }
                         }
                     } else {
@@ -102,19 +125,16 @@ impl Server {
                 HandshakeStatus::Pending => {
                     match HandshakeReq::deserialize(&buf[..amt]) {
                         Ok(handshake) => {
-                            info!("HandshakeReq received {}", src);
                             match common::crypto::verify_signed_key(handshake.auth_key) {
                                 Ok(auth_client) => {
                                     if let Ok(client) =
                                         self.db.get_client(&auth_client.client_id).await
                                     {
-                                        clients.insert(UdpClient {
-                                            src,
-                                            sdn_ip_addr: Ipv4Addr::from_str(
-                                                &client.sdn_client_ip.as_str(),
-                                            )?,
-                                        });
+                                        peer.sdn_ip_addr =
+                                            Ipv4Addr::from_str(&client.sdn_client_ip.as_str())?;
+
                                         info!("Client connected {} {}", src, client.sdn_client_ip);
+
                                         let netmask = String::from("255.255.255.0");
                                         let destination = String::from("12.0.0.0");
                                         let reply = HandshakeRep::new(
@@ -125,8 +145,7 @@ impl Server {
                                         match transport.send(&reply.serialize()?, Some(&src)).await
                                         {
                                             Ok(_) => {
-                                                clients_status
-                                                    .insert(src, HandshakeStatus::Initialized);
+                                                peer.status = HandshakeStatus::Initialized;
                                             }
                                             Err(_) => {
                                                 // TODO
@@ -154,13 +173,13 @@ impl Server {
         }
     }
 
-    async fn ws_start(self: &Self) -> Result<()> {
+    async fn ws_start(&mut self) -> Result<()> {
         let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
+        let peers = try_get_tcp(&mut self.peers).unwrap();
 
         WebSocketTransport::bind(&listen_addr, {
             let db = Arc::clone(&self.db);
-            let peers = Arc::clone(&self.peers);
-
+            let peers = Arc::clone(peers);
             let next_peer_id = Arc::new(AtomicI32::new(0));
             let next_peer_id_clone = Arc::clone(&next_peer_id);
 
@@ -185,16 +204,14 @@ impl Server {
         socket: WebSocketTransport,
         addr: SocketAddr,
         db: Arc<db::Db>,
-        peers: Peers,
+        peers: Arc<Mutex<HashMap<i32, TcpPeer>>>,
     ) {
         info!("Connection started {} {:?}", peer_id, addr);
 
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
-
         let mut send_socket = socket.clone();
         let send_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                info!("Socket send {}", addr);
                 send_socket.send(msg.as_ref(), None).await.unwrap();
             }
         });
@@ -208,42 +225,32 @@ impl Server {
 
                 let status = {
                     let mut peers_guard = peers.lock().unwrap();
-                    let peer = peers_guard.entry(peer_id).or_insert(Peer {
+                    let peer = peers_guard.entry(peer_id).or_insert(TcpPeer {
                         sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
                         status: HandshakeStatus::Pending,
                         tx: tx.clone(),
                     });
                     peer.status.clone()
                 };
-                info!("Loop step: {} {:?} {}", peer_id, status, amt);
 
                 match status {
                     HandshakeStatus::Initialized => {
                         if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                            debug!(
-                                "=====> {} > {} [size={}]",
-                                header.src_ip, header.dst_ip, header.total_length
-                            );
-
                             let peers_guard = peers.lock().unwrap();
                             for (&_peer_id, peer) in peers_guard.iter() {
-                                debug!("-> {}", peer.sdn_ip_addr);
                                 if peer.sdn_ip_addr.to_string() == header.dst_ip.to_string() {
-                                    debug!("...relying");
                                     peer.tx
                                         .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
                                         .unwrap();
                                     break;
                                 }
                             }
-                            debug!("<=======");
                         } else {
                             error!("Packet not supported");
                         }
                     }
                     HandshakeStatus::Pending => match HandshakeReq::deserialize(&buf[..amt]) {
                         Ok(handshake) => {
-                            info!("HandshakeReq received {}", addr);
                             match common::crypto::verify_signed_key(handshake.auth_key) {
                                 Ok(auth_client) => {
                                     let client = db.get_client(&auth_client.client_id).await;
@@ -364,7 +371,7 @@ async fn main() -> Result<(), ProcessError> {
 
     info!("Starting reticula server");
     let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-    let reticula_server = Server::new(
+    let mut reticula_server = Server::new(
         Arc::clone(&db),
         &std::env::var("TRANSPORT").unwrap_or("UDP".to_string()),
     );
