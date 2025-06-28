@@ -47,7 +47,7 @@ async fn handshake<T: Transport>(
             info!("Successful handshake {:?}", handshake);
             return Ok(StartParams {
                 netmask: handshake.netmask,
-                destination: handshake.destination,
+                destination: handshake.network,
                 ip_addr: handshake.sdn_ip_addr,
             });
         } else {
