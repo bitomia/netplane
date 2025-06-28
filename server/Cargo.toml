@@ -5,7 +5,7 @@ edition = "2024"
 
 [[bin]]
 name = "server"
-path = "src/server.rs"
+path = "src/main.rs"
 
 # [[bin]]
 # name = "admin"

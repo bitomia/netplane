@@ -56,16 +56,16 @@ pub const HANDSHAKE_REPLY_HEADER: [u8; 3] = [3, 4, 5];
 pub struct HandshakeRep {
     pub header: [u8; 3],
     pub netmask: String,
-    pub destination: String,
+    pub network: String,
     pub sdn_ip_addr: String,
 }
 
 impl HandshakeRep {
-    pub fn new(netmask: &String, destination: &String, sdn_ip_addr: &String) -> Self {
+    pub fn new(netmask: &String, network: &String, sdn_ip_addr: &String) -> Self {
         Self {
             header: HANDSHAKE_REPLY_HEADER,
             netmask: netmask.clone(),
-            destination: destination.clone(),
+            network: network.clone(),
             sdn_ip_addr: sdn_ip_addr.clone(),
         }
     }
