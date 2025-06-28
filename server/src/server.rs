@@ -6,7 +6,7 @@ use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
 use sqlx::sqlite::SqlitePoolOptions;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path as FilePath;
 use std::str::FromStr;
@@ -39,11 +39,104 @@ struct Server {
     db: Arc<db::Db>,
 }
 
+#[derive(Eq, Hash, PartialEq)]
+struct UdpClient {
+    pub src: SocketAddr,
+    pub sdn_ip_addr: Ipv4Addr,
+}
+
 impl Server {
     pub fn new(db: Arc<db::Db>) -> Server {
         Server {
             peers: Arc::new(Mutex::new(HashMap::new())),
             db,
+        }
+    }
+
+    pub async fn udp_start(self: &Self) -> Result<()> {
+        let server_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
+        let socket = tokio::net::UdpSocket::bind(server_addr).await?;
+        let mut clients: HashSet<UdpClient> = HashSet::new();
+        let mut buf = [0; 1500];
+        let mut clients_status: HashMap<SocketAddr, HandshakeStatus> = HashMap::new();
+
+        loop {
+            let (amt, src) = socket.recv_from(&mut buf).await?;
+            debug!("BYTES received {}", amt);
+            let status = clients_status
+                .entry(src)
+                .or_insert(HandshakeStatus::Pending);
+            match status {
+                HandshakeStatus::Initialized => {
+                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                        debug!(
+                            "{} {} {}",
+                            header.src_ip, header.dst_ip, header.total_length
+                        );
+
+                        for client in &clients {
+                            debug!("Sending data to {}", src);
+                            if src != client.src {
+                                // TODO this is broadcasting, parse IP header and send only to target
+                                debug!("...relying");
+                                socket.send_to(&buf[..amt], &client.src).await?;
+                            }
+                        }
+                    } else {
+                        error!("Packet not supported");
+                    }
+                }
+                HandshakeStatus::Pending => {
+                    match HandshakeReq::deserialize(&buf[..amt]) {
+                        Ok(handshake) => {
+                            info!("HandshakeReq received {}", src);
+                            match common::crypto::verify_signed_key(handshake.auth_key) {
+                                Ok(auth_client) => {
+                                    if let Ok(client) =
+                                        self.db.get_client(&auth_client.client_id).await
+                                    {
+                                        clients.insert(UdpClient {
+                                            src,
+                                            sdn_ip_addr: Ipv4Addr::from_str(
+                                                &client.sdn_client_ip.as_str(),
+                                            )?,
+                                        });
+                                        info!("Client connected {} {}", src, client.sdn_client_ip);
+                                        let netmask = String::from("255.255.255.0");
+                                        let destination = String::from("12.0.0.0");
+                                        let reply = HandshakeRep::new(
+                                            &netmask,
+                                            &destination,
+                                            &client.sdn_client_ip,
+                                        );
+                                        match socket.send_to(&reply.serialize()?, &src).await {
+                                            Ok(_) => {
+                                                clients_status
+                                                    .insert(src, HandshakeStatus::Initialized);
+                                            }
+                                            Err(_) => {
+                                                // TODO
+                                            }
+                                        }
+                                    } else {
+                                        error!("Ignoring Unknown user {}", src.ip());
+                                    }
+                                }
+                                Err(error) => {
+                                    error!(
+                                        "Unexpected verifying key error: {} {}",
+                                        src.ip(),
+                                        error
+                                    );
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!("HandshakeReq failed: {}", err);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -254,6 +347,8 @@ async fn main() -> Result<(), ProcessError> {
     }
 
     let db = Arc::new(db::Db::new().await);
+
+    let transport = std::env::var("TRANSPORT").unwrap_or("UDP".to_string());
 
     info!("Starting reticula server");
     let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
