@@ -1,10 +1,11 @@
 use anyhow::Result;
 use bytes::Bytes;
 use common::packet::parse_ipv4_header;
-use common::transport::{Transport, WebSocketTransport};
+use common::transport::{AnyTransport, Transport, WebSocketTransport};
 use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use dotenv::dotenv;
 use log::{debug, error, info};
+use sqlx::any::AnyTransactionManager;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
@@ -46,7 +47,7 @@ struct UdpClient {
 }
 
 impl Server {
-    pub fn new(db: Arc<db::Db>) -> Server {
+    pub fn new(db: Arc<db::Db>, transport: &str) -> Server {
         Server {
             peers: Arc::new(Mutex::new(HashMap::new())),
             db,
@@ -348,11 +349,14 @@ async fn main() -> Result<(), ProcessError> {
 
     let db = Arc::new(db::Db::new().await);
 
-    let transport = std::env::var("TRANSPORT").unwrap_or("UDP".to_string());
-
     info!("Starting reticula server");
     let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-    let reticula_server = Server::new(Arc::clone(&db));
+    let reticula_server = Server::new(
+        Arc::clone(&db),
+        std::env::var("TRANSPORT")
+            .unwrap_or("UDP".to_string())
+            .as_str(),
+    );
     let reticula_server = tokio::spawn(async move { reticula_server.start().await });
     info!("TCP server listening on {}", listen_addr);
 
