@@ -23,6 +23,41 @@ pub struct Server {
 }
 
 impl Server {
+    async fn process_handshake(
+        handshake_req: HandshakeReq,
+        db: &db::Db,
+        client_addr: std::net::IpAddr,
+    ) -> Result<(HandshakeRep, String)> {
+        match common::crypto::verify_signed_key(handshake_req.auth_key) {
+            Ok(auth_client) => {
+                if let Ok(client) = db.get_client(&auth_client.client_id).await {
+                    info!("Client connected {} {}", client_addr, client.sdn_client_ip);
+                    let reply = HandshakeRep::new(
+                        &client.netmask,
+                        &client.network,
+                        &client.sdn_client_ip,
+                    );
+                    Ok((reply, client.sdn_client_ip))
+                } else {
+                    error!("Ignoring Unknown user {}", client_addr);
+                    Err(anyhow::anyhow!("Unknown user"))
+                }
+            }
+            Err(error) => {
+                error!("Unexpected verifying key error: {} {}", client_addr, error);
+                Err(anyhow::anyhow!("Key verification failed: {}", error))
+            }
+        }
+    }
+
+    fn validate_packet(buf: &[u8]) -> bool {
+        if parse_ipv4_header(buf).is_some() {
+            true
+        } else {
+            error!("Packet not supported");
+            false
+        }
+    }
     pub fn new(db: Arc<db::Db>, transport: &String) -> Server {
         let mut transport = transport.clone();
         transport.make_ascii_lowercase();
@@ -68,54 +103,32 @@ impl Server {
 
             match peer.status {
                 HandshakeStatus::Initialized => {
-                    if let Some(_header) = parse_ipv4_header(&buf[..amt]) {
+                    if Self::validate_packet(&buf[..amt]) {
                         for (other_peer_addr, _) in peers.clone() {
                             if src != other_peer_addr {
                                 // TODO this is broadcasting, parse IP header and send only to target
                                 transport.send(&buf[..amt], Some(&other_peer_addr)).await?;
                             }
                         }
-                    } else {
-                        error!("Packet not supported");
                     }
                 }
                 HandshakeStatus::Pending => {
                     match HandshakeReq::deserialize(&buf[..amt]) {
                         Ok(handshake) => {
-                            match common::crypto::verify_signed_key(handshake.auth_key) {
-                                Ok(auth_client) => {
-                                    if let Ok(client) =
-                                        self.db.get_client(&auth_client.client_id).await
-                                    {
-                                        peer.sdn_ip_addr =
-                                            Ipv4Addr::from_str(&client.sdn_client_ip.as_str())?;
-
-                                        info!("Client connected {} {}", src, client.sdn_client_ip);
-
-                                        let reply = HandshakeRep::new(
-                                            &client.netmask,
-                                            &client.network,
-                                            &client.sdn_client_ip,
-                                        );
-                                        match transport.send(&reply.serialize()?, Some(&src)).await
-                                        {
-                                            Ok(_) => {
-                                                peer.status = HandshakeStatus::Initialized;
-                                            }
-                                            Err(_) => {
-                                                // TODO
-                                            }
+                            match Self::process_handshake(handshake, &self.db, src.ip()).await {
+                                Ok((reply, sdn_client_ip)) => {
+                                    peer.sdn_ip_addr = Ipv4Addr::from_str(&sdn_client_ip)?;
+                                    match transport.send(&reply.serialize()?, Some(&src)).await {
+                                        Ok(_) => {
+                                            peer.status = HandshakeStatus::Initialized;
                                         }
-                                    } else {
-                                        error!("Ignoring Unknown user {}", src.ip());
+                                        Err(_) => {
+                                            // TODO
+                                        }
                                     }
                                 }
-                                Err(error) => {
-                                    error!(
-                                        "Unexpected verifying key error: {} {}",
-                                        src.ip(),
-                                        error
-                                    );
+                                Err(_) => {
+                                    // Error already logged in process_handshake
                                 }
                             }
                         }
@@ -190,66 +203,45 @@ impl Server {
 
                 match status {
                     HandshakeStatus::Initialized => {
-                        if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                            let peers_guard = peers.lock().unwrap();
-                            for (&_peer_id, peer) in peers_guard.iter() {
-                                if peer.sdn_ip_addr.to_string() == header.dst_ip.to_string() {
-                                    peer.tx
-                                        .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
-                                        .unwrap();
-                                    break;
+                        if Self::validate_packet(&buf[..amt]) {
+                            if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                                let peers_guard = peers.lock().unwrap();
+                                for (&_peer_id, peer) in peers_guard.iter() {
+                                    if peer.sdn_ip_addr.to_string() == header.dst_ip.to_string() {
+                                        peer.tx
+                                            .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
+                                            .unwrap();
+                                        break;
+                                    }
                                 }
                             }
-                        } else {
-                            error!("Packet not supported");
                         }
                     }
                     HandshakeStatus::Pending => match HandshakeReq::deserialize(&buf[..amt]) {
                         Ok(handshake) => {
-                            match common::crypto::verify_signed_key(handshake.auth_key) {
-                                Ok(auth_client) => {
-                                    let client = db.get_client(&auth_client.client_id).await;
-                                    if let Ok(client) = client {
-                                        {
+                            match Self::process_handshake(handshake, &db, addr.ip()).await {
+                                Ok((reply, sdn_client_ip)) => {
+                                    {
+                                        let mut peers_guard = peers.lock().unwrap();
+                                        peers_guard.entry(peer_id).and_modify(|p| {
+                                            p.sdn_ip_addr = Ipv4Addr::from_str(&sdn_client_ip).unwrap()
+                                        });
+                                    }
+                                    let mut reply_socket = socket.clone();
+                                    match reply_socket.send(&reply.serialize().unwrap(), None).await {
+                                        Ok(_) => {
                                             let mut peers_guard = peers.lock().unwrap();
                                             peers_guard.entry(peer_id).and_modify(|p| {
-                                                p.sdn_ip_addr = Ipv4Addr::from_str(
-                                                    &client.sdn_client_ip.as_str(),
-                                                )
-                                                .unwrap()
+                                                p.status = HandshakeStatus::Initialized
                                             });
                                         }
-                                        info!("Client connected {} {}", addr, client.sdn_client_ip);
-                                        let reply = HandshakeRep::new(
-                                            &client.netmask,
-                                            &client.network,
-                                            &client.sdn_client_ip,
-                                        );
-                                        let mut reply_socket = socket.clone();
-                                        match reply_socket
-                                            .send(&reply.serialize().unwrap(), None)
-                                            .await
-                                        {
-                                            Ok(_) => {
-                                                let mut peers_guard = peers.lock().unwrap();
-                                                peers_guard.entry(peer_id).and_modify(|p| {
-                                                    p.status = HandshakeStatus::Initialized
-                                                });
-                                            }
-                                            Err(_) => {
-                                                error!("Send handhsake reply failed");
-                                            }
+                                        Err(_) => {
+                                            error!("Send handhsake reply failed");
                                         }
-                                    } else {
-                                        error!("Ignoring Unknown user {}", addr.ip());
                                     }
                                 }
-                                Err(error) => {
-                                    error!(
-                                        "Unexpected verifying key error: {} {}",
-                                        addr.ip(),
-                                        error
-                                    );
+                                Err(_) => {
+                                    // Error already logged in process_handshake
                                 }
                             }
                         }
