@@ -1,13 +1,15 @@
 use anyhow::{Result, anyhow};
-use common::{crypto::load_auth_key, transport::WebSocketTransport};
+use common::{
+    crypto::load_auth_key,
+    transport::{UdpTransport, WebSocketTransport},
+};
 use dotenv::dotenv;
 use http_post::http_post_json;
 use log::{debug, error, info};
 use std::env;
-
 use tokio::signal::unix::{SignalKind, signal};
 //use tray_item::{TrayItem, IconSource};
-use common::{HandshakeRep, HandshakeReq, transport::Transport};
+use common::{HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport};
 
 pub mod http_post;
 pub mod packet;
@@ -30,10 +32,10 @@ struct StartParams {
     ip_addr: String,
 }
 
-async fn handshake<T: Transport>(
+async fn handshake(
     auth_key: String,
     server_addr: String,
-    transport: &mut T,
+    transport: &mut AnyTransport,
 ) -> Result<StartParams> {
     info!("Starting handshake with {}", server_addr);
 
@@ -56,13 +58,38 @@ async fn handshake<T: Transport>(
     }
 }
 
+async fn create_transport(control_addr: &str) -> Result<AnyTransport> {
+    let transport_type = env::var("TRANSPORT").unwrap_or_else(|_| "udp".to_string());
+
+    match transport_type.to_lowercase().as_str() {
+        "websocket" | "ws" => {
+            let transport = WebSocketTransport::connect(control_addr)
+                .await
+                .map_err(|_| anyhow!("Cannot open WebSocket"))?;
+            Ok(AnyTransport::WebSocket(transport))
+        }
+        "udp" => {
+            let transport = UdpTransport::bind("0.0.0.0:0")
+                .await
+                .map_err(|_| anyhow!("Cannot bind UDP socket"))?;
+            transport
+                .connect(control_addr)
+                .await
+                .map_err(|_| anyhow!("Cannot connect UDP socket"))?;
+            Ok(AnyTransport::Udp(transport))
+        }
+        _ => Err(anyhow!(
+            "Unsupported transport type: {}. Use 'websocket' or 'udp'",
+            transport_type
+        )),
+    }
+}
+
 pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
     info!("Starting client");
     let auth_key = load_auth_key()?;
 
-    let mut transport = WebSocketTransport::connect(control_addr.as_str())
-        .await
-        .expect("Cannot open WebSocket");
+    let mut transport = create_transport(&control_addr).await?;
 
     info!("Client connected to control");
 

@@ -164,3 +164,24 @@ impl Transport for UdpTransport {
         self.socket.recv_from(buf).await
     }
 }
+
+pub enum AnyTransport {
+    WebSocket(WebSocketTransport),
+    Udp(UdpTransport),
+}
+
+impl Transport for AnyTransport {
+    async fn send(&mut self, buf: &[u8], addr: Option<&SocketAddr>) -> tokio::io::Result<usize> {
+        match self {
+            AnyTransport::WebSocket(ws) => ws.send(buf, addr).await,
+            AnyTransport::Udp(udp) => udp.send(buf, addr).await,
+        }
+    }
+
+    async fn recv(&mut self, buf: &mut [u8]) -> tokio::io::Result<(usize, SocketAddr)> {
+        match self {
+            AnyTransport::WebSocket(ws) => ws.recv(buf).await,
+            AnyTransport::Udp(udp) => udp.recv(buf).await,
+        }
+    }
+}
