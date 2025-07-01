@@ -4,7 +4,7 @@ export default ({ setNewClient, setClients, clients }) => {
   const [error, setError] = useState();
   const [sdnIP, setSDNIP] = useState("");
   const [netmask, setNetmask] = useState("");
-    const createDisabled = useMemo(
+  const createDisabled = useMemo(
     () => sdnIP?.length == 0 || netmask?.length == 0,
     [sdnIP, netmask],
   );
@@ -37,7 +37,7 @@ export default ({ setNewClient, setClients, clients }) => {
       aria-modal="true"
     >
       <div
-        className="fixed inset-0 bg-gray-500/75 transition-opacity"
+        className="fixed inset-0 bg-slate-500/75 transition-opacity"
         aria-hidden="true"
       ></div>
 

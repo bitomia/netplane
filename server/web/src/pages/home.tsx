@@ -5,7 +5,7 @@ import logo from "../assets/reticula.svg";
 import DeleteClientDialog from "./DeleteClientDialog";
 import NewClientDialog from "./NewClientDialog";
 
-export default function() {
+export default function () {
   const [deleteClient, setDeleteClient] = useState(null);
   const [newClient, setNewClient] = useState(false);
   const [clients, setClients] = useState([]);
@@ -32,20 +32,21 @@ export default function() {
 
   return (
     <main className="flex items-center justify-center pt-16 pb-4 max-w-4xl w-full mx-auto">
-      <div className="grid grid-cols-4 bg-gray-800 rounded-lg px-6 py-8 w-full">
+      <div className="grid grid-cols-4 bg-white rounded-lg px-6 py-8 w-full">
         <div>
           <img className="max-w-40" src={logo} />
-          <p className="text-xs text-gray-300">Software Defined Network</p>
+          <p className="text-slate-800">Software Defined Network</p>
         </div>
         <div className="col-span-3 pl-20">
           <div className="flex flex-row justify-between items-center pb-5">
-            <h3 className="text-base font-medium tracking-tight text-xl">
+            <h3 className="text-base text-slate-950 font-medium tracking-tight text-xl">
               Network clients
             </h3>
             <button
-              className="border-1 border-slate-700 hover:bg-slate-700 px-7 py-2 rounded-md text-nowrap flex cursor-pointer"
+              className="border-1 border-slate-500 hover:bg-slate-200 px-7 py-2 text-nowrap flex cursor-pointer text-slate-950"
               onClick={() => setNewClient(true)}
             >
+              {" "}
               + New Client
             </button>
           </div>
@@ -53,34 +54,28 @@ export default function() {
             {clients &&
               clients.map((c) => (
                 <div
-                  className="flex flex-row w-full mb-5 bg-gray-700 hover:bg-gray-600 hover:cursor-pointer  px-4 py-3 rounded"
+                  className="flex flex-row w-full mb-5 bg-slate-100 hover:bg-slate-300 hover:cursor-pointer  px-4 py-3 rounded"
                   key={c.id}
                   onClick={() => setDeleteClient([c.id, c.auth_link_id])}
                 >
-                  <div className="w-full">
+                  <div className="w-full text-slate-700">
                     <div className="flex flex-row">
                       <div className="flex flex-col w-full">
-                        <span className="font-bold text-xs text-gray-400">
-                          SDN IP
-                        </span>
+                        <span className="font-bold text-xs">SDN IP</span>
                         {c.sdn_client_ip}
                       </div>
                       <div className="flex flex-col w-full">
-                        <span className="font-bold text-xs text-gray-400">
-                          NETMASK
-                        </span>
+                        <span className="font-bold text-xs">NETMASK</span>
                         {c.netmask}
                       </div>
                       <div className="flex flex-col w-full">
-                        <span className="font-bold text-xs text-gray-400">
-                          Authed
-                        </span>
+                        <span className="font-bold text-xs">Authed</span>
                         {c.used ? "✅" : "⚠️"}
                       </div>
                     </div>
-                    <div className="text-[10px] pb-1 text-gray-500">{c.id}</div>
+                    <div className="text-[10px] pb-1">{c.id}</div>
                   </div>
-                  <div className="flex items-center ">...</div>
+                  <div className="flex items-center text-slate-900">...</div>
                 </div>
               ))}
           </div>
