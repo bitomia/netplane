@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::signal::unix::{SignalKind, signal};
 
 mod db;
+mod handlers;
 mod peers;
 mod server;
 mod webserver;
