@@ -5,7 +5,7 @@ use log::info;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
-use crate::handlers::{AppState, get_clients, create_client, delete_client, auth_client};
+use crate::handlers::{AppState, get_clients, create_client, delete_client, auth_client, login};
 
 pub struct WebServer {}
 
@@ -19,7 +19,11 @@ impl WebServer {
             return "http://localhost:3000".to_string();
         });
 
-        let state = AppState { db, server_url };
+        let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
+            info!("Couldn't find JWT_SECRET env var. Using default value.");
+            return "your-secret-key".to_string();
+        });
+        let state = AppState { db, server_url, jwt_secret };
         let static_web_path = std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var");
         let serve_dir = ServeDir::new(static_web_path);
         let app = Router::new()
@@ -29,6 +33,7 @@ impl WebServer {
                     .post(create_client)
                     .delete(delete_client),
             )
+            .route("/api/login", post(login))
             .route("/auth/{auth_key}", post(auth_client))
             .with_state(state)
             .fallback_service(serve_dir);

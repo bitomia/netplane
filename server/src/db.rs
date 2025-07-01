@@ -24,6 +24,13 @@ pub struct AuthClient {
     pub used: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct User {
+    pub email: String,
+    pub password_hash: String,
+    pub role: String,
+}
+
 impl Db {
     pub async fn new() -> Db {
         let db_file_path = env::var("DATABASE_URL").unwrap();
@@ -168,5 +175,16 @@ INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
             .await?;
         tx.commit().await?;
         Ok(())
+    }
+
+    pub async fn get_user_by_email(self: &Self, email: &str) -> Result<User, anyhow::Error> {
+        let user = sqlx::query_as!(
+            User,
+            "SELECT email, password_hash, role FROM users WHERE email = ?",
+            email
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(user)
     }
 }
