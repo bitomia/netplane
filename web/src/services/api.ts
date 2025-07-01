@@ -13,6 +13,11 @@ export interface Client {
   sdn_client_ip: string;
 }
 
+export interface UserDataResponse {
+  email: string;
+  role: string;
+}
+
 export const api = createApi({
   reducerPath: "api",
   baseQuery: fetchBaseQuery({
@@ -46,8 +51,12 @@ export const api = createApi({
       }),
       invalidatesTags: [{ type: "Clients", id: "LIST" }],
     }),
+
+    getUserData: build.query<UserDataResponse, void>({
+      query: () => ({ url: `user` }),
+    }),
   }),
 });
 
-export const { useLoginMutation, useGetClientsQuery, useCreateClientMutation } =
+export const { useLoginMutation, useGetClientsQuery, useCreateClientMutation, useGetUserDataQuery } =
   api;

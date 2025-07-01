@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useState } from "react";
+import { useNavigate } from "react-router";
 import { cn } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -19,16 +20,17 @@ export function LoginForm({
 }: React.ComponentProps<"div">) {
   const [login, { isLoading, error }] = useLoginMutation();
   const [formData, setFormData] = useState({ email: "", password: "" });
+  const navigate = useNavigate();
 
   const onSignIn = useCallback(async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       await login(formData).unwrap();
-      window.location.href = '/projects';
+      navigate('/projects');
     } catch (err) {
       console.error('Login failed:', err);
     }
-  }, [login, formData]);
+  }, [login, formData, navigate]);
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>

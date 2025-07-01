@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::handlers::{AppState, auth_client, create_client, delete_client, get_clients, login};
+use crate::handlers::{AppState, auth_client, create_client, delete_client, get_clients, get_user_data, login};
 
 pub struct WebServer {}
 
@@ -37,6 +37,7 @@ impl WebServer {
                 get(get_clients).post(create_client).delete(delete_client),
             )
             .route("/api/login", post(login))
+            .route("/api/user", get(get_user_data))
             .route("/auth/{auth_key}", post(auth_client))
             .layer(cors)
             .with_state(state)

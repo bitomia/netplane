@@ -45,6 +45,12 @@ pub struct LoginResponse {
     pub success: bool,
 }
 
+#[derive(Serialize)]
+pub struct UserDataResponse {
+    pub email: String,
+    pub role: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub email: String,
@@ -242,5 +248,28 @@ pub async fn auth_client(
     {
         Ok(auth_key) => (StatusCode::OK, Ok(auth_key)),
         Err(error) => web_err!(error.to_string()),
+    }
+}
+
+pub async fn get_user_data(
+    State(state): State<AppState>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
+) -> WebResult<UserDataResponse> {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+
+    let claims = match verify_jwt(token, &state.jwt_secret) {
+        Ok(claims) => claims,
+        Err(_) => return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string()),
+    };
+
+    match state.db.get_user_by_email(&claims.email).await {
+        Ok(user) => web_ok!(UserDataResponse {
+            email: user.email,
+            role: user.role,
+        }),
+        Err(_) => web_err!(StatusCode::UNAUTHORIZED, "User not found".to_string()),
     }
 }
