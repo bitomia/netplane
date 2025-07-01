@@ -11,13 +11,24 @@ import {
   CardTitle,
 } from "~/components/ui/card";
 import logo from "~/assets/logo.svg";
-import { signIn } from "@hono/auth-js/react";
+import { useLoginMutation } from "~/services/api";
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
-  const onSignIn = useCallback((e: FormEvent<HTMLFormElement>) => {});
+  const [login, { isLoading, error }] = useLoginMutation();
+  const [formData, setFormData] = useState({ email: "", password: "" });
+
+  const onSignIn = useCallback(async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    try {
+      await login(formData).unwrap();
+      window.location.href = '/projects';
+    } catch (err) {
+      console.error('Login failed:', err);
+    }
+  }, [login, formData]);
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -31,20 +42,31 @@ export function LoginForm({
           <form className={"grid items-start gap-4"} onSubmit={onSignIn}>
             <div className="grid gap-3">
               <Input
-                type="text"
-                id="username"
-                name="username"
-                placeholder="Email or username"
+                type="email"
+                id="email"
+                name="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 required
               />
               <Input
                 type="password"
                 id="password"
                 name="password"
-                placeholder="password"
+                placeholder="Password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 required
               />
-              <Button type="submit">Sign In</Button>
+              {error && (
+                <div className="text-red-500 text-sm">
+                  {'data' in error ? error.data : 'Login failed'}
+                </div>
+              )}
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Signing In...' : 'Sign In'}
+              </Button>
             </div>
           </form>
         </CardContent>

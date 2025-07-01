@@ -1,15 +1,18 @@
 use axum::{
-    extract::Path, extract::State, http::StatusCode, response::Json,
+    extract::Path,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::Json,
 };
 use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
     TypedHeader,
+    headers::{Authorization, Cookie, authorization::Bearer},
 };
+use bcrypt::verify;
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use bcrypt::verify;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -39,7 +42,7 @@ pub struct LoginRequest {
 
 #[derive(Serialize)]
 pub struct LoginResponse {
-    pub token: String,
+    pub success: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,6 +52,7 @@ pub struct Claims {
 }
 
 type WebResult<T> = (StatusCode, Result<Json<T>, Json<ServerError>>);
+type WebResultWithHeaders<T> = (StatusCode, HeaderMap, Result<Json<T>, Json<ServerError>>);
 
 macro_rules! web_ok {
     ($expression:expr) => {
@@ -68,7 +72,7 @@ macro_rules! web_err {
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
-) -> WebResult<LoginResponse> {
+) -> WebResultWithHeaders<LoginResponse> {
     match state.db.get_user_by_email(&payload.email).await {
         Ok(user) => {
             if verify(&payload.password, &user.password_hash).unwrap_or(false) {
@@ -76,20 +80,51 @@ pub async fn login(
                     email: payload.email.clone(),
                     exp: (chrono::Utc::now() + chrono::Duration::hours(24)).timestamp() as usize,
                 };
-                
+
                 match encode(
                     &Header::default(),
                     &claims,
                     &EncodingKey::from_secret(state.jwt_secret.as_ref()),
                 ) {
-                    Ok(token) => web_ok!(LoginResponse { token }),
-                    Err(_) => web_err!(StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate token".to_string()),
+                    Ok(token) => {
+                        let mut headers = HeaderMap::new();
+                        let cookie_value = format!(
+                            "auth_token={}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400",
+                            token
+                        );
+                        headers.insert("Set-Cookie", cookie_value.parse().unwrap());
+                        (
+                            StatusCode::OK,
+                            headers,
+                            Ok(Json(LoginResponse { success: true })),
+                        )
+                    }
+                    Err(_) => {
+                        let headers = HeaderMap::new();
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            headers,
+                            Err(Json("Failed to generate token".to_string())),
+                        )
+                    }
                 }
             } else {
-                web_err!(StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())
+                let headers = HeaderMap::new();
+                (
+                    StatusCode::UNAUTHORIZED,
+                    headers,
+                    Err(Json("Invalid credentials".to_string())),
+                )
             }
         }
-        Err(_) => web_err!(StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()),
+        Err(_) => {
+            let headers = HeaderMap::new();
+            (
+                StatusCode::UNAUTHORIZED,
+                headers,
+                Err(Json("Invalid credentials".to_string())),
+            )
+        }
     }
 }
 
@@ -105,9 +140,14 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::err
 
 pub async fn get_clients(
     State(state): State<AppState>,
-    TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
 ) -> WebResult<Vec<crate::db::Client>> {
-    if verify_jwt(auth.token(), &state.jwt_secret).is_err() {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+
+    if verify_jwt(token, &state.jwt_secret).is_err() {
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
     match state.db.get_all_clients().await {
@@ -116,10 +156,7 @@ pub async fn get_clients(
                 .iter()
                 .map(|c| crate::db::Client {
                     id: c.id.clone(),
-                    auth_link_id: format!(
-                        "http://{}/auth/{}",
-                        state.server_url, c.auth_link_id
-                    ),
+                    auth_link_id: format!("http://{}/auth/{}", state.server_url, c.auth_link_id),
                     sdn_client_ip: c.sdn_client_ip.clone(),
                     network: c.network.clone(),
                     netmask: c.netmask.clone(),
@@ -133,16 +170,19 @@ pub async fn get_clients(
 
 pub async fn create_client(
     State(state): State<AppState>,
-    TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
     Json(payload): Json<CreateClientRequest>,
 ) -> WebResult<crate::db::Client> {
-    if verify_jwt(auth.token(), &state.jwt_secret).is_err() {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+
+    if verify_jwt(token, &state.jwt_secret).is_err() {
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
-    let network_address = common::calculate_network_address(
-        payload.sdn_client_ip.as_str(),
-        payload.netmask.as_str(),
-    );
+    let network_address =
+        common::calculate_network_address(payload.sdn_client_ip.as_str(), payload.netmask.as_str());
     let network_address = match network_address {
         Ok(value) => value.to_string(),
         Err(err) => {
@@ -168,10 +208,15 @@ pub async fn create_client(
 
 pub async fn delete_client(
     State(state): State<AppState>,
-    TypedHeader(auth): TypedHeader<Authorization<Bearer>>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
     Json(payload): Json<DeleteClientRequest>,
 ) -> WebResult<Vec<crate::db::Client>> {
-    if verify_jwt(auth.token(), &state.jwt_secret).is_err() {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+
+    if verify_jwt(token, &state.jwt_secret).is_err() {
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
     let delete_ret = state.db.delete_client(&payload.id).await;

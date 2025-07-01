@@ -1,16 +1,14 @@
-use axum::{
-    Router, routing::get, routing::post, serve::Serve,
-};
+use axum::{Router, routing::get, routing::post, serve::Serve};
 use log::info;
 use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::handlers::{AppState, get_clients, create_client, delete_client, auth_client, login};
+use crate::handlers::{AppState, auth_client, create_client, delete_client, get_clients, login};
 
 pub struct WebServer {}
 
 impl WebServer {
-
     pub async fn new(db: Arc<crate::db::Db>) -> Serve<tokio::net::TcpListener, Router, Router> {
         let addr = std::env::var("WEBSERVER").unwrap_or("0.0.0.0:8000".to_string());
         info!("Starting web server {}", addr);
@@ -23,18 +21,24 @@ impl WebServer {
             info!("Couldn't find JWT_SECRET env var. Using default value.");
             return "your-secret-key".to_string();
         });
-        let state = AppState { db, server_url, jwt_secret };
+        let state = AppState {
+            db,
+            server_url,
+            jwt_secret,
+        };
         let static_web_path = std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var");
         let serve_dir = ServeDir::new(static_web_path);
+
+        let cors = CorsLayer::new().allow_credentials(true);
+
         let app = Router::new()
             .route(
                 "/api/clients",
-                get(get_clients)
-                    .post(create_client)
-                    .delete(delete_client),
+                get(get_clients).post(create_client).delete(delete_client),
             )
             .route("/api/login", post(login))
             .route("/auth/{auth_key}", post(auth_client))
+            .layer(cors)
             .with_state(state)
             .fallback_service(serve_dir);
 

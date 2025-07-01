@@ -1,5 +1,11 @@
-import { signOut, useSession } from "@hono/auth-js/react";
-import { BreadcrumbPage, BreadcrumbItem, BreadcrumbList, Breadcrumb, BreadcrumbSeparator, BreadcrumbLink } from "~/components/ui/breadcrumb";
+import {
+  BreadcrumbPage,
+  BreadcrumbItem,
+  BreadcrumbList,
+  Breadcrumb,
+  BreadcrumbSeparator,
+  BreadcrumbLink,
+} from "~/components/ui/breadcrumb";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import {
   DropdownMenu,
@@ -12,18 +18,25 @@ import {
 import { useMemo } from "react";
 import { useLocation } from "react-router";
 import { NavLink } from "react-router";
-import { useGetProjectsQuery } from "~/services/api";
+import { useGetClientsQuery } from "~/services/api";
 import logo from "~/assets/small_icon.svg";
 
 function PageBreadcrumb() {
   const location = useLocation();
-  const locationPath = useMemo(() => location.pathname.split("/"), [location.pathname]);
-  const { data: projects, isLoading, isError } = useGetProjectsQuery();
+  const locationPath = useMemo(
+    () => location.pathname.split("/"),
+    [location.pathname],
+  );
+  const { data: projects, isLoading, isError } = useGetClientsQuery();
   const path = useMemo(() => {
     if (isLoading || isError) return [];
     return locationPath?.map((p, idx) => {
-      const project = projects?.find(proj => proj.id === p);
-      return { path: locationPath.slice(0, idx + 1).join("/"), name: project ? project.name : p, isLatest: idx === locationPath.length - 1 };
+      const project = projects?.find((proj) => proj.id === p);
+      return {
+        path: locationPath.slice(0, idx + 1).join("/"),
+        name: project ? project.name : p,
+        isLatest: idx === locationPath.length - 1,
+      };
     });
   }, [locationPath, projects, isLoading, isError]);
 
@@ -31,18 +44,26 @@ function PageBreadcrumb() {
     <Breadcrumb>
       <BreadcrumbList>
         <BreadcrumbItem>
-          <BreadcrumbLink href="/"><img src={logo} alt="logo" className="max-w-8 pb-1" /></BreadcrumbLink>
+          <BreadcrumbLink href="/">
+            <img src={logo} alt="logo" className="max-w-8 pb-1" />
+          </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator />
         {path?.map((p, idx) => (
           <>
             <BreadcrumbItem key={`bc-${idx}`}>
-              {p.isLatest ?
-                <BreadcrumbPage className="capitalize"> {p.name}</BreadcrumbPage> :
-                <BreadcrumbLink className="capitalize" asChild={true}><NavLink to={p.path}>{p.name}</NavLink></BreadcrumbLink>
-              }
+              {p.isLatest ? (
+                <BreadcrumbPage className="capitalize">
+                  {" "}
+                  {p.name}
+                </BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink className="capitalize" asChild={true}>
+                  <NavLink to={p.path}>{p.name}</NavLink>
+                </BreadcrumbLink>
+              )}
             </BreadcrumbItem>
-            {idx > 0 && idx < (path.length - 1) && <BreadcrumbSeparator />}
+            {idx > 0 && idx < path.length - 1 && <BreadcrumbSeparator />}
           </>
         ))}
       </BreadcrumbList>
@@ -51,29 +72,28 @@ function PageBreadcrumb() {
 }
 
 function AvatarMenu() {
-  const { data: session } = useSession();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Avatar>
-          <AvatarImage src={session?.user?.image || undefined} />
-          <AvatarFallback>{session?.user?.name?.split(" ").slice(0, 2).map(p => p[0]).join("")}</AvatarFallback>
+          <AvatarImage src={undefined} />
+          <AvatarFallback>Username</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
-        <DropdownMenuLabel>{session?.user?.name}<br />
-          {session?.user?.email}
+        <DropdownMenuLabel>
+          username
+          <br />
+          email
         </DropdownMenuLabel>
-        <DropdownMenuItem>
-          Account Settings
-        </DropdownMenuItem>
+        <DropdownMenuItem>Account Settings</DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOut()}>
+        <DropdownMenuItem onClick={() => console.log("logout")}>
           Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }
 
 export function NavBar({ children }) {
@@ -91,4 +111,3 @@ export function NavBar({ children }) {
     </div>
   );
 }
-
