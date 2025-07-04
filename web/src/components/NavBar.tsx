@@ -15,11 +15,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { useMemo } from "react";
-import { useLocation } from "react-router";
+import { useCallback, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router";
 import { NavLink } from "react-router";
-import { useGetClientsQuery } from "~/services/api";
 import logo from "~/assets/small_icon.svg";
+import { useGetUserDataQuery } from "~/services/api";
 
 function PageBreadcrumb() {
   const location = useLocation();
@@ -27,25 +27,23 @@ function PageBreadcrumb() {
     () => location.pathname.split("/"),
     [location.pathname],
   );
-  const { data: projects, isLoading, isError } = useGetClientsQuery();
+
   const path = useMemo(() => {
-    if (isLoading || isError) return [];
     return locationPath?.map((p, idx) => {
-      const project = projects?.find((proj) => proj.id === p);
       return {
         path: locationPath.slice(0, idx + 1).join("/"),
-        name: project ? project.name : p,
+        name: p,
         isLatest: idx === locationPath.length - 1,
       };
     });
-  }, [locationPath, projects, isLoading, isError]);
+  }, [locationPath]);
 
   return (
     <Breadcrumb>
       <BreadcrumbList>
         <BreadcrumbItem>
           <BreadcrumbLink href="/">
-            <img src={logo} alt="logo" className="max-w-8 pb-1" />
+            <img src={logo} alt="logo" className="max-w-5" />
           </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator />
@@ -53,10 +51,7 @@ function PageBreadcrumb() {
           <>
             <BreadcrumbItem key={`bc-${idx}`}>
               {p.isLatest ? (
-                <BreadcrumbPage className="capitalize">
-                  {" "}
-                  {p.name}
-                </BreadcrumbPage>
+                <BreadcrumbPage className="capitalize">{p.name}</BreadcrumbPage>
               ) : (
                 <BreadcrumbLink className="capitalize" asChild={true}>
                   <NavLink to={p.path}>{p.name}</NavLink>
@@ -72,25 +67,31 @@ function PageBreadcrumb() {
 }
 
 function AvatarMenu() {
+  const { data: userData } = useGetUserDataQuery();
+  const navigate = useNavigate();
+
+  const onLogout = useCallback(async () => {
+    await fetch(`${import.meta.env.VITE_API_URL}logout`, {
+      credentials: "include",
+    });
+    window.location.reload();
+    navigate("/");
+  }, [navigate]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Avatar>
           <AvatarImage src={undefined} />
-          <AvatarFallback>Username</AvatarFallback>
+          <AvatarFallback>
+            {userData?.email?.charAt(0).toUpperCase()}
+          </AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56">
-        <DropdownMenuLabel>
-          username
-          <br />
-          email
-        </DropdownMenuLabel>
-        <DropdownMenuItem>Account Settings</DropdownMenuItem>
+        <DropdownMenuLabel>{userData?.email}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => console.log("logout")}>
-          Log out
-        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onLogout()}>Log out</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

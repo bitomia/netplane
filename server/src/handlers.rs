@@ -273,3 +273,14 @@ pub async fn get_user_data(
         Err(_) => web_err!(StatusCode::UNAUTHORIZED, "User not found".to_string()),
     }
 }
+
+pub async fn logout() -> WebResultWithHeaders<LoginResponse> {
+    let mut headers = HeaderMap::new();
+    let cookie_value = "auth_token=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0";
+    headers.insert("Set-Cookie", cookie_value.parse().unwrap());
+    (
+        StatusCode::OK,
+        headers,
+        Ok(Json(LoginResponse { success: true })),
+    )
+}

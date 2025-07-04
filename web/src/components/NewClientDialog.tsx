@@ -30,14 +30,18 @@ function NewClientForm({
   closeForm,
 }: React.ComponentProps<"form"> & { closeForm: () => void }) {
   const [createClient, { status, isLoading }] = useCreateClientMutation();
+
   const onCreateClient = useCallback(
     (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const formData = new FormData(e.currentTarget);
-      const { name } = Object.fromEntries(formData.entries()) as {
-        name: string;
+      const { sdn_client_ip, netmask } = Object.fromEntries(
+        formData.entries(),
+      ) as {
+        sdn_client_ip: string;
+        netmask: string;
       };
-      createClient({ name });
+      createClient({ sdn_client_ip, netmask });
       closeForm();
     },
     [createClient],
@@ -49,12 +53,20 @@ function NewClientForm({
       onSubmit={onCreateClient}
     >
       <div className="grid gap-2">
-        <Label htmlFor="name">Client name</Label>
+        <Label htmlFor="sdn_client_ip">SDN IP Address</Label>
         <Input
           type="text"
-          id="name"
-          name="name"
-          placeholder="My first client"
+          id="sdn_client_ip"
+          name="sdn_client_ip"
+          placeholder="10.0.0.1"
+          required
+        />
+        <Label htmlFor="netmask">Netmask</Label>
+        <Input
+          type="text"
+          id="netmask"
+          name="netmask"
+          placeholder="255.255.255.0"
           required
         />
       </div>
@@ -79,7 +91,9 @@ export function NewClientDialog() {
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Create Client</DialogTitle>
-            <DialogDescription>Create a new client.</DialogDescription>
+            <DialogDescription>
+              Add a new client to the network
+            </DialogDescription>
           </DialogHeader>
           <NewClientForm closeForm={closeForm} />
         </DialogContent>
@@ -97,7 +111,7 @@ export function NewClientDialog() {
       <DrawerContent>
         <DrawerHeader className="text-left">
           <DrawerTitle>Create Client</DrawerTitle>
-          <DrawerDescription>Create a new client.</DrawerDescription>
+          <DrawerDescription>Add a new client to the network</DrawerDescription>
         </DrawerHeader>
         <NewClientForm className="px-4" closeForm={closeForm} />
         <DrawerFooter className="pt-2">

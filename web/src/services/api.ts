@@ -11,6 +11,7 @@ export interface LoginResponse {
 
 export interface Client {
   sdn_client_ip: string;
+  netmask: string;
 }
 
 export interface UserDataResponse {
@@ -43,10 +44,23 @@ export const api = createApi({
             ]
           : [{ type: "Clients", id: "LIST" }],
     }),
-    createClient: build.mutation<Client, { name: string }>({
+
+    createClient: build.mutation<
+      Client,
+      { sdn_client_ip: string; netmask: string }
+    >({
       query: (data) => ({
         url: `clients`,
         method: "POST",
+        body: data,
+      }),
+      invalidatesTags: [{ type: "Clients", id: "LIST" }],
+    }),
+
+    deleteClient: build.mutation<Client, { id: string }>({
+      query: (data) => ({
+        url: `clients`,
+        method: "DELETE",
         body: data,
       }),
       invalidatesTags: [{ type: "Clients", id: "LIST" }],
@@ -58,5 +72,10 @@ export const api = createApi({
   }),
 });
 
-export const { useLoginMutation, useGetClientsQuery, useCreateClientMutation, useGetUserDataQuery } =
-  api;
+export const {
+  useLoginMutation,
+  useGetClientsQuery,
+  useCreateClientMutation,
+  useGetUserDataQuery,
+  useDeleteClientMutation,
+} = api;
