@@ -97,7 +97,7 @@ function AvatarMenu() {
   );
 }
 
-export function NavBar({ children }) {
+export function NavBar() {
   return (
     <div className="w-full bg-white border-b border-zinc-200">
       <div className="max-w-5xl mx-auto">
@@ -108,7 +108,6 @@ export function NavBar({ children }) {
           </div>
         </div>
       </div>
-      {children}
     </div>
   );
 }

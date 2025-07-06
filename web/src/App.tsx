@@ -9,38 +9,38 @@ import ClientsPage from "~/pages/Clients";
 import LoginPage from "~/pages/Login";
 
 function AppRoutes() {
-    return (
-        <Routes>
-            <Route path="/" element={<Navigate to="/clients" replace />} />
-            <Route path="/clients" element={<ClientsPage />} />
-        </Routes>
-    );
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/clients" replace />} />
+      <Route path="/clients" element={<ClientsPage />} />
+    </Routes>
+  );
 }
 
 function App() {
-    const { data: userData, error, isLoading } = useGetUserDataQuery();
-    return (
+  const { data: userData, error, isLoading } = useGetUserDataQuery();
+  return (
+    <>
+      {isLoading ? (
+        <></>
+      ) : error || !userData ? (
+        <LoginPage />
+      ) : (
         <>
-            {isLoading ? (
-                <></>
-            ) : error || !userData ? (
-                <LoginPage />
-            ) : (
-                <>
-                    <AppRoutes />
-                    <Toaster />
-                </>
-            )}
+          <AppRoutes />
+          <Toaster />
         </>
-    );
+      )}
+    </>
+  );
 }
 
-export default function() {
-    return (
-        <BrowserRouter>
-            <Provider store={store}>
-                <App />
-            </Provider>
-        </BrowserRouter>
-    );
+export default function () {
+  return (
+    <BrowserRouter>
+      <Provider store={store}>
+        <App />
+      </Provider>
+    </BrowserRouter>
+  );
 }

@@ -26,10 +26,7 @@ function ClientsPage() {
           <div className="flex justify-between">
             <h1 className="text-3xl font-bold">Clients</h1>
             <NewClientDialog />
-            <UpdateClientDialog
-              open={openUpdate}
-              setOpenUpdate={setOpenUpdate}
-            />
+            <UpdateClientDialog open={openUpdate} setOpen={setOpenUpdate} />
           </div>
           <div className="mt-8">
             {isLoading ? (
@@ -41,8 +38,7 @@ function ClientsPage() {
             ) : isError ? (
               <Alert>Something wrong happened. Contact support</Alert>
             ) : (
-              clients &&
-              clients.map((c) => (
+              clients?.map((c) => (
                 <div
                   className="flex flex-row w-full mb-5 bg-white hover:bg-slate-200 hover:cursor-pointer  px-4 py-3 rounded-md"
                   key={c.id}
