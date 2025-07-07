@@ -1,0 +1,14 @@
+FROM debian:bullseye-slim
+
+RUN apt update && apt -y install build-essential
+
+WORKDIR /app
+
+COPY web/dist build
+COPY target/x86_64-unknown-linux-musl/debug/server server
+
+ENV RUST_LOG=debug
+EXPOSE 8080
+EXPOSE 6000
+CMD ["server"]
+
