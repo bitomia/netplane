@@ -4,10 +4,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Json,
 };
-use axum_extra::{
-    TypedHeader,
-    headers::{Authorization, Cookie, authorization::Bearer},
-};
+use axum_extra::{TypedHeader, headers::Cookie};
 use bcrypt::verify;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
@@ -95,7 +92,7 @@ pub async fn login(
                     Ok(token) => {
                         let mut headers = HeaderMap::new();
                         let cookie_value = format!(
-                            "auth_token={}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400",
+                            "auth_token={}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400",
                             token
                         );
                         headers.insert("Set-Cookie", cookie_value.parse().unwrap());
@@ -187,8 +184,10 @@ pub async fn create_client(
     if verify_jwt(token, &state.jwt_secret).is_err() {
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
-    let network_address =
-        common::calculate_network_address(payload.sdn_client_ip.as_str(), payload.netmask.as_str());
+    let network_address = netplane_common::calculate_network_address(
+        payload.sdn_client_ip.as_str(),
+        payload.netmask.as_str(),
+    );
     let network_address = match network_address {
         Ok(value) => value.to_string(),
         Err(err) => {
@@ -239,7 +238,7 @@ pub async fn delete_client(
 pub async fn auth_client(
     State(state): State<AppState>,
     Path(auth_link_id): Path<String>,
-    Json(payload): Json<common::AuthClientRequest>,
+    Json(payload): Json<netplane_common::AuthClientRequest>,
 ) -> (StatusCode, Result<String, Json<ServerError>>) {
     match state
         .db
@@ -276,7 +275,7 @@ pub async fn get_user_data(
 
 pub async fn logout() -> WebResultWithHeaders<LoginResponse> {
     let mut headers = HeaderMap::new();
-    let cookie_value = "auth_token=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0";
+    let cookie_value = "auth_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
     headers.insert("Set-Cookie", cookie_value.parse().unwrap());
     (
         StatusCode::OK,

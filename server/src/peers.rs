@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use common::HandshakeStatus;
+use netplane_common::HandshakeStatus;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};

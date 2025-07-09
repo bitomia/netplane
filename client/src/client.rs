@@ -1,15 +1,15 @@
 use anyhow::{Result, anyhow};
-use common::{
-    crypto::load_auth_key,
-    transport::{UdpTransport, WebSocketTransport},
-};
 use dotenv::dotenv;
 use http_post::http_post_json;
 use log::{debug, error, info};
+use netplane_common::{
+    crypto::load_auth_key,
+    transport::{UdpTransport, WebSocketTransport},
+    {HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport},
+};
 use std::env;
 use tokio::signal::unix::{SignalKind, signal};
 //use tray_item::{TrayItem, IconSource};
-use common::{HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport};
 
 pub mod http_post;
 pub mod packet;
@@ -41,10 +41,12 @@ async fn handshake(
 
     let handshake = HandshakeReq::new(&auth_key);
     transport.send(&handshake.serialize()?, None).await?;
-
+    debug!("1");
     let mut socket_buf = [0; 1500];
     loop {
+        debug!("X");
         let (amt, _) = transport.recv(&mut socket_buf).await?;
+        debug!("2 {}", amt);
         if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
             info!("Successful handshake {:?}", handshake);
             return Ok(StartParams {
@@ -63,12 +65,14 @@ async fn create_transport(control_addr: &str) -> Result<AnyTransport> {
 
     match transport_type.to_lowercase().as_str() {
         "websocket" | "ws" => {
+            info!("Starting websocket connection");
             let transport = WebSocketTransport::connect(control_addr)
                 .await
                 .map_err(|_| anyhow!("Cannot open WebSocket"))?;
             Ok(AnyTransport::WebSocket(transport))
         }
         "udp" => {
+            info!("Starting UDP connection");
             let transport = UdpTransport::bind("0.0.0.0:0")
                 .await
                 .map_err(|_| anyhow!("Cannot bind UDP socket"))?;
@@ -183,8 +187,9 @@ async fn auth_client(arg: String) -> Result<String> {
         return Err(anyhow!("Invalid auth argument"));
     }
 
-    let (public_key, _) = common::crypto::try_load_crypto_keys("public.key", "private.key")?;
-    let payload = common::AuthClientRequest { public_key };
+    let (public_key, _) =
+        netplane_common::crypto::try_load_crypto_keys("public.key", "private.key")?;
+    let payload = netplane_common::AuthClientRequest { public_key };
 
     let res = http_post_json(parts[1], &payload)?;
     match res.status_code {
@@ -216,7 +221,9 @@ async fn main() -> Result<()> {
 
     let args: Vec<String> = env::args().collect();
     if args.len() >= 3 {
-        if let Err(err) = common::crypto::try_generate_crypto_keys("public.key", "private.key") {
+        if let Err(err) =
+            netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
+        {
             if err.kind() != std::io::ErrorKind::AlreadyExists {
                 return Err(anyhow!(err));
             }

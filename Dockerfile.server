@@ -5,10 +5,11 @@ RUN apt update && apt -y install build-essential
 WORKDIR /app
 
 COPY web/dist build
-COPY target/x86_64-unknown-linux-musl/debug/server server
+COPY target/x86_64-unknown-linux-musl/release/netplane-server netplane-server
 
 ENV RUST_LOG=debug
 EXPOSE 8080
-EXPOSE 6000
-CMD ["server"]
+EXPOSE 5050/udp
+EXPOSE 5050/tcp
+CMD ["./netplane-server"]
 

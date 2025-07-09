@@ -1,5 +1,5 @@
 [package]
-name = "client"
+name = "netplane_client"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,12 +7,12 @@ edition = "2024"
 #client = ["tray-item", "embed-resource"]
 
 [[bin]]
-name = "client"
+name = "netplane"
 path = "src/client.rs"
 #required-features = ["client"]
     
 [dependencies]
-common = { path = "../common" }
+netplane_common = { path = "../common" }
 axum = { version = "0.8.1", features = ["ws"] }
 log = "0.4.22"
 tokio = { version = "1", features = ["full"] }

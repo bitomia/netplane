@@ -1,0 +1,11 @@
+[Unit]
+Description=netplane-server
+After=docker.service
+Requires=docker.service
+
+[Service]
+Restart=on-failure
+ExecStart=/usr/bin/docker run --rm --name netplane-server --env-file /root/netplane-server.env --network=host ghcr.io/bitomia/netplane-server
+ExecStop=/usr/bin/docker stop netplane-server
+StandardOutput=append:/var/log/netplane-server.out.log
+StandardError=append:/var/log/netplane-server.err.log

@@ -1,27 +1,26 @@
-.PHONY: client server admin
+.PHONY: client server
 
-#all: client server admin
 all: client server
 
 client:
-	cargo build -p client
+	cargo build -p netplane_client
 
-server: reticuladb
-	cargo build -p server
+server: netplanedb
+	cargo build -p netplane_server
 
-# admin:
-# 	cargo build -p server --bin admin
-
-reticuladb:
+netplanedb:
 	sqlx database create
 	sqlx migrate run --source ./server/src/migrations
 
 webapp:
 	cd web; pnpm install --frozen-lockfile; pnpm run build; cd -
 
-docker: reticuladb webapp
-	cargo build --bin server --target x86_64-unknown-linux-musl
-	docker build -t ghcr.io/bitomia/reticula-server -f Dockerfile.server .
+release:
+	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
+	cargo build -p netplane_client --release
+
+docker: netplanedb release webapp
+	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
 clean:
 	cargo clean

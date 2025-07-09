@@ -128,9 +128,9 @@ impl Db {
                     .await?;
                 tx.commit().await?;
 
-                let auth_data = common::crypto::AuthData { client_id };
+                let auth_data = netplane_common::crypto::AuthData { client_id };
                 let auth_data = serde_json::json!(auth_data).to_string();
-                Ok(common::crypto::sign_key(auth_data.as_bytes()))
+                Ok(netplane_common::crypto::sign_key(auth_data.as_bytes()))
             }
             Err(err) => Err(anyhow!(err)),
         }

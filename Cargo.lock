@@ -507,57 +507,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "client"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "bincode",
- "common",
- "dotenv",
- "ed25519-dalek",
- "embed-resource",
- "env_logger",
- "hmac",
- "log",
- "serde",
- "serde_json",
- "sha2",
- "snow",
- "sqlx",
- "tokio",
- "tower-http",
- "tun",
- "uuid",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
-
-[[package]]
-name = "common"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "bincode",
- "ed25519-dalek",
- "futures-util",
- "hmac",
- "serde",
- "serde_json",
- "sha2",
- "snow",
- "tokio",
- "tokio-tungstenite 0.27.0",
- "tungstenite 0.27.0",
- "url",
-]
 
 [[package]]
 name = "concurrent-queue"
@@ -1588,6 +1541,78 @@ dependencies = [
 ]
 
 [[package]]
+name = "netplane_client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "bincode",
+ "dotenv",
+ "ed25519-dalek",
+ "embed-resource",
+ "env_logger",
+ "hmac",
+ "log",
+ "netplane_common",
+ "serde",
+ "serde_json",
+ "sha2",
+ "snow",
+ "sqlx",
+ "tokio",
+ "tower-http",
+ "tun",
+ "uuid",
+]
+
+[[package]]
+name = "netplane_common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "bincode",
+ "ed25519-dalek",
+ "futures-util",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+ "snow",
+ "tokio",
+ "tokio-tungstenite 0.27.0",
+ "tungstenite 0.27.0",
+ "url",
+]
+
+[[package]]
+name = "netplane_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-extra",
+ "bcrypt",
+ "bytes",
+ "chrono",
+ "dotenv",
+ "embed-resource",
+ "env_logger",
+ "jsonwebtoken",
+ "log",
+ "netplane_common",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower-http",
+ "tun",
+ "uuid",
+]
+
+[[package]]
 name = "nix"
 version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2179,31 +2204,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-extra",
- "bcrypt",
- "bytes",
- "chrono",
- "common",
- "dotenv",
- "embed-resource",
- "env_logger",
- "jsonwebtoken",
- "log",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tower-http",
- "tun",
- "uuid",
 ]
 
 [[package]]

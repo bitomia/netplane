@@ -74,8 +74,8 @@ function AvatarMenu() {
     await fetch(`${import.meta.env.VITE_API_URL}logout`, {
       credentials: "include",
     });
-    window.location.reload();
     navigate("/");
+    window.location.reload();
   }, [navigate]);
 
   return (

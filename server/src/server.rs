@@ -1,8 +1,8 @@
 use anyhow::Result;
-use common::packet::parse_ipv4_header;
-use common::transport::{Transport, UdpTransport, WebSocketTransport};
-use common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use log::{error, info};
+use netplane_common::packet::parse_ipv4_header;
+use netplane_common::transport::{Transport, UdpTransport, WebSocketTransport};
+use netplane_common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -28,15 +28,12 @@ impl Server {
         db: &db::Db,
         client_addr: std::net::IpAddr,
     ) -> Result<(HandshakeRep, String)> {
-        match common::crypto::verify_signed_key(handshake_req.auth_key) {
+        match netplane_common::crypto::verify_signed_key(handshake_req.auth_key) {
             Ok(auth_client) => {
                 if let Ok(client) = db.get_client(&auth_client.client_id).await {
                     info!("Client connected {} {}", client_addr, client.sdn_client_ip);
-                    let reply = HandshakeRep::new(
-                        &client.netmask,
-                        &client.network,
-                        &client.sdn_client_ip,
-                    );
+                    let reply =
+                        HandshakeRep::new(&client.netmask, &client.network, &client.sdn_client_ip);
                     Ok((reply, client.sdn_client_ip))
                 } else {
                     error!("Ignoring Unknown user {}", client_addr);
@@ -224,11 +221,13 @@ impl Server {
                                     {
                                         let mut peers_guard = peers.lock().unwrap();
                                         peers_guard.entry(peer_id).and_modify(|p| {
-                                            p.sdn_ip_addr = Ipv4Addr::from_str(&sdn_client_ip).unwrap()
+                                            p.sdn_ip_addr =
+                                                Ipv4Addr::from_str(&sdn_client_ip).unwrap()
                                         });
                                     }
                                     let mut reply_socket = socket.clone();
-                                    match reply_socket.send(&reply.serialize().unwrap(), None).await {
+                                    match reply_socket.send(&reply.serialize().unwrap(), None).await
+                                    {
                                         Ok(_) => {
                                             let mut peers_guard = peers.lock().unwrap();
                                             peers_guard.entry(peer_id).and_modify(|p| {

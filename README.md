@@ -1,11 +1,11 @@
-# Reticula
+# Netplane
 
 ## Building
 
 Installing cargo-make:
 
 ```shell
-cargo install --force cargo-make
+make
 ```
 
 For musl:
@@ -16,14 +16,17 @@ cargo make musl
 
 ## Running example
 
-Server running at 172.16.140.1:5000:
+Server running at 127.0.0.1:5000:
 
 ```shell
-./reticula server
+./netplane-server
 ```
 
 Client mode:
 
 ```shell
-sudo ./reticula client tun0 12.0.0.0 255.255.255.0 12.0.0.2 172.16.140.1:5000
+sudo ./netplane tun0 127.0.0.1:5000 --auth=http://127.0.0.1:8000/auth/XXXXX
+sudo ./netplane tun0 127.0.0.1:5000
 ```
+
+

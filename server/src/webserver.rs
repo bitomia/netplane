@@ -1,8 +1,9 @@
 use axum::{Router, routing::get, routing::post, serve::Serve};
 use log::info;
+use std::path::Path;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
+use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::handlers::{
     AppState, auth_client, create_client, delete_client, get_clients, get_user_data, login, logout,
@@ -29,7 +30,9 @@ impl WebServer {
             jwt_secret,
         };
         let static_web_path = std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var");
-        let serve_dir = ServeDir::new(static_web_path);
+        let serve_dir = ServeDir::new(&static_web_path).fallback(ServeFile::new(
+            Path::new(&static_web_path).join("index.html"),
+        ));
 
         let cors = CorsLayer::new().allow_credentials(true);
 
