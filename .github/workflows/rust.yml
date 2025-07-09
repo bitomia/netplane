@@ -23,7 +23,7 @@ jobs:
       run: sqlx database create
 
     - name: Run migrations
-      run: sqlx migrate run --source ./server/src/migrations
+      run: sqlx migrate run --source ./crates/server/src/migrations
       
     - name: Build
       run: cargo build --release --verbose
