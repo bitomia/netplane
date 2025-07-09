@@ -17,7 +17,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Install SQLx CLI
-      run: cargo install sqlx-cli --no-default-features --features postgres
+      run: cargo install sqlx-cli --no-default-features --features sqlite
       
     - name: Create database
       run: sqlx database create
