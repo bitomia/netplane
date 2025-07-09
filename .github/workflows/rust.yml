@@ -41,3 +41,14 @@ jobs:
       with:
         name: netplane-client
         path: dist/netplane-client.tar.gz
+        
+    - name: Upload artifact to GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: Latest Release
+        draft: true
+        overwrite: true
+        files: dist/netplane-client.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
