@@ -10,12 +10,12 @@ server: netplanedb
 
 netplanedb:
 	sqlx database create
-	sqlx migrate run --source ./server/src/migrations
+	sqlx migrate run --source ./crates/server/src/migrations
 
 webapp:
 	cd web; pnpm install --frozen-lockfile; pnpm run build; cd -
 
-release:
+release: netplanedb
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
