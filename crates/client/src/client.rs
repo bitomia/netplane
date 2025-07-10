@@ -8,7 +8,6 @@ use netplane_common::{
     {HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport},
 };
 use std::env;
-use tokio::signal::unix::{SignalKind, signal};
 //use tray_item::{TrayItem, IconSource};
 
 pub mod http_post;
@@ -203,19 +202,6 @@ async fn auth_client(arg: String) -> Result<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
-    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
-
-    tokio::spawn(async move {
-        tokio::select! {
-            _ = sigterm.recv() => {}
-            _ = sigint.recv() => {}
-        }
-        info!("Shutting down...");
-        // TODO shutdown gracefully
-        std::process::exit(0);
-    });
-
     env_logger::init();
     dotenv().ok();
 
