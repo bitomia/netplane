@@ -11,37 +11,49 @@ env:
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            suffix: linux
+            archive: netplane-linux.tgz
+            binary: netplane
+          - os: macos-latest
+            suffix: macos
+            archive: netplane-macos.tgz
+            binary: netplane
+          - os: windows-latest
+            suffix: windows
+            archive: netplane-windows.zip
+            binary: netplane.exe
 
     steps:
     - uses: actions/checkout@v4
-    - name: Install SQLx CLI
-      run: cargo install sqlx-cli --no-default-features --features sqlite
-      
-    - name: Create database
-      run: sqlx database create
 
-    - name: Run migrations
-      run: sqlx migrate run --source ./crates/server/src/migrations
-      
     - name: Build
-      run: cargo build --release --verbose
+      run: cargo build --release -p netplane_client --verbose
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test -p netplane_client --verbose
 
     - name: Archive binary
+      shell: bash
       run: |
         mkdir -p dist
-        tar -czvf dist/netplane-client.tar.gz target/release/netplane
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          powershell Compress-Archive -Path target/release/${{ matrix.binary }} -DestinationPath dist/${{ matrix.archive }}
+        else
+          tar -czvf dist/${{ matrix.archive }} -C target/release ${{ matrix.binary }}
+        fi
 
     - name: Upload netplane client artifact
       uses: actions/upload-artifact@v4
       with:
-        name: netplane-client
-        path: dist/netplane-client.tar.gz
-        
+        name: netplane-${{ matrix.suffix }}
+        path: dist/${{ matrix.archive }}
+
     - name: Upload artifact to GitHub Release
       uses: softprops/action-gh-release@v2
       with:
@@ -49,6 +61,6 @@ jobs:
         name: Latest Release
         draft: true
         overwrite: true
-        files: dist/netplane-client.tar.gz
+        files: dist/${{ matrix.archive }}
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}
