@@ -91,6 +91,7 @@ impl Server {
 
         loop {
             let (amt, src) = transport.recv(&mut buf).await?;
+            println!("Received {} {:?}", amt, src);
 
             let peers = try_get_udp(&mut self.peers).unwrap();
             let peer = peers.entry(src).or_insert(UdpPeer {
