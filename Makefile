@@ -19,7 +19,7 @@ release: netplanedb
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
-docker: netplanedb release webapp
+docker: netplanedb release
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
 clean:

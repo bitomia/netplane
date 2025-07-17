@@ -1,10 +1,22 @@
+# Frontend build stage
+FROM node:20-alpine AS build
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY web ./
+RUN pnpm build
+
+# Server stage
 FROM debian:bullseye-slim
 
 RUN apt update && apt -y install build-essential
 
 WORKDIR /app
 
-COPY web/dist build
+COPY --from=build /app/dist build
 COPY target/x86_64-unknown-linux-musl/release/netplane-server netplane-server
 
 ENV RUST_LOG=debug
