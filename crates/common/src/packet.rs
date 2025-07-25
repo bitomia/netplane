@@ -1,3 +1,5 @@
+use log::error;
+
 pub struct IpHeader {
     pub version_ihl: u8,
     pub version: u8,
@@ -44,4 +46,13 @@ pub fn parse_ipv4_header(packet: &[u8]) -> Option<IpHeader> {
         ),
         dst_port,
     })
+}
+
+pub fn validate_packet(buf: &[u8]) -> bool {
+    if parse_ipv4_header(buf).is_some() {
+        true
+    } else {
+        error!("Packet not supported");
+        false
+    }
 }

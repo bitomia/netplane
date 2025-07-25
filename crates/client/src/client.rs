@@ -1,12 +1,11 @@
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
 use http_post::http_post_json;
-use log::{debug, error, info};
-use netplane_common::{
-    crypto::load_auth_key,
-    transport::{UdpTransport, WebSocketTransport},
-    {HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport},
-};
+use log::{error, info, trace};
+use netplane_common::crypto::load_auth_key;
+use netplane_common::packet::validate_packet;
+use netplane_common::transport::{UdpTransport, WebSocketTransport};
+use netplane_common::{HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport};
 use std::env;
 //use tray_item::{TrayItem, IconSource};
 
@@ -40,12 +39,9 @@ async fn handshake(
 
     let handshake = HandshakeReq::new(&auth_key);
     transport.send(&handshake.serialize()?, None).await?;
-    debug!("1");
     let mut socket_buf = [0; 1500];
     loop {
-        debug!("X");
         let (amt, _) = transport.recv(&mut socket_buf).await?;
-        debug!("2 {}", amt);
         if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
             info!("Successful handshake {:?}", handshake);
             return Ok(StartParams {
@@ -120,8 +116,6 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
 
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
-
-    debug!("{:?}", start_params);
     let mut dev = tundev::TunDev::new(
         tun_dev,
         start_params.netmask.as_str(),
@@ -134,14 +128,11 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
             result = transport.recv(&mut socket_buf) => {
                 match result {
                     Ok((amt, _)) => {
-                        debug!("Received {}:", amt);
-                        if let Some(header) = packet::parse_ipv4_header(&socket_buf[..amt]) {
-                            debug!(
-                                "> {} {} {}",
-                                header.src_ip, header.dst_ip, header.total_length
-                            );
+                        if validate_packet(&socket_buf[..amt]) {
+                            send_tun(&mut dev, &socket_buf, amt).await;
+                        } else {
+                            trace!("Ignoring non-ipv4 packet")
                         }
-                        send_tun(&mut dev, &socket_buf, amt).await;
                     },
                     Err(_) => todo!()
                 }
@@ -152,7 +143,6 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
                         let mut is_loopback = false;
                         if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
                             is_loopback = header.src_ip == header.dst_ip;
-                            debug!("{} > {} lo={:?}", header.src_ip, header.dst_ip, is_loopback);
                         }
                         if is_loopback {
                             send_tun(&mut dev, &tun_buf, amt).await;
@@ -168,7 +158,7 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
                         }
                     }
                     Err(err) => {
-                        info!("{}", err);
+                        error!("{}", err);
                     }
                 }
             }

@@ -159,7 +159,7 @@ pub async fn get_clients(
                 .iter()
                 .map(|c| crate::db::Client {
                     id: c.id.clone(),
-                    auth_link_id: format!("http://{}/auth/{}", state.server_url, c.auth_link_id),
+                    auth_link_id: format!("{}/auth/{}", state.server_url, c.auth_link_id),
                     sdn_client_ip: c.sdn_client_ip.clone(),
                     network: c.network.clone(),
                     netmask: c.netmask.clone(),

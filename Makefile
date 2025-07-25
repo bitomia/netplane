@@ -2,10 +2,10 @@
 
 all: client server
 
-client:
+client: target/debug/netplane
 	cargo build -p netplane_client
 
-server: netplanedb
+server: netplanedb target/debug/netplane-server
 	cargo build -p netplane_server
 
 netplanedb:
@@ -15,11 +15,12 @@ netplanedb:
 webapp:
 	cd web; pnpm install --frozen-lockfile; pnpm run build; cd -
 
-release: netplanedb
+release: netplanedb target/release/netplane target/x86_64-unknown-linux-musl/release/netplane-server
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
-docker: netplanedb release
+docker: netplanedb target/x86_64-unknown-linux-musl/release/netplane-server
+	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
 clean:

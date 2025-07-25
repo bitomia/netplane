@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::{error, info};
-use netplane_common::packet::parse_ipv4_header;
+use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{Transport, UdpTransport, WebSocketTransport};
 use netplane_common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use std::collections::HashMap;
@@ -47,14 +47,6 @@ impl Server {
         }
     }
 
-    fn validate_packet(buf: &[u8]) -> bool {
-        if parse_ipv4_header(buf).is_some() {
-            true
-        } else {
-            error!("Packet not supported");
-            false
-        }
-    }
     pub fn new(db: Arc<db::Db>, transport: &String) -> Server {
         let mut transport = transport.clone();
         transport.make_ascii_lowercase();
@@ -91,8 +83,6 @@ impl Server {
 
         loop {
             let (amt, src) = transport.recv(&mut buf).await?;
-            println!("Received {} {:?}", amt, src);
-
             let peers = try_get_udp(&mut self.peers).unwrap();
             let peer = peers.entry(src).or_insert(UdpPeer {
                 sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
@@ -101,11 +91,15 @@ impl Server {
 
             match peer.status {
                 HandshakeStatus::Initialized => {
-                    if Self::validate_packet(&buf[..amt]) {
-                        for (other_peer_addr, _) in peers.clone() {
-                            if src != other_peer_addr {
-                                // TODO this is broadcasting, parse IP header and send only to target
-                                transport.send(&buf[..amt], Some(&other_peer_addr)).await?;
+                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
+                        for (peer_addr, sdn_addr) in peers.clone() {
+                            if src == peer_addr {
+                                continue;
+                            }
+                            if header.dst_ip == sdn_addr.sdn_ip_addr.to_string()
+                                || peer_addr.ip().is_multicast()
+                            {
+                                transport.send(&buf[..amt], Some(&peer_addr)).await?;
                             }
                         }
                     }
@@ -201,7 +195,7 @@ impl Server {
 
                 match status {
                     HandshakeStatus::Initialized => {
-                        if Self::validate_packet(&buf[..amt]) {
+                        if validate_packet(&buf[..amt]) {
                             if let Some(header) = parse_ipv4_header(&buf[..amt]) {
                                 let peers_guard = peers.lock().unwrap();
                                 for (&_peer_id, peer) in peers_guard.iter() {
