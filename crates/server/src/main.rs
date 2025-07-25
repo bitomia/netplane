@@ -68,19 +68,22 @@ async fn main() -> Result<(), ProcessError> {
     }
 
     let db = Arc::new(db::Db::new().await);
+    let transport_mode = std::env::var("TRANSPORT").unwrap_or("UDP".to_string());
+    let server_stats = Arc::new(server::ServerStats::new(transport_mode.clone()));
 
     info!("Starting netplane server");
     let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
     let mut netplane_server = Server::new(
         Arc::clone(&db),
-        &std::env::var("TRANSPORT").unwrap_or("UDP".to_string()),
+        Arc::clone(&server_stats),
+        transport_mode.clone(),
     );
     let netplane_server = tokio::spawn(async move { netplane_server.start().await });
     info!("Relay server listening on {}", listen_addr);
 
     let is_webserver_enabled = std::env::var("WEBSERVER_ENABLED").unwrap_or("true".to_string());
     if is_webserver_enabled == "true" {
-        let web_server = WebServer::new(db.clone()).await;
+        let web_server = WebServer::new(Arc::clone(&db), Arc::clone(&server_stats)).await;
         tokio::select! {
             _ = web_server => info!("Web server stopped"),
             _ = netplane_server => info!("Netplane server stopped")

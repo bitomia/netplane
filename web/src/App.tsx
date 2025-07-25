@@ -5,14 +5,14 @@ import { store } from "~/store";
 import { Toaster } from "~/components/ui/sonner";
 import { useGetUserDataQuery } from "~/services/api";
 
-import ClientsPage from "~/pages/Clients";
+import DashboardPage from "~/pages/Dashboard";
 import LoginPage from "~/pages/Login";
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/clients" replace />} />
-      <Route path="/clients" element={<ClientsPage />} />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
     </Routes>
   );
 }

@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<crate::db::Db>,
+    pub server_stats: Arc<crate::server::ServerStats>,
     pub server_url: String,
     pub jwt_secret: String,
 }
@@ -52,6 +53,13 @@ pub struct UserDataResponse {
 pub struct Claims {
     pub email: String,
     pub exp: usize,
+}
+
+#[derive(Serialize)]
+pub struct ServerStatsResponse {
+    pub transport_mode: String,
+    pub in_bytes: usize,
+    pub out_bytes: usize,
 }
 
 type WebResult<T> = (StatusCode, Result<Json<T>, Json<ServerError>>);
@@ -282,4 +290,30 @@ pub async fn logout() -> WebResultWithHeaders<LoginResponse> {
         headers,
         Ok(Json(LoginResponse { success: true })),
     )
+}
+
+pub async fn get_server_stats(
+    State(state): State<AppState>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
+) -> WebResult<ServerStatsResponse> {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+    let _ = match verify_jwt(token, &state.jwt_secret) {
+        Ok(claims) => claims,
+        Err(_) => return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string()),
+    };
+
+    web_ok!(ServerStatsResponse {
+        transport_mode: state.server_stats.transport_mode.clone(),
+        in_bytes: state
+            .server_stats
+            .in_bytes
+            .load(std::sync::atomic::Ordering::Relaxed),
+        out_bytes: state
+            .server_stats
+            .out_bytes
+            .load(std::sync::atomic::Ordering::Relaxed),
+    })
 }

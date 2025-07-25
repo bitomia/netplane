@@ -6,7 +6,7 @@ use netplane_common::{HandshakeRep, HandshakeReq, HandshakeStatus};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -16,9 +16,35 @@ use crate::peers::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
 
+#[derive(Debug)]
+pub struct ServerStats {
+    pub transport_mode: String,
+    pub in_bytes: AtomicUsize,
+    pub out_bytes: AtomicUsize,
+}
+
+impl ServerStats {
+    pub fn new(mode: String) -> ServerStats {
+        ServerStats {
+            transport_mode: mode,
+            in_bytes: AtomicUsize::new(0),
+            out_bytes: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn add_in_bytes(self: &Self, nbytes: usize) -> usize {
+        self.in_bytes.fetch_add(nbytes, Ordering::Relaxed)
+    }
+
+    pub fn add_out_bytes(self: &Self, nbytes: usize) -> usize {
+        self.out_bytes.fetch_add(nbytes, Ordering::Relaxed)
+    }
+}
+
 pub struct Server {
     peers: Peers,
     db: Arc<db::Db>,
+    stats: Arc<ServerStats>,
     transport: String,
 }
 
@@ -47,7 +73,7 @@ impl Server {
         }
     }
 
-    pub fn new(db: Arc<db::Db>, transport: &String) -> Server {
+    pub fn new(db: Arc<db::Db>, stats: Arc<ServerStats>, transport: String) -> Server {
         let mut transport = transport.clone();
         transport.make_ascii_lowercase();
 
@@ -65,6 +91,7 @@ impl Server {
         Server {
             peers,
             db,
+            stats,
             transport,
         }
     }
@@ -83,6 +110,8 @@ impl Server {
 
         loop {
             let (amt, src) = transport.recv(&mut buf).await?;
+            self.stats.add_in_bytes(amt);
+
             let peers = try_get_udp(&mut self.peers).unwrap();
             let peer = peers.entry(src).or_insert(UdpPeer {
                 sdn_ip_addr: Ipv4Addr::UNSPECIFIED,
@@ -92,14 +121,15 @@ impl Server {
             match peer.status {
                 HandshakeStatus::Initialized => {
                     if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                        for (peer_addr, sdn_addr) in peers.clone() {
-                            if src == peer_addr {
+                        for (dst_peer_addr, dst_peer) in peers.clone() {
+                            if src == dst_peer_addr {
                                 continue;
                             }
-                            if header.dst_ip == sdn_addr.sdn_ip_addr.to_string()
-                                || peer_addr.ip().is_multicast()
+                            if header.dst_ip == dst_peer.sdn_ip_addr.to_string()
+                                || dst_peer_addr.ip().is_multicast()
                             {
-                                transport.send(&buf[..amt], Some(&peer_addr)).await?;
+                                transport.send(&buf[..amt], Some(&dst_peer_addr)).await?;
+                                self.stats.add_out_bytes(amt);
                             }
                         }
                     }

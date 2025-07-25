@@ -9,6 +9,12 @@ export interface LoginResponse {
   success: boolean;
 }
 
+export interface ServerStats {
+  transport_mode: string;
+  in_bytes: number;
+  out_bytes: number;
+}
+
 export interface Client {
   sdn_client_ip: string;
   netmask: string;
@@ -32,6 +38,10 @@ export const api = createApi({
         method: "POST",
         body: credentials,
       }),
+    }),
+
+    getServerStats: build.query<ServerStats, void>({
+      query: () => ({ url: `server` }),
     }),
 
     getClients: build.query<Client, void>({
@@ -74,6 +84,7 @@ export const api = createApi({
 
 export const {
   useLoginMutation,
+  useGetServerStatsQuery,
   useGetClientsQuery,
   useCreateClientMutation,
   useGetUserDataQuery,
