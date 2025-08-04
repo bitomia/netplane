@@ -16,7 +16,7 @@ impl TunDev {
             .address(ip_addr)
             .netmask(netmask)
             .destination(destination)
-            .mtu(1500);
+            .mtu(1400);
         #[cfg(target_os = "linux")]
         config.platform_config(|config| {
             config.ensure_root_privileges(true);
