@@ -3,14 +3,13 @@ use dotenv::dotenv;
 use http_post::http_post_json;
 use log::{error, info, trace};
 use netplane_common::crypto::load_auth_key;
-use netplane_common::packet::validate_packet;
+use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{UdpTransport, WebSocketTransport};
 use netplane_common::{HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport};
 use std::env;
 //use tray_item::{TrayItem, IconSource};
 
 pub mod http_post;
-pub mod packet;
 pub mod tundev;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,7 +140,7 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
                 match tun_ret {
                     Ok(amt) => {
                         let mut is_loopback = false;
-                        if let Some(header) = packet::parse_ipv4_header(&tun_buf[..amt]) {
+                        if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
                             is_loopback = header.src_ip == header.dst_ip;
                         }
                         if is_loopback {
