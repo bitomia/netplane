@@ -1,5 +1,11 @@
 # Netplane
 
+## Dependencies
+
+```
+cargo install sqlx-cli
+```
+
 ## Building
 
 Installing cargo-make:
