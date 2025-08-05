@@ -1,6 +1,6 @@
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::Mutex;
@@ -130,7 +130,8 @@ pub struct UdpTransport {
 
 impl UdpTransport {
     pub async fn connect(&self, addr: &str) -> Result<(), TransportError> {
-        let addr = addr.parse::<SocketAddr>().unwrap();
+        let mut addr = addr.to_socket_addrs().expect("Invalid server address");
+        let addr = addr.next().expect("Cannot resolve server address");
         match self.socket.connect(addr).await {
             Ok(val) => val,
             Err(_) => {
