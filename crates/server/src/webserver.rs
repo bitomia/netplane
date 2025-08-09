@@ -19,6 +19,7 @@ impl WebServer {
     ) -> Serve<tokio::net::TcpListener, Router, Router> {
         let addr = std::env::var("WEBSERVER").unwrap_or("0.0.0.0:8000".to_string());
         info!("Starting web server {}", addr);
+
         let server_url = std::env::var("WEBSERVER_URL").unwrap_or_else(|_| {
             info!("Couldn't find WEBSERVER_URL env var. Using default value.");
             return "http://localhost:3000".to_string();

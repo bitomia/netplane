@@ -130,6 +130,7 @@ impl Db {
 
                 let auth_data = netplane_common::crypto::AuthData { client_id };
                 let auth_data = serde_json::json!(auth_data).to_string();
+
                 Ok(netplane_common::crypto::sign_key(auth_data.as_bytes()))
             }
             Err(err) => Err(anyhow!(err)),
@@ -186,5 +187,19 @@ INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
         .fetch_one(&self.pool)
         .await?;
         Ok(user)
+    }
+
+    pub async fn get_hostname(
+        self: &Self,
+        hostname: &str,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let resolved_sdn_ip = sqlx::query_scalar!(
+            r#"SELECT sdn_client_ip FROM clients WHERE hostname=?"#,
+            hostname
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(resolved_sdn_ip)
     }
 }
