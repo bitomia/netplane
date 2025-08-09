@@ -2,10 +2,10 @@
 
 all: client server
 
-client: target/debug/netplane
+client:
 	cargo build -p netplane_client
 
-server: netplanedb target/debug/netplane-server
+server: netplanedb
 	cargo build -p netplane_server
 
 netplanedb:

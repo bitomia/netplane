@@ -1,5 +1,5 @@
-#ifndef RETICULA_H
-#define RETICULA_H
+#ifndef NETPLANE_H
+#define NETPLANE_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,4 +28,4 @@ const char* get_version(void);
 }
 #endif
 
-#endif // RETICULA_H
+#endif // NETPLANE_H

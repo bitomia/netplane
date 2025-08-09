@@ -1,6 +1,6 @@
 UNAME_S := $(shell uname -s)
 
-LIB_NAME = reticula_ffi
+LIB_NAME = netplane_ffi
 RUST_LIB_DIR = ../../target/release
 RUST_LIB_DEBUG_DIR = ../../target/debug
 
