@@ -1,42 +1,104 @@
 use bytes::Bytes;
-use netplane_common::HandshakeStatus;
+use netplane_common::PeerState;
+use std::any::Any;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
 pub type Tx = mpsc::UnboundedSender<Bytes>;
 pub type Rx = mpsc::UnboundedReceiver<Bytes>;
 
-pub struct TcpPeer {
-    pub sdn_ip_addr: Ipv4Addr,
-    pub status: HandshakeStatus,
-    pub tx: Tx,
+pub trait Peer: Send + Any {
+    fn get_sdn_addr(&self) -> Ipv4Addr;
+    fn set_sdn_addr(&mut self, addr: &Ipv4Addr);
+    fn get_state(&self) -> PeerState;
+    fn set_state(&mut self, state: PeerState);
+}
+
+impl dyn Peer {
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct PeerData {
+    pub sdn_addr: Ipv4Addr,
+    pub state: PeerState,
 }
 
 #[derive(Clone)]
 pub struct UdpPeer {
-    pub sdn_ip_addr: Ipv4Addr,
-    pub status: HandshakeStatus,
+    data: PeerData,
 }
 
-pub enum Peers {
-    UdpPeers(HashMap<SocketAddr, UdpPeer>),
-    TcpPeers(Arc<Mutex<HashMap<i32, TcpPeer>>>),
-}
-
-pub fn try_get_tcp(peers: &mut Peers) -> Option<&mut Arc<Mutex<HashMap<i32, TcpPeer>>>> {
-    if let Peers::TcpPeers(peers) = peers {
-        Some(peers)
-    } else {
-        None
+impl UdpPeer {
+    pub fn new(data: PeerData) -> Box<dyn Peer> {
+        Box::new(UdpPeer { data })
     }
 }
 
-pub fn try_get_udp(peers: &mut Peers) -> Option<&mut HashMap<SocketAddr, UdpPeer>> {
-    if let Peers::UdpPeers(peers) = peers {
-        Some(peers)
-    } else {
-        None
+impl Peer for UdpPeer {
+    fn get_sdn_addr(&self) -> Ipv4Addr {
+        self.data.sdn_addr
+    }
+
+    fn set_sdn_addr(&mut self, addr: &Ipv4Addr) {
+        self.data.sdn_addr = addr.clone();
+    }
+
+    fn get_state(&self) -> PeerState {
+        self.data.state.clone()
+    }
+
+    fn set_state(&mut self, state: PeerState) {
+        self.data.state = state;
+    }
+}
+
+pub struct TcpPeer {
+    data: PeerData,
+    pub tx: Tx,
+}
+
+impl TcpPeer {
+    pub fn new(data: PeerData, tx: Tx) -> Box<dyn Peer> {
+        Box::new(TcpPeer { data, tx })
+    }
+}
+
+impl Peer for TcpPeer {
+    fn get_sdn_addr(&self) -> Ipv4Addr {
+        self.data.sdn_addr
+    }
+
+    fn set_sdn_addr(&mut self, addr: &Ipv4Addr) {
+        self.data.sdn_addr = addr.clone();
+    }
+
+    fn get_state(&self) -> PeerState {
+        self.data.state.clone()
+    }
+
+    fn set_state(&mut self, state: PeerState) {
+        self.data.state = state;
+    }
+}
+
+pub type Peers<Key> = Arc<Mutex<HashMap<Key, Box<dyn Peer>>>>;
+
+pub trait PeersVec<Key, Value> {
+    async fn to_vec(&self) -> Vec<(Key, Value)>;
+}
+
+impl PeersVec<SocketAddr, Ipv4Addr> for Peers<SocketAddr> {
+    async fn to_vec(&self) -> Vec<(SocketAddr, Ipv4Addr)> {
+        let peers = self.lock().await;
+        peers
+            .iter()
+            .map(|(addr, peer)| (*addr, peer.get_sdn_addr()))
+            .collect()
     }
 }

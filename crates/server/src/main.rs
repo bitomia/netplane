@@ -2,8 +2,6 @@ use anyhow::Error;
 use axum::{Router, serve::Serve};
 use dotenv::dotenv;
 use log::info;
-use sqlx::sqlite::SqlitePoolOptions;
-use std::path::Path as FilePath;
 use std::sync::Arc;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinHandle;
@@ -13,30 +11,15 @@ mod dnsserver;
 mod handlers;
 mod peers;
 mod server;
+mod udpserver;
 mod webserver;
+mod wsserver;
 
 use crate::dnsserver::DnsServer;
-use crate::server::{ProcessError, Server};
+use crate::server::ProcessError;
+use crate::udpserver::UdpServer;
 use crate::webserver::WebServer;
-
-async fn do_migrate() {
-    let db_file_path = std::env::var("DATABASE_URL").unwrap();
-    let db_path = db_file_path.replace("sqlite://", "");
-
-    if !FilePath::new(&db_path).exists() {
-        info!("Database file not found, creating...");
-        std::fs::File::create(&db_path).expect("Failed to create SQLite file");
-    }
-    let pool = SqlitePoolOptions::new()
-        .connect(&db_file_path)
-        .await
-        .expect("Cannot connect to database");
-    sqlx::migrate!("./src/migrations")
-        .run(&pool)
-        .await
-        .expect("Migration failed");
-    println!("Migration successfully finished");
-}
+use crate::wsserver::WebSocketServer;
 
 fn echo_syntax(args: &Vec<String>) {
     println!("Use {} [--migrate]", args[0]);
@@ -74,14 +57,21 @@ fn start_netplane_server(
     transport_mode: String,
 ) -> JoinHandle<Result<(), Error>> {
     info!("Starting netplane server");
-    let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
-    let mut netplane_server = Server::new(
-        Arc::clone(&db),
-        Arc::clone(&server_stats),
-        transport_mode.clone(),
-    );
-    let netplane_server = tokio::spawn(async move { netplane_server.start().await });
-    info!("Netplane server listening on {}", listen_addr);
+
+    let netplane_server = tokio::spawn(async move {
+        match transport_mode.as_str() {
+            "websocket" => {
+                WebSocketServer::new(Arc::clone(&db), Arc::clone(&server_stats))
+                    .start()
+                    .await
+            }
+            _ => {
+                UdpServer::new(Arc::clone(&db), Arc::clone(&server_stats))
+                    .start()
+                    .await
+            }
+        }
+    });
     netplane_server
 }
 
@@ -107,7 +97,7 @@ async fn main() -> Result<(), ProcessError> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 2 {
         if args[1] == "--migrate" {
-            do_migrate().await;
+            db::do_migrate().await;
             return Ok(());
         } else {
             echo_syntax(&args);
