@@ -44,3 +44,27 @@ jobs:
         files: dist/netplane-server
       env:
         GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: sqlite://netplane.db
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Install sqlx-cli
+      run: cargo install sqlx-cli --no-default-features --features sqlite
+
+    - name: Run docker target
+      run: make docker
+
+    - name: Push Docker image
+      run: docker push ghcr.io/bitomia/netplane-server
