@@ -19,7 +19,7 @@ release: netplanedb target/release/netplane target/x86_64-unknown-linux-musl/rel
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
-docker: netplanedb target/x86_64-unknown-linux-musl/release/netplane-server
+docker: netplanedb
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
