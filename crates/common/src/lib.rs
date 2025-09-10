@@ -51,6 +51,7 @@ impl HandshakeReq {
 }
 
 pub const HANDSHAKE_REPLY_HEADER: [u8; 3] = [3, 4, 5];
+pub const HEARTBEAT_HEADER: [u8; 3] = [6, 7, 8];
 
 #[derive(Encode, Decode, PartialEq, Debug)]
 pub struct HandshakeRep {
@@ -101,4 +102,35 @@ pub fn calculate_network_address(ip_str: &str, netmask_str: &str) -> Result<Ipv4
     ];
 
     Ok(Ipv4Addr::from(network_octets))
+}
+
+#[derive(Encode, Decode, PartialEq, Debug)]
+pub struct UDPHeartbeat {
+    pub header: [u8; 3],
+}
+
+impl UDPHeartbeat {
+    pub fn new() -> Self {
+        Self {
+            header: HEARTBEAT_HEADER,
+        }
+    }
+
+    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+        match bincode::encode_to_vec(self, config::standard()) {
+            Ok(v) => Ok(v),
+            Err(err) => Err(anyhow!(err)),
+        }
+    }
+
+    pub fn deserialize(buf: &[u8]) -> Result<Self> {
+        match bincode::decode_from_slice::<Self, _>(buf, config::standard()) {
+            Ok((v, _)) => Ok(v),
+            Err(err) => Err(anyhow!(err)),
+        }
+    }
+
+    pub fn size(self: &Self) -> Result<usize> {
+        Ok(self.serialize()?.len())
+    }
 }

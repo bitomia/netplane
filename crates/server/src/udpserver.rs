@@ -1,8 +1,8 @@
 use anyhow::Result;
-use log::{error, info};
+use log::{error, info, trace};
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{Transport, UdpTransport};
-use netplane_common::{HandshakeReq, PeerState};
+use netplane_common::{HandshakeReq, PeerState, UDPHeartbeat};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -41,7 +41,9 @@ impl UdpServer {
 
             match peer.get_state() {
                 PeerState::HandshakeDone => {
-                    if validate_packet(&buf[..amt]) {
+                    if let Ok(_) = UDPHeartbeat::deserialize(&buf[..amt]) {
+                        trace!("Heartbeat received from {:?}", src);
+                    } else if validate_packet(&buf[..amt]) {
                         if let Some(header) = parse_ipv4_header(&buf[..amt]) {
                             let peers_vec = self.0.peers.to_vec().await;
                             for (dst_peer_addr, dst_peer_sdn_addr) in peers_vec {

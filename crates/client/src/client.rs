@@ -5,8 +5,11 @@ use log::{error, info, trace};
 use netplane_common::crypto::load_auth_key;
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{UdpTransport, WebSocketTransport};
-use netplane_common::{HandshakeRep, HandshakeReq, transport::AnyTransport, transport::Transport};
+use netplane_common::{
+    HandshakeRep, HandshakeReq, UDPHeartbeat, transport::AnyTransport, transport::Transport,
+};
 use std::env;
+use tokio::time::{Duration, interval};
 //use tray_item::{TrayItem, IconSource};
 
 pub mod http_post;
@@ -122,6 +125,8 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
         start_params.ip_addr.as_str(),
     );
 
+    let mut heartbeat_interval = interval(Duration::from_secs(5));
+
     loop {
         tokio::select! {
             result = transport.recv(&mut socket_buf) => {
@@ -158,6 +163,24 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
                     }
                     Err(err) => {
                         error!("{}", err);
+                    }
+                }
+            },
+            _ = heartbeat_interval.tick() => {
+                let heartbeat = UDPHeartbeat::new();
+                match heartbeat.serialize() {
+                    Ok(heartbeat_data) => {
+                        match transport.send(&heartbeat_data, None).await {
+                            Ok(_) => {
+                                trace!("Heartbeat sent to server");
+                            },
+                            Err(err) => {
+                                error!("Failed to send heartbeat: {}", err);
+                            }
+                        }
+                    },
+                    Err(err) => {
+                        error!("Failed to serialize heartbeat: {}", err);
                     }
                 }
             }
