@@ -1,5 +1,3 @@
-use log::error;
-
 pub struct IpHeader {
     pub version_ihl: u8,
     pub version: u8,
@@ -14,7 +12,6 @@ pub struct IpHeader {
 
 pub fn parse_ipv4_header(packet: &[u8]) -> Option<IpHeader> {
     if packet.len() < 20 {
-        println!("Packet too small to contain an IPv4 header.");
         return None;
     }
 
@@ -49,10 +46,5 @@ pub fn parse_ipv4_header(packet: &[u8]) -> Option<IpHeader> {
 }
 
 pub fn validate_packet(buf: &[u8]) -> bool {
-    if parse_ipv4_header(buf).is_some() {
-        true
-    } else {
-        error!("Packet not supported");
-        false
-    }
+    parse_ipv4_header(buf).is_some()
 }

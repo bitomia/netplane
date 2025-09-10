@@ -73,7 +73,7 @@ impl WebSocketServer {
             loop {
                 let (amt, _) = recv_socket.recv(&mut buf).await.unwrap();
 
-                let status = {
+                let peer_state = {
                     let mut peers_guard = peers.lock().await;
                     let state = PeerState::HandshakePending;
                     peers_guard.entry(peer_id).or_insert(TcpPeer::new(
@@ -86,7 +86,7 @@ impl WebSocketServer {
                     state
                 };
 
-                match status {
+                match peer_state {
                     PeerState::HandshakeDone => {
                         if validate_packet(&buf[..amt]) {
                             if let Some(header) = parse_ipv4_header(&buf[..amt]) {

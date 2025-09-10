@@ -33,17 +33,18 @@ impl UdpServer {
             let (amt, src) = transport.recv(&mut buf).await?;
             self.0.stats.add_in_bytes(amt);
 
-            let mut peers = self.0.peers.lock().await;
-            let peer = peers.entry(src).or_insert(UdpPeer::new(PeerData {
-                sdn_addr: Ipv4Addr::UNSPECIFIED,
-                state: PeerState::HandshakePending,
-            }));
+            let peer_state = {
+                let mut peers = self.0.peers.lock().await;
+                let peer = peers.entry(src).or_insert(UdpPeer::new(PeerData {
+                    sdn_addr: Ipv4Addr::UNSPECIFIED,
+                    state: PeerState::HandshakePending,
+                }));
+                peer.get_state()
+            };
 
-            match peer.get_state() {
+            match peer_state {
                 PeerState::HandshakeDone => {
-                    if let Ok(_) = UDPHeartbeat::deserialize(&buf[..amt]) {
-                        trace!("Heartbeat received from {:?}", src);
-                    } else if validate_packet(&buf[..amt]) {
+                    if validate_packet(&buf[..amt]) {
                         if let Some(header) = parse_ipv4_header(&buf[..amt]) {
                             let peers_vec = self.0.peers.to_vec().await;
                             for (dst_peer_addr, dst_peer_sdn_addr) in peers_vec {
@@ -58,6 +59,10 @@ impl UdpServer {
                                 }
                             }
                         }
+                    } else if let Ok(_) = UDPHeartbeat::deserialize(&buf[..amt]) {
+                        trace!("Heartbeat received from {:?}", src);
+                    } else {
+                        error!("Unknown packet");
                     }
                 }
                 PeerState::HandshakePending => match HandshakeReq::deserialize(&buf[..amt]) {
@@ -70,19 +75,24 @@ impl UdpServer {
                         .await
                         {
                             Ok((reply, sdn_client_ip)) => {
-                                peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip)?);
-                                match transport.send(&reply.serialize()?, Some(&src)).await {
-                                    Ok(_) => {
-                                        peer.set_state(PeerState::HandshakeDone);
+                                let mut peers = self.0.peers.lock().await;
+
+                                match peers.get_mut(&src) {
+                                    Some(peer) => {
+                                        peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip)?);
+
+                                        match transport.send(&reply.serialize()?, Some(&src)).await
+                                        {
+                                            Ok(_) => {
+                                                peer.set_state(PeerState::HandshakeDone);
+                                            }
+                                            Err(_) => todo!(),
+                                        }
                                     }
-                                    Err(_) => {
-                                        // TODO
-                                    }
+                                    None => todo!(),
                                 }
                             }
-                            Err(_) => {
-                                // Error already logged in process_handshake
-                            }
+                            Err(_) => todo!(),
                         }
                     }
                     Err(err) => {
