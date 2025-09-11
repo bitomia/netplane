@@ -20,33 +20,39 @@ jobs:
             suffix: linux
             archive: netplane-linux.tgz
             binary: netplane
+            target: x86_64-unknown-linux-gnu
           - os: macos-latest
-            target: x86_64-apple-darwin
             suffix: macos
             archive: netplane-macos.tgz
             binary: netplane
+            target: x86_64-apple-darwin
           - os: windows-latest
             suffix: windows
             archive: netplane-windows.zip
             binary: netplane.exe
+            target: x86_64-pc-windows-msvc
 
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install Rust target (if needed)
+      run: rustup target add ${{ matrix.target }}
+
     - name: Build client
-      run: cargo build --release -p netplane_client --verbose
+      run: cargo build --release -p netplane_client --verbose --target ${{ matrix.target }}
 
     - name: Run tests
-      run: cargo test -p netplane_client --verbose
+      run: cargo test -p netplane_client --verbose --target ${{ matrix.target }}
 
     - name: Archive binary
       shell: bash
       run: |
         mkdir -p dist
+        BIN_PATH="target/${{ matrix.target }}/release/${{ matrix.binary }}"
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          powershell Compress-Archive -Path target/release/${{ matrix.binary }} -DestinationPath dist/${{ matrix.archive }}
+          powershell Compress-Archive -Path $BIN_PATH -DestinationPath dist/${{ matrix.archive }}
         else
-          tar -czvf dist/${{ matrix.archive }} -C target/release ${{ matrix.binary }}
+          tar -czvf dist/${{ matrix.archive }} -C $(dirname $BIN_PATH) $(basename $BIN_PATH)
         fi
 
     - name: Upload netplane client artifact
