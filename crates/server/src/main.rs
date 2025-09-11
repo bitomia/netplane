@@ -56,8 +56,6 @@ fn start_netplane_server(
     server_stats: Arc<server::ServerStats>,
     transport_mode: String,
 ) -> JoinHandle<Result<(), Error>> {
-    info!("Starting netplane server");
-
     let netplane_server = tokio::spawn(async move {
         match transport_mode.as_str() {
             "websocket" => {
@@ -77,6 +75,13 @@ fn start_netplane_server(
 
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
+    dotenv().ok();
+    env_logger::init();
+    info!(
+        "Starting netplane server ({})",
+        netplane_common::git_rev_main!()
+    );
+
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
     let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
 
@@ -89,10 +94,6 @@ async fn main() -> Result<(), ProcessError> {
         // TODO shutdown gracefully
         std::process::exit(0);
     });
-
-    env_logger::init();
-    dotenv().ok();
-    std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 2 {

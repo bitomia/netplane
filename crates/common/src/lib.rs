@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
 pub mod crypto;
+pub mod git;
 pub mod packet;
 pub mod transport;
 

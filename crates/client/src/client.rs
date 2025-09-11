@@ -214,6 +214,8 @@ async fn auth_client(arg: String) -> Result<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    println!("netplane client ({})", netplane_common::git_rev_main!());
+
     env_logger::init();
     dotenv().ok();
 
