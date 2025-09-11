@@ -44,7 +44,7 @@ jobs:
       shell: bash
       run: |
         mkdir -p dist
-        tar -czvf dist/netplane-server.tgz -C target/release netplane-server
+        tar -czvf dist/netplane-server.tgz -C target/x86_64-unknown-linux-musl/release netplane-server
 
     - name: Upload netplane server artifact
       uses: actions/upload-artifact@v4
