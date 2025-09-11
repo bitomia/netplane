@@ -86,13 +86,15 @@ impl UdpServer {
                                             Ok(_) => {
                                                 peer.set_state(PeerState::HandshakeDone);
                                             }
-                                            Err(_) => todo!(),
+                                            Err(err) => {
+                                                error!("handshake response failed: {}", err)
+                                            }
                                         }
                                     }
-                                    None => todo!(),
+                                    None => info!("Peer unknown"),
                                 }
                             }
-                            Err(_) => todo!(),
+                            Err(err) => error!("handshake failed: {}", err),
                         }
                     }
                     Err(err) => {
