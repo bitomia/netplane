@@ -2,17 +2,22 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
-
 use tungstenite::Bytes;
 
-#[derive(Debug)]
-pub struct TransportError {}
+#[derive(Debug, Error)]
+pub enum TransportError {
+    #[error("UDP error: {0}")]
+    UDP(#[from] tokio::io::Error),
+    #[error("Websocket error: {0}")]
+    WebSocket(#[from] tungstenite::Error),
+}
 
 pub trait Transport: Sized {
     fn send(
@@ -36,8 +41,8 @@ impl WebSocketTransport {
     pub async fn connect(addr: &str) -> Result<Self, TransportError> {
         let (ws_stream, _) = match connect_async(addr).await {
             Ok(val) => val,
-            Err(_) => {
-                return Err(TransportError {});
+            Err(err) => {
+                return Err(TransportError::WebSocket(err));
             }
         };
         let (write, read) = ws_stream.split();
@@ -60,9 +65,10 @@ impl WebSocketTransport {
                     Ok(ws) => ws,
                     Err(e) => {
                         eprintln!("WebSocket handshake error: {}", e);
-                        return;
+                        continue;
                     }
                 };
+
                 let (write, read) = ws_stream.split();
                 tokio::spawn(callback(
                     WebSocketTransport {
@@ -134,8 +140,8 @@ impl UdpTransport {
         let addr = addr.next().expect("Cannot resolve server address");
         match self.socket.connect(addr).await {
             Ok(val) => val,
-            Err(_) => {
-                return Err(TransportError {});
+            Err(err) => {
+                return Err(TransportError::UDP(err));
             }
         };
         Ok(())
@@ -144,8 +150,8 @@ impl UdpTransport {
     pub async fn bind(addr: &str) -> Result<Self, TransportError> {
         let socket = match tokio::net::UdpSocket::bind(addr).await {
             Ok(val) => val,
-            Err(_) => {
-                return Err(TransportError {});
+            Err(err) => {
+                return Err(TransportError::UDP(err));
             }
         };
         Ok(UdpTransport { socket })

@@ -57,15 +57,19 @@ async fn handshake(
     }
 }
 
-async fn create_transport(control_addr: &str) -> Result<AnyTransport> {
-    let transport_type = env::var("TRANSPORT").unwrap_or_else(|_| "udp".to_string());
+async fn create_transport(
+    control_addr: &str,
+    transport_type: Option<String>,
+) -> Result<AnyTransport> {
+    let transport_type = transport_type
+        .or_else(|| env::var("TRANSPORT").ok())
+        .unwrap_or_else(|| "udp".to_string());
 
     match transport_type.to_lowercase().as_str() {
         "websocket" | "ws" => {
             info!("Starting websocket connection");
-            let transport = WebSocketTransport::connect(control_addr)
-                .await
-                .map_err(|_| anyhow!("Cannot open WebSocket"))?;
+            //            let control_addr = format!("ws://{}", control_addr);
+            let transport = WebSocketTransport::connect(control_addr).await?;
             Ok(AnyTransport::WebSocket(transport))
         }
         "udp" => {
@@ -86,11 +90,15 @@ async fn create_transport(control_addr: &str) -> Result<AnyTransport> {
     }
 }
 
-pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
+pub async fn run(
+    tun_dev: String,
+    control_addr: String,
+    transport_type: Option<String>,
+) -> Result<()> {
     info!("Starting client");
     let auth_key = load_auth_key()?;
 
-    let mut transport = create_transport(&control_addr).await?;
+    let mut transport = create_transport(&control_addr, transport_type).await?;
 
     info!("Client connected to control");
 
@@ -189,7 +197,10 @@ pub async fn run(tun_dev: String, control_addr: String) -> Result<()> {
 }
 
 fn echo_syntax(args: &Vec<String>) {
-    println!("Use {} [tun_dev] [server_ip] [--auth=link]", args[0]);
+    println!(
+        "Use {} [tun_dev] [server_ip] [--auth=link] [--transport=udp|websocket]",
+        args[0]
+    );
 }
 
 async fn auth_client(arg: String) -> Result<String> {
@@ -228,11 +239,25 @@ async fn main() -> Result<()> {
                 return Err(anyhow!(err));
             }
         }
-        if args.len() == 4 {
-            let auth_key = auth_client(args[3].clone()).await?;
+
+        let mut auth_arg = None;
+        let mut transport_type = None;
+
+        // Parse optional arguments
+        for arg in &args[3..] {
+            if arg.starts_with("--auth=") {
+                auth_arg = Some(arg.clone());
+            } else if arg.starts_with("--transport=") {
+                transport_type = arg.split('=').nth(1).map(|s| s.to_string());
+            }
+        }
+
+        if let Some(auth_arg) = auth_arg {
+            let auth_key = auth_client(auth_arg).await?;
             std::fs::write("auth.key", auth_key)?;
         }
-        let _ = run(args[1].clone(), args[2].clone()).await?;
+
+        let _ = run(args[1].clone(), args[2].clone(), transport_type).await?;
     } else {
         echo_syntax(&args);
         std::process::exit(1);

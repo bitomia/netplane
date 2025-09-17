@@ -22,7 +22,7 @@ use crate::webserver::WebServer;
 use crate::wsserver::WebSocketServer;
 
 fn echo_syntax(args: &Vec<String>) {
-    println!("Use {} [--migrate]", args[0]);
+    println!("Use {} [--migrate] [--transport=udp|websocket]", args[0]);
 }
 
 fn try_start_dns_server(db: Arc<crate::db::Db>) -> Option<JoinHandle<Result<(), Error>>> {
@@ -58,7 +58,7 @@ fn start_netplane_server(
 ) -> JoinHandle<Result<(), Error>> {
     let netplane_server = tokio::spawn(async move {
         match transport_mode.as_str() {
-            "websocket" => {
+            "websocket" | "ws" => {
                 WebSocketServer::new(Arc::clone(&db), Arc::clone(&server_stats))
                     .start()
                     .await
@@ -96,18 +96,27 @@ async fn main() -> Result<(), ProcessError> {
     });
 
     let args: Vec<String> = std::env::args().collect();
-    if args.len() == 2 {
-        if args[1] == "--migrate" {
-            db::do_migrate().await;
-            return Ok(());
-        } else {
+    let mut transport_mode = std::env::var("TRANSPORT").unwrap_or("UDP".to_string());
+    let mut should_migrate = false;
+
+    // Parse command line arguments
+    for arg in &args[1..] {
+        if arg == "--migrate" {
+            should_migrate = true;
+        } else if arg.starts_with("--transport=") {
+            transport_mode = arg.split('=').nth(1).unwrap_or("UDP").to_string();
+        } else if arg.starts_with("--") {
             echo_syntax(&args);
             std::process::exit(1);
         }
     }
 
+    if should_migrate {
+        db::do_migrate().await;
+        return Ok(());
+    }
+
     let db = Arc::new(db::Db::new().await);
-    let transport_mode = std::env::var("TRANSPORT").unwrap_or("UDP".to_string());
     let server_stats = Arc::new(server::ServerStats::new(transport_mode.clone()));
 
     let webserver = try_start_web_server(Arc::clone(&db), Arc::clone(&server_stats)).await;

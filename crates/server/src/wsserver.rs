@@ -46,6 +46,7 @@ impl WebSocketServer {
             }
         })
         .await;
+
         Ok(())
     }
 
@@ -62,7 +63,7 @@ impl WebSocketServer {
         let mut send_socket = socket.clone();
         let send_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                send_socket.send(msg.as_ref(), None).await.unwrap();
+                send_socket.send(msg.as_ref(), None).await.unwrap_or(0);
             }
         });
 
@@ -71,7 +72,13 @@ impl WebSocketServer {
             let mut buf = [0; 1500];
 
             loop {
-                let (amt, _) = recv_socket.recv(&mut buf).await.unwrap();
+                let amt = match recv_socket.recv(&mut buf).await {
+                    Ok((amt, _)) => amt,
+                    _ => {
+                        error!("Receiving from socket");
+                        return;
+                    }
+                };
 
                 let peer_state = {
                     let mut peers_guard = peers.lock().await;
@@ -106,47 +113,42 @@ impl WebSocketServer {
                             }
                         }
                     }
-                    PeerState::HandshakePending => {
-                        match HandshakeReq::deserialize(&buf[..amt]) {
-                            Ok(handshake) => {
-                                match Server::<i32>::process_handshake(handshake, &db, addr.ip())
-                                    .await
-                                {
-                                    Ok((reply, sdn_client_ip)) => {
-                                        {
+                    PeerState::HandshakePending => match HandshakeReq::deserialize(&buf[..amt]) {
+                        Ok(handshake) => {
+                            match Server::<i32>::process_handshake(handshake, &db, addr.ip()).await
+                            {
+                                Ok((reply, sdn_client_ip)) => {
+                                    {
+                                        let mut peers_guard = peers.lock().await;
+                                        peers_guard.entry(peer_id).and_modify(|p| {
+                                            p.set_sdn_addr(
+                                                &Ipv4Addr::from_str(&sdn_client_ip).unwrap(),
+                                            );
+                                        });
+                                    }
+                                    let mut reply_socket = socket.clone();
+                                    match reply_socket.send(&reply.serialize().unwrap(), None).await
+                                    {
+                                        Ok(_) => {
                                             let mut peers_guard = peers.lock().await;
                                             peers_guard.entry(peer_id).and_modify(|p| {
-                                                p.set_sdn_addr(
-                                                    &Ipv4Addr::from_str(&sdn_client_ip).unwrap(),
-                                                );
+                                                p.set_state(PeerState::HandshakeDone);
                                             });
                                         }
-                                        let mut reply_socket = socket.clone();
-                                        match reply_socket
-                                            .send(&reply.serialize().unwrap(), None)
-                                            .await
-                                        {
-                                            Ok(_) => {
-                                                let mut peers_guard = peers.lock().await;
-                                                peers_guard.entry(peer_id).and_modify(|p| {
-                                                    p.set_state(PeerState::HandshakeDone);
-                                                });
-                                            }
-                                            Err(_) => {
-                                                error!("Send handhsake reply failed");
-                                            }
+                                        Err(_) => {
+                                            error!("Send handhsake reply failed");
                                         }
                                     }
-                                    Err(_) => {
-                                        // Error already logged in process_handshake
-                                    }
+                                }
+                                Err(err) => {
+                                    error!("handshake response failed: {}", err)
                                 }
                             }
-                            Err(err) => {
-                                error!("HandshakeReq failed: {}", err);
-                            }
                         }
-                    }
+                        Err(err) => {
+                            error!("HandshakeReq failed: {}", err);
+                        }
+                    },
                 }
             }
         });
