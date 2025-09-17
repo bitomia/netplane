@@ -61,8 +61,10 @@ impl WebSocketServer {
         peers: Peers<i32>,
         stats: Arc<ServerStats>,
     ) {
-        info!("Connection started {} {:?}", peer_id, addr);
-
+        info!(
+            "New client connection (connections={})",
+            peers.lock().await.len()
+        );
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
         let mut send_socket = socket.clone();
         let send_task = tokio::spawn(async move {
@@ -78,8 +80,10 @@ impl WebSocketServer {
             loop {
                 let amt = match recv_socket.recv(&mut buf).await {
                     Ok((amt, _)) => amt,
-                    _ => {
-                        error!("Receiving from socket");
+                    Err(err) => {
+                        error!("Receiving from socket error: {:?}", err);
+                        let mut peers_guard = peers.lock().await;
+                        peers_guard.remove(&peer_id);
                         return;
                     }
                 };

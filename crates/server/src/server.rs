@@ -50,7 +50,7 @@ impl<PeerKey> Server<PeerKey> {
         match netplane_common::crypto::verify_signed_key(handshake_req.auth_key) {
             Ok(auth_client) => {
                 if let Ok(client) = db.get_client(&auth_client.client_id).await {
-                    info!("Client connected {} {}", client_addr, client.sdn_client_ip);
+                    info!("Client verified {} {}", client_addr, client.sdn_client_ip);
                     let reply =
                         HandshakeRep::new(&client.netmask, &client.network, &client.sdn_client_ip);
                     Ok((reply, client.sdn_client_ip))
