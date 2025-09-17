@@ -16,12 +16,14 @@ pub trait Peer: Send + Any {
     fn set_sdn_addr(&mut self, addr: &Ipv4Addr);
     fn get_state(&self) -> PeerState;
     fn set_state(&mut self, state: PeerState);
-    fn update_last_heartbeat(&mut self);
-    fn is_heartbeat_expired(&self, timeout: Duration) -> bool;
 }
 
 impl dyn Peer {
     pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
@@ -30,17 +32,20 @@ impl dyn Peer {
 pub struct PeerData {
     pub sdn_addr: Ipv4Addr,
     pub state: PeerState,
-    pub last_heartbeat: Instant,
 }
 
 #[derive(Clone)]
 pub struct UdpPeer {
     data: PeerData,
+    last_heartbeat: Instant,
 }
 
 impl UdpPeer {
     pub fn new(data: PeerData) -> Box<dyn Peer> {
-        Box::new(UdpPeer { data })
+        Box::new(UdpPeer {
+            data,
+            last_heartbeat: Instant::now(),
+        })
     }
 }
 
@@ -60,13 +65,15 @@ impl Peer for UdpPeer {
     fn set_state(&mut self, state: PeerState) {
         self.data.state = state;
     }
+}
 
-    fn update_last_heartbeat(&mut self) {
-        self.data.last_heartbeat = Instant::now();
+impl UdpPeer {
+    pub fn update_last_heartbeat(&mut self) {
+        self.last_heartbeat = Instant::now();
     }
 
-    fn is_heartbeat_expired(&self, timeout: Duration) -> bool {
-        self.data.last_heartbeat.elapsed() > timeout
+    pub fn is_heartbeat_expired(&self, timeout: Duration) -> bool {
+        self.last_heartbeat.elapsed() > timeout
     }
 }
 
@@ -96,14 +103,6 @@ impl Peer for TcpPeer {
 
     fn set_state(&mut self, state: PeerState) {
         self.data.state = state;
-    }
-
-    fn update_last_heartbeat(&mut self) {
-        self.data.last_heartbeat = Instant::now();
-    }
-
-    fn is_heartbeat_expired(&self, timeout: Duration) -> bool {
-        self.data.last_heartbeat.elapsed() > timeout
     }
 }
 

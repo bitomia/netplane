@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time;
 
@@ -44,6 +44,7 @@ impl UdpServer {
                 let mut expired_peers = Vec::new();
 
                 for (addr, peer) in peers.iter() {
+                    let peer = peer.as_any().downcast_ref::<UdpPeer>().unwrap();
                     if peer.get_state() == PeerState::HandshakeDone
                         && peer.is_heartbeat_expired(timeout)
                     {
@@ -67,7 +68,6 @@ impl UdpServer {
                 let peer = peers.entry(src).or_insert(UdpPeer::new(PeerData {
                     sdn_addr: Ipv4Addr::UNSPECIFIED,
                     state: PeerState::HandshakePending,
-                    last_heartbeat: Instant::now(),
                 }));
                 peer.get_state()
             };
@@ -93,6 +93,7 @@ impl UdpServer {
                         trace!("Heartbeat received from {:?}", src);
                         let mut peers = self.0.peers.lock().await;
                         if let Some(peer) = peers.get_mut(&src) {
+                            let peer = peer.as_any_mut().downcast_mut::<UdpPeer>().unwrap();
                             peer.update_last_heartbeat();
                         }
                     } else {

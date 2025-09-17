@@ -95,7 +95,6 @@ impl WebSocketServer {
                         PeerData {
                             sdn_addr: Ipv4Addr::UNSPECIFIED,
                             state: PeerState::HandshakePending,
-                            last_heartbeat: std::time::Instant::now(),
                         },
                         tx.clone(),
                     ));
