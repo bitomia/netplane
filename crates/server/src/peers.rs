@@ -4,6 +4,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
@@ -15,6 +16,8 @@ pub trait Peer: Send + Any {
     fn set_sdn_addr(&mut self, addr: &Ipv4Addr);
     fn get_state(&self) -> PeerState;
     fn set_state(&mut self, state: PeerState);
+    fn update_last_heartbeat(&mut self);
+    fn is_heartbeat_expired(&self, timeout: Duration) -> bool;
 }
 
 impl dyn Peer {
@@ -27,6 +30,7 @@ impl dyn Peer {
 pub struct PeerData {
     pub sdn_addr: Ipv4Addr,
     pub state: PeerState,
+    pub last_heartbeat: Instant,
 }
 
 #[derive(Clone)]
@@ -56,6 +60,14 @@ impl Peer for UdpPeer {
     fn set_state(&mut self, state: PeerState) {
         self.data.state = state;
     }
+
+    fn update_last_heartbeat(&mut self) {
+        self.data.last_heartbeat = Instant::now();
+    }
+
+    fn is_heartbeat_expired(&self, timeout: Duration) -> bool {
+        self.data.last_heartbeat.elapsed() > timeout
+    }
 }
 
 pub struct TcpPeer {
@@ -84,6 +96,14 @@ impl Peer for TcpPeer {
 
     fn set_state(&mut self, state: PeerState) {
         self.data.state = state;
+    }
+
+    fn update_last_heartbeat(&mut self) {
+        self.data.last_heartbeat = Instant::now();
+    }
+
+    fn is_heartbeat_expired(&self, timeout: Duration) -> bool {
+        self.data.last_heartbeat.elapsed() > timeout
     }
 }
 

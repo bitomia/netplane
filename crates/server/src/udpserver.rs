@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info, trace};
+use log::{error, info, trace, warn};
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::{HandshakeReq, PeerState, UDPHeartbeat};
@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+use tokio::time;
 
 use crate::db;
 use crate::peers::PeersVec;
@@ -29,6 +31,33 @@ impl UdpServer {
         let mut transport = UdpTransport::bind(&server_addr).await.unwrap();
         let mut buf = [0; 1500];
 
+        // Start heartbeat timeout cleanup task
+        let peers_for_cleanup = self.0.peers.clone();
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_secs(5)); // Check interval
+            let timeout = Duration::from_secs(5); // Hearbeat timeout
+
+            loop {
+                interval.tick().await;
+
+                let mut peers = peers_for_cleanup.lock().await;
+                let mut expired_peers = Vec::new();
+
+                for (addr, peer) in peers.iter() {
+                    if peer.get_state() == PeerState::HandshakeDone
+                        && peer.is_heartbeat_expired(timeout)
+                    {
+                        expired_peers.push(*addr);
+                    }
+                }
+
+                for addr in expired_peers {
+                    warn!("Removing peer {:?} due to heartbeat timeout", addr);
+                    peers.remove(&addr);
+                }
+            }
+        });
+
         loop {
             let (amt, src) = transport.recv(&mut buf).await?;
             self.0.stats.add_in_bytes(amt);
@@ -38,6 +67,7 @@ impl UdpServer {
                 let peer = peers.entry(src).or_insert(UdpPeer::new(PeerData {
                     sdn_addr: Ipv4Addr::UNSPECIFIED,
                     state: PeerState::HandshakePending,
+                    last_heartbeat: Instant::now(),
                 }));
                 peer.get_state()
             };
@@ -61,6 +91,10 @@ impl UdpServer {
                         }
                     } else if let Ok(_) = UDPHeartbeat::deserialize(&buf[..amt]) {
                         trace!("Heartbeat received from {:?}", src);
+                        let mut peers = self.0.peers.lock().await;
+                        if let Some(peer) = peers.get_mut(&src) {
+                            peer.update_last_heartbeat();
+                        }
                     } else {
                         error!("Unknown packet");
                     }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info};
+use log::{error, info, warn};
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{Transport, WebSocketTransport};
 use netplane_common::{HandshakeReq, PeerState};
@@ -81,7 +81,7 @@ impl WebSocketServer {
                 let amt = match recv_socket.recv(&mut buf).await {
                     Ok((amt, _)) => amt,
                     Err(err) => {
-                        error!("Receiving from socket error: {:?}", err);
+                        warn!("Removing peer {} due to socket error {:?}", peer_id, err);
                         let mut peers_guard = peers.lock().await;
                         peers_guard.remove(&peer_id);
                         return;
@@ -95,6 +95,7 @@ impl WebSocketServer {
                         PeerData {
                             sdn_addr: Ipv4Addr::UNSPECIFIED,
                             state: PeerState::HandshakePending,
+                            last_heartbeat: std::time::Instant::now(),
                         },
                         tx.clone(),
                     ));
