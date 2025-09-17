@@ -84,7 +84,8 @@ pub fn verify_signed_key(signed_key: String) -> Result<AuthData> {
         return Err(anyhow!("Malformed key"));
     }
     let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1])?;
-    let secret_key = std::env::var("SECRET_KEY")?;
+    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
+
     let mut mac =
         HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
     mac.update(

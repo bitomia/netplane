@@ -102,3 +102,19 @@ impl PeersVec<SocketAddr, Ipv4Addr> for Peers<SocketAddr> {
             .collect()
     }
 }
+
+impl PeersVec<Tx, Ipv4Addr> for Peers<i32> {
+    async fn to_vec(&self) -> Vec<(Tx, Ipv4Addr)> {
+        let peers = self.lock().await;
+        peers
+            .values()
+            .filter_map(|peer| {
+                if let Some(tcp_peer) = peer.as_any().downcast_ref::<TcpPeer>() {
+                    Some((tcp_peer.tx.clone(), tcp_peer.get_sdn_addr()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}

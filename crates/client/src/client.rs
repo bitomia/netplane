@@ -68,8 +68,8 @@ async fn create_transport(
     match transport_type.to_lowercase().as_str() {
         "websocket" | "ws" => {
             info!("Starting websocket connection");
-            //            let control_addr = format!("ws://{}", control_addr);
-            let transport = WebSocketTransport::connect(control_addr).await?;
+            let control_addr = format!("ws://{}", control_addr);
+            let transport = WebSocketTransport::connect(control_addr.as_str()).await?;
             Ok(AnyTransport::WebSocket(transport))
         }
         "udp" => {

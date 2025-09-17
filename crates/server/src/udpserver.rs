@@ -84,10 +84,11 @@ impl UdpServer {
                                         match transport.send(&reply.serialize()?, Some(&src)).await
                                         {
                                             Ok(_) => {
+                                                info!("User successfully connected");
                                                 peer.set_state(PeerState::HandshakeDone);
                                             }
                                             Err(err) => {
-                                                error!("handshake response failed: {}", err)
+                                                error!("Send handshake reply failed: {}", err);
                                             }
                                         }
                                     }
@@ -97,9 +98,7 @@ impl UdpServer {
                             Err(err) => error!("handshake failed: {}", err),
                         }
                     }
-                    Err(err) => {
-                        error!("HandshakeReq failed: {}", err);
-                    }
+                    Err(err) => error!("HandshakeReq failed: {}", err),
                 },
             }
         }

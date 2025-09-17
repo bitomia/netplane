@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
 use crate::db;
+use crate::peers::PeersVec;
 use crate::peers::*;
 use crate::server::*;
 
@@ -30,6 +31,7 @@ impl WebSocketServer {
         WebSocketTransport::bind(&listen_addr, {
             let db = Arc::clone(&self.0.db);
             let peers = Arc::clone(&self.0.peers);
+            let stats = Arc::clone(&self.0.stats);
             let next_peer_id = Arc::new(AtomicI32::new(0));
             let next_peer_id_clone = Arc::clone(&next_peer_id);
 
@@ -42,6 +44,7 @@ impl WebSocketServer {
                     addr,
                     Arc::clone(&db),
                     Arc::clone(&peers),
+                    Arc::clone(&stats),
                 )
             }
         })
@@ -56,6 +59,7 @@ impl WebSocketServer {
         addr: SocketAddr,
         db: Arc<db::Db>,
         peers: Peers<i32>,
+        stats: Arc<ServerStats>,
     ) {
         info!("Connection started {} {:?}", peer_id, addr);
 
@@ -79,34 +83,29 @@ impl WebSocketServer {
                         return;
                     }
                 };
+                stats.add_in_bytes(amt);
 
                 let peer_state = {
                     let mut peers_guard = peers.lock().await;
-                    let state = PeerState::HandshakePending;
-                    peers_guard.entry(peer_id).or_insert(TcpPeer::new(
+                    let peer = peers_guard.entry(peer_id).or_insert(TcpPeer::new(
                         PeerData {
                             sdn_addr: Ipv4Addr::UNSPECIFIED,
-                            state: state.clone(),
+                            state: PeerState::HandshakePending,
                         },
                         tx.clone(),
                     ));
-                    state
+                    peer.get_state()
                 };
 
                 match peer_state {
                     PeerState::HandshakeDone => {
                         if validate_packet(&buf[..amt]) {
                             if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                                let peers_guard = peers.lock().await;
-                                for (&_peer_id, peer) in peers_guard.iter() {
-                                    if peer.get_sdn_addr().to_string() == header.dst_ip.to_string()
-                                    {
-                                        if let Some(peer) = peer.as_any().downcast_ref::<TcpPeer>()
-                                        {
-                                            peer.tx
-                                                .send(bytes::Bytes::copy_from_slice(&buf[..amt]))
-                                                .unwrap();
-                                        }
+                                let peers_vec = peers.to_vec().await;
+                                for (tx, peer_sdn_addr) in peers_vec {
+                                    if peer_sdn_addr.to_string() == header.dst_ip.to_string() {
+                                        tx.send(bytes::Bytes::copy_from_slice(&buf[..amt]))
+                                            .unwrap();
                                         break;
                                     }
                                 }
@@ -118,36 +117,35 @@ impl WebSocketServer {
                             match Server::<i32>::process_handshake(handshake, &db, addr.ip()).await
                             {
                                 Ok((reply, sdn_client_ip)) => {
-                                    {
-                                        let mut peers_guard = peers.lock().await;
-                                        peers_guard.entry(peer_id).and_modify(|p| {
-                                            p.set_sdn_addr(
-                                                &Ipv4Addr::from_str(&sdn_client_ip).unwrap(),
+                                    let mut peers = peers.lock().await;
+                                    match peers.get_mut(&peer_id) {
+                                        Some(peer) => {
+                                            peer.set_sdn_addr(
+                                                &Ipv4Addr::from_str(&sdn_client_ip)
+                                                    .expect("Invalid SDN client IP"),
                                             );
-                                        });
-                                    }
-                                    let mut reply_socket = socket.clone();
-                                    match reply_socket.send(&reply.serialize().unwrap(), None).await
-                                    {
-                                        Ok(_) => {
-                                            let mut peers_guard = peers.lock().await;
-                                            peers_guard.entry(peer_id).and_modify(|p| {
-                                                p.set_state(PeerState::HandshakeDone);
-                                            });
+
+                                            let mut reply_socket = socket.clone();
+                                            match reply_socket
+                                                .send(&reply.serialize().unwrap(), None)
+                                                .await
+                                            {
+                                                Ok(_) => {
+                                                    info!("User successfully connected");
+                                                    peer.set_state(PeerState::HandshakeDone);
+                                                }
+                                                Err(err) => {
+                                                    error!("Send handshake reply failed: {}", err);
+                                                }
+                                            }
                                         }
-                                        Err(_) => {
-                                            error!("Send handhsake reply failed");
-                                        }
+                                        None => info!("Peer unknown"),
                                     }
                                 }
-                                Err(err) => {
-                                    error!("handshake response failed: {}", err)
-                                }
+                                Err(err) => error!("handshake response failed: {}", err),
                             }
                         }
-                        Err(err) => {
-                            error!("HandshakeReq failed: {}", err);
-                        }
+                        Err(err) => error!("HandshakeReq failed: {}", err),
                     },
                 }
             }
