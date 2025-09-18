@@ -34,6 +34,24 @@ jobs:
     - name: Add musl target
       run: rustup target add x86_64-unknown-linux-musl
 
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'pnpm'
+        cache-dependency-path: web/pnpm-lock.yaml
+
+    - name: Install pnpm dependencies
+      run: cd web && pnpm install --frozen-lockfile
+
+    - name: Build web assets
+      run: cd web && pnpm run build
+
     - name: Build server and docker image
       run: make docker
 
