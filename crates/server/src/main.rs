@@ -1,6 +1,7 @@
 use anyhow::Error;
 use axum::{Router, serve::Serve};
 use dotenv::dotenv;
+use env_logger::Env;
 use log::info;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
@@ -77,7 +78,8 @@ fn start_netplane_server(
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
     dotenv().ok();
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+
     info!(
         "Starting netplane server ({})",
         netplane_common::git_rev_main!()

@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
+use env_logger::Env;
 use http_post::http_post_json;
 use log::{error, info, trace};
 use netplane_common::crypto::load_auth_key;
@@ -95,6 +96,8 @@ pub async fn run(
     control_addr: String,
     transport_type: Option<String>,
 ) -> Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+
     info!("Starting client");
     let auth_key = load_auth_key()?;
 
