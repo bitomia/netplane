@@ -20,22 +20,16 @@ impl WebServer {
         let addr = std::env::var("WEBSERVER").unwrap_or("0.0.0.0:8000".to_string());
         info!("Starting web server {}", addr);
 
-        let server_url = std::env::var("WEBSERVER_URL").unwrap_or_else(|_| {
-            info!("Couldn't find WEBSERVER_URL env var. Using default value.");
-            return "http://localhost:3000".to_string();
-        });
-
-        let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-            info!("Couldn't find JWT_SECRET env var. Using default value.");
-            return "your-secret-key".to_string();
-        });
+        let server_url = std::env::var("WEBSERVER_URL").expect("WEBSERVER_URL env var not found");
+        let jwt_secret = std::env::var("JWT_SECRET").expect("JWT_SECRET env var not found");
         let state = AppState {
             db,
             server_stats,
             server_url,
             jwt_secret,
         };
-        let static_web_path = std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var");
+        let static_web_path =
+            std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var not found");
         let serve_dir = ServeDir::new(&static_web_path).fallback(ServeFile::new(
             Path::new(&static_web_path).join("index.html"),
         ));

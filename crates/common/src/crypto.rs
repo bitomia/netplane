@@ -66,7 +66,7 @@ pub fn try_load_crypto_keys(
 }
 
 pub fn sign_key(key: &[u8]) -> String {
-    let secret_key = std::env::var("SECRET_KEY").unwrap();
+    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
 
     let mut mac =
         HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
@@ -143,7 +143,6 @@ mod tests {
         let client_keypair = snow::Builder::new(PATTERN.parse()?).generate_keypair()?;
         let server_keypair = snow::Builder::new(PATTERN.parse()?).generate_keypair()?;
 
-        // ====
         let mut client = snow::Builder::new(PATTERN.parse()?)
             .local_private_key(&client_keypair.private)
             .remote_public_key(&server_keypair.public)
@@ -152,18 +151,17 @@ mod tests {
             .local_private_key(&server_keypair.private)
             .remote_public_key(&client_keypair.public)
             .build_responder()?;
-        println!("3");
+
         let (mut read_buf, mut first_msg, mut second_msg) = ([0u8; 1024], [0u8; 1024], [0u8; 1024]);
-        println!("4");
+
         let mut buf = [0u8; 1024];
 
         // -> e
         let auth_key = "auth_key";
         let len = client.write_message(auth_key.as_bytes(), &mut first_msg)?;
 
-        // responder processes the first message...
+        // respond processes the first message...
         server.read_message(&first_msg[..len], &mut read_buf)?;
-        //println!("{}", String::from_utf8(read_buf[..len].to_vec())?);
 
         // <- e, ee
         let len = server.write_message(&[], &mut second_msg)?;
@@ -176,7 +174,6 @@ mod tests {
         let mut responder = server.into_transport_mode()?;
 
         let len = initiator.write_message(b"test\0", &mut buf).unwrap();
-        //println!("{}", len);
 
         let mut read_buf = [0u8; 1024];
         responder.read_message(&buf[..len], &mut read_buf).unwrap();
