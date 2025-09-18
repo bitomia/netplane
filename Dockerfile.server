@@ -4,7 +4,6 @@ RUN apt update && apt -y install build-essential
 
 WORKDIR /app
 
-COPY --from=build /app/dist build
 COPY target/x86_64-unknown-linux-musl/release/netplane-server netplane-server
 
 ENV RUST_LOG=debug
