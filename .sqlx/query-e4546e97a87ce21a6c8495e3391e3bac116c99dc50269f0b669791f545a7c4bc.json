@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT client_id, used FROM auth_links WHERE id=? LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "client_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "used",
+        "ordinal": 1,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "e4546e97a87ce21a6c8495e3391e3bac116c99dc50269f0b669791f545a7c4bc"
+}

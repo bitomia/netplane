@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT sdn_client_ip FROM clients WHERE hostname=?",
+  "describe": {
+    "columns": [
+      {
+        "name": "sdn_client_ip",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "256a5ef623d043b0de1227b2a6b45a5e96af9b0e81979dec59e099c6b3da5b6f"
+}

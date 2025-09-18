@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\nSELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients\nINNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?\n",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "auth_link_id",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "sdn_client_ip",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "network",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "netmask",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "used",
+        "ordinal": 5,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "1ae1ca2b2761b5bc2434d235fe031ef9020c25a2be964846825557644253ce2a"
+}
