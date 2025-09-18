@@ -1,5 +1,7 @@
 .PHONY: client server
 
+DEFAULT_NETPLANE_DB=sqlite://netplane.db
+
 all: client server
 
 client:
@@ -9,8 +11,9 @@ server: netplanedb
 	cargo build -p netplane_server
 
 netplanedb:
-	sqlx database create
-	sqlx migrate run --source ./crates/server/src/migrations
+	sqlx database create -D $(DEFAULT_NETPLANE_DB)
+	sqlx migrate run --source ./crates/server/src/migrations -D $(DEFAULT_NETPLANE_DB)
+	cargo sqlx prepare --workspace -D $(DEFAULT_NETPLANE_DB)
 
 webapp:
 	cd web; pnpm install --frozen-lockfile; pnpm run build; cd -

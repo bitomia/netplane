@@ -66,7 +66,7 @@ pub fn try_load_crypto_keys(
 }
 
 pub fn sign_key(key: &[u8]) -> String {
-    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
+    let secret_key = std::env::var("AUTH_SECRET").expect("AUTH_SECRET env var not found");
 
     let mut mac =
         HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
@@ -84,7 +84,7 @@ pub fn verify_signed_key(signed_key: String) -> Result<AuthData> {
         return Err(anyhow!("Malformed key"));
     }
     let signature = general_purpose::URL_SAFE_NO_PAD.decode(parts[1])?;
-    let secret_key = std::env::var("SECRET_KEY").expect("SECRET_KEY env var not found");
+    let secret_key = std::env::var("AUTH_SECRET").expect("AUTH_SECRET env var not found");
 
     let mut mac =
         HmacSha256::new_from_slice(secret_key.as_bytes()).expect("HMAC can take key of any size");
@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn test_sign_key() {
         unsafe {
-            std::env::set_var("SECRET_KEY", "secret_key");
+            std::env::set_var("AUTH_SECRET", "secret_key");
         }
         let client_id = "1234".to_string();
         let auth_data = crate::crypto::AuthData { client_id };

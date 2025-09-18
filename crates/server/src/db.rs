@@ -4,8 +4,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, Sqlite, sqlite::SqlitePoolOptions};
 use std::{env, path::Path as FilePath};
 
+const DEFAULT_DATABASE_URL: &str = "sqlite://netplane.db";
+
 pub async fn do_migrate() {
-    let db_file_path = std::env::var("DATABASE_URL").unwrap();
+    let db_file_path = std::env::var("DATABASE_URL").unwrap_or(DEFAULT_DATABASE_URL.to_string());
+
     let db_path = db_file_path.replace("sqlite://", "");
 
     if !FilePath::new(&db_path).exists() {
@@ -52,7 +55,7 @@ pub struct User {
 
 impl Db {
     pub async fn new() -> Db {
-        let db_file_path = env::var("DATABASE_URL").unwrap();
+        let db_file_path = env::var("DATABASE_URL").unwrap_or(DEFAULT_DATABASE_URL.to_string());
         let db_path = db_file_path.replace("sqlite://", "");
 
         if !FilePath::new(&db_path).exists() {
