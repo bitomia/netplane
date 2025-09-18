@@ -199,7 +199,7 @@ pub async fn run(
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [tun_dev] [server_ip] [--auth=link] [--transport=udp|websocket]",
+        "Use {} [server_ip] [--tun=device] [--auth=link] [--transport=udp|websocket]",
         args[0]
     );
 }
@@ -232,7 +232,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
 
     let args: Vec<String> = env::args().collect();
-    if args.len() >= 3 {
+    if args.len() >= 2 {
         if let Err(err) =
             netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
         {
@@ -243,13 +243,16 @@ async fn main() -> Result<()> {
 
         let mut auth_arg = None;
         let mut transport_type = None;
+        let mut tun_dev = "tun0".to_string();
 
         // Parse optional arguments
-        for arg in &args[3..] {
+        for arg in &args[2..] {
             if arg.starts_with("--auth=") {
                 auth_arg = Some(arg.clone());
             } else if arg.starts_with("--transport=") {
                 transport_type = arg.split('=').nth(1).map(|s| s.to_string());
+            } else if arg.starts_with("--tun=") {
+                tun_dev = arg.split('=').nth(1).unwrap_or("tun0").to_string();
             }
         }
 
@@ -258,7 +261,7 @@ async fn main() -> Result<()> {
             std::fs::write("auth.key", auth_key)?;
         }
 
-        let _ = run(args[1].clone(), args[2].clone(), transport_type).await?;
+        let _ = run(tun_dev, args[1].clone(), transport_type).await?;
     } else {
         echo_syntax(&args);
         std::process::exit(1);
