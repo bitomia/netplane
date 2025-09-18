@@ -96,8 +96,6 @@ pub async fn run(
     control_addr: String,
     transport_type: Option<String>,
 ) -> Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
-
     info!("Starting client");
     let auth_key = load_auth_key()?;
 
@@ -228,9 +226,9 @@ async fn auth_client(arg: String) -> Result<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("netplane client ({})", netplane_common::git_rev_main!());
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    info!("Netplane client rev {}", netplane_common::git_rev_main!());
 
-    env_logger::init();
     dotenv().ok();
 
     let args: Vec<String> = env::args().collect();

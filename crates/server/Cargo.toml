@@ -26,6 +26,8 @@ jsonwebtoken = "9.3.0"
 bcrypt = "0.15.1"
 axum-extra = { version = "0.10.1", features = ["typed-header"] }
 chrono = { version = "0.4", features = ["serde"] }
+rust-embed = { version = "8.5.0", features = ["axum"] }
+axum-embed = "0.1.0"
 
 
 [build-dependencies]

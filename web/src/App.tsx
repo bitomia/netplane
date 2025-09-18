@@ -11,8 +11,7 @@ import LoginPage from "~/pages/Login";
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/" element={<DashboardPage />} />
     </Routes>
   );
 }

@@ -3,6 +3,7 @@ use axum::{Router, serve::Serve};
 use dotenv::dotenv;
 use env_logger::Env;
 use log::info;
+use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
 use tokio::signal::unix::{SignalKind, signal};
@@ -77,13 +78,11 @@ fn start_netplane_server(
 
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
-    dotenv().ok();
-    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    info!("Netplane server rev {}", netplane_common::git_rev_main!());
 
-    info!(
-        "Starting netplane server ({})",
-        netplane_common::git_rev_main!()
-    );
+    dotenv().ok();
+    crypto::check_env();
 
     let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
     let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");

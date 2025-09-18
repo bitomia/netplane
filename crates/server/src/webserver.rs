@@ -1,9 +1,13 @@
 use axum::{Router, routing::get, routing::post, serve::Serve};
+use axum_embed::ServeEmbed;
 use log::info;
-use std::path::Path;
+use rust_embed::RustEmbed;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
+
+#[derive(RustEmbed, Clone)]
+#[folder = "../../web/dist/"]
+struct Assets;
 
 use crate::handlers::{
     AppState, auth_client, create_client, delete_client, get_clients, get_server_stats,
@@ -28,11 +32,6 @@ impl WebServer {
             server_url,
             jwt_secret,
         };
-        let static_web_path =
-            std::env::var("WEB_STATIC_PATH").expect("WEB_STATIC_PATH env var not found");
-        let serve_dir = ServeDir::new(&static_web_path).fallback(ServeFile::new(
-            Path::new(&static_web_path).join("index.html"),
-        ));
 
         let cors = CorsLayer::new().allow_credentials(true);
 
@@ -48,7 +47,7 @@ impl WebServer {
             .route("/auth/{auth_key}", post(auth_client))
             .layer(cors)
             .with_state(state)
-            .fallback_service(serve_dir);
+            .fallback_service(ServeEmbed::<Assets>::new());
 
         let listener = tokio::net::TcpListener::bind(addr)
             .await

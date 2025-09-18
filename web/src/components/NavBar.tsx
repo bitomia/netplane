@@ -71,7 +71,7 @@ function AvatarMenu() {
   const navigate = useNavigate();
 
   const onLogout = useCallback(async () => {
-    await fetch(`${import.meta.env.VITE_API_URL}logout`, {
+    await fetch(`${import.meta.env.VITE_API_URL}/logout`, {
       credentials: "include",
     });
     navigate("/");

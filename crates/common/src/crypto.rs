@@ -105,6 +105,10 @@ pub fn verify_signed_key(signed_key: String) -> Result<AuthData> {
     }
 }
 
+pub fn check_env() {
+    std::env::var("AUTH_SECRET").expect("AUTH_SECRET env var not found");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
