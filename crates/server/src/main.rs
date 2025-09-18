@@ -2,6 +2,7 @@ use anyhow::Error;
 use axum::{Router, serve::Serve};
 use dotenv::dotenv;
 use log::info;
+use netplane_common::transport::TransportMode;
 use std::sync::Arc;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinHandle;
@@ -54,11 +55,11 @@ async fn try_start_web_server(
 fn start_netplane_server(
     db: Arc<crate::db::Db>,
     server_stats: Arc<server::ServerStats>,
-    transport_mode: String,
+    transport_mode: TransportMode,
 ) -> JoinHandle<Result<(), Error>> {
     let netplane_server = tokio::spawn(async move {
-        match transport_mode.as_str() {
-            "websocket" | "ws" => {
+        match transport_mode {
+            TransportMode::WebSocket => {
                 WebSocketServer::new(Arc::clone(&db), Arc::clone(&server_stats))
                     .start()
                     .await
@@ -96,7 +97,9 @@ async fn main() -> Result<(), ProcessError> {
     });
 
     let args: Vec<String> = std::env::args().collect();
-    let mut transport_mode = std::env::var("TRANSPORT").unwrap_or("UDP".to_string());
+    let mut transport_mode =
+        TransportMode::from_string(std::env::var("TRANSPORT").unwrap_or("UDP".to_string()))
+            .expect("Invalid transport mode");
     let mut should_migrate = false;
 
     // Parse command line arguments
@@ -104,7 +107,9 @@ async fn main() -> Result<(), ProcessError> {
         if arg == "--migrate" {
             should_migrate = true;
         } else if arg.starts_with("--transport=") {
-            transport_mode = arg.split('=').nth(1).unwrap_or("UDP").to_string();
+            transport_mode =
+                TransportMode::from_string(arg.split('=').nth(1).unwrap_or("UDP").to_string())
+                    .expect("Invalid transport mode");
         } else if arg.starts_with("--") {
             echo_syntax(&args);
             std::process::exit(1);

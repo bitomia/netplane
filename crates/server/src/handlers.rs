@@ -306,7 +306,7 @@ pub async fn get_server_stats(
     };
 
     web_ok!(ServerStatsResponse {
-        transport_mode: state.server_stats.transport_mode.clone(),
+        transport_mode: state.server_stats.transport_mode.as_string(),
         in_bytes: state
             .server_stats
             .in_bytes

@@ -1,5 +1,6 @@
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
+use serde::Serialize;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use thiserror::Error;
@@ -17,6 +18,29 @@ pub enum TransportError {
     UDP(#[from] tokio::io::Error),
     #[error("Websocket error: {0}")]
     WebSocket(#[from] tungstenite::Error),
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub enum TransportMode {
+    UDP = 0,
+    WebSocket,
+}
+
+impl TransportMode {
+    pub fn from_string(mode: String) -> Option<TransportMode> {
+        match mode.trim().to_lowercase().as_str() {
+            "udp" => Some(TransportMode::UDP),
+            "ws" | "websocket" => Some(TransportMode::WebSocket),
+            _ => None,
+        }
+    }
+
+    pub fn as_string(&self) -> String {
+        match self {
+            TransportMode::UDP => "udp".to_string(),
+            TransportMode::WebSocket => "websocket".to_string(),
+        }
+    }
 }
 
 pub trait Transport: Sized {

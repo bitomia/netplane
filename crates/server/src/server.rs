@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::{error, info};
-use netplane_common::{HandshakeRep, HandshakeReq};
+use netplane_common::{HandshakeRep, HandshakeReq, transport::TransportMode};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -12,15 +12,15 @@ pub struct ProcessError(u32);
 
 #[derive(Debug)]
 pub struct ServerStats {
-    pub transport_mode: String,
+    pub transport_mode: TransportMode,
     pub in_bytes: AtomicUsize,
     pub out_bytes: AtomicUsize,
 }
 
 impl ServerStats {
-    pub fn new(mode: String) -> ServerStats {
+    pub fn new(transport_mode: TransportMode) -> ServerStats {
         ServerStats {
-            transport_mode: mode,
+            transport_mode,
             in_bytes: AtomicUsize::new(0),
             out_bytes: AtomicUsize::new(0),
         }
