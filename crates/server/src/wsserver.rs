@@ -110,6 +110,7 @@ impl WebSocketServer {
                                     if peer_sdn_addr.to_string() == header.dst_ip.to_string() {
                                         tx.send(bytes::Bytes::copy_from_slice(&buf[..amt]))
                                             .unwrap();
+                                        stats.add_out_bytes(amt);
                                         break;
                                     }
                                 }
@@ -153,7 +154,10 @@ impl WebSocketServer {
                                         .await
                                     {
                                         Ok(_) => {
-                                            info!("Authorization failed, error response sent to {}", addr);
+                                            info!(
+                                                "Authorization failed, error response sent to {}",
+                                                addr
+                                            );
                                         }
                                         Err(err) => {
                                             error!("Failed to send error response: {}", err);
