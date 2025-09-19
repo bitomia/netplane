@@ -7,7 +7,7 @@ use netplane_common::crypto::load_auth_key;
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{UdpTransport, WebSocketTransport};
 use netplane_common::{
-    HandshakeRep, HandshakeReq, UDPHeartbeat, transport::AnyTransport, transport::Transport,
+    HandshakeRep, HandshakeReq, HandshakeError, UDPHeartbeat, transport::AnyTransport, transport::Transport,
 };
 use std::env;
 use tokio::time::{Duration, interval};
@@ -52,6 +52,9 @@ async fn handshake(
                 destination: handshake.network,
                 ip_addr: handshake.sdn_ip_addr,
             });
+        } else if let Ok(error_response) = HandshakeError::deserialize(&socket_buf[..amt]) {
+            error!("Authorization failed: {}", error_response.error_message);
+            return Err(anyhow!("Authorization failed: {}", error_response.error_message));
         } else {
             error!("Initialization failed. Keep trying");
         }

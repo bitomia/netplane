@@ -120,7 +120,7 @@ impl WebSocketServer {
                         Ok(handshake) => {
                             match Server::<i32>::process_handshake(handshake, &db, addr.ip()).await
                             {
-                                Ok((reply, sdn_client_ip)) => {
+                                HandshakeResult::Success(reply, sdn_client_ip) => {
                                     let mut peers = peers.lock().await;
                                     match peers.get_mut(&peer_id) {
                                         Some(peer) => {
@@ -146,7 +146,20 @@ impl WebSocketServer {
                                         None => info!("Peer unknown"),
                                     }
                                 }
-                                Err(err) => error!("handshake response failed: {}", err),
+                                HandshakeResult::Error(error_response) => {
+                                    let mut error_socket = socket.clone();
+                                    match error_socket
+                                        .send(&error_response.serialize().unwrap(), None)
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            info!("Authorization failed, error response sent to {}", addr);
+                                        }
+                                        Err(err) => {
+                                            error!("Failed to send error response: {}", err);
+                                        }
+                                    }
+                                }
                             }
                         }
                         Err(err) => error!("HandshakeReq failed: {}", err),

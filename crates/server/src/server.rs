@@ -1,11 +1,16 @@
-use anyhow::Result;
 use log::{error, info};
-use netplane_common::{HandshakeRep, HandshakeReq, transport::TransportMode};
+use netplane_common::{HandshakeRep, HandshakeReq, HandshakeError, transport::TransportMode};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::db;
 use crate::peers::*;
+
+#[derive(Debug)]
+pub enum HandshakeResult {
+    Success(HandshakeRep, String),
+    Error(HandshakeError),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -46,22 +51,22 @@ impl<PeerKey> Server<PeerKey> {
         handshake_req: HandshakeReq,
         db: &db::Db,
         client_addr: std::net::IpAddr,
-    ) -> Result<(HandshakeRep, String)> {
+    ) -> HandshakeResult {
         match netplane_common::crypto::verify_signed_key(handshake_req.auth_key) {
             Ok(auth_client) => {
                 if let Ok(client) = db.get_client(&auth_client.client_id).await {
                     info!("Client verified {} {}", client_addr, client.sdn_client_ip);
                     let reply =
                         HandshakeRep::new(&client.netmask, &client.network, &client.sdn_client_ip);
-                    Ok((reply, client.sdn_client_ip))
+                    HandshakeResult::Success(reply, client.sdn_client_ip)
                 } else {
-                    error!("Ignoring Unknown user {}", client_addr);
-                    Err(anyhow::anyhow!("Unknown user"))
+                    error!("Authorization failed: Unknown user {}", client_addr);
+                    HandshakeResult::Error(HandshakeError::new("Authorization failed: Unknown user"))
                 }
             }
             Err(error) => {
-                error!("Unexpected verifying key error: {} {}", client_addr, error);
-                Err(anyhow::anyhow!("Key verification failed: {}", error))
+                error!("Authorization failed: Key verification error: {} {}", client_addr, error);
+                HandshakeResult::Error(HandshakeError::new(&format!("Authorization failed: {}", error)))
             }
         }
     }

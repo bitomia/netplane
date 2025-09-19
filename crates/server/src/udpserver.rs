@@ -109,7 +109,7 @@ impl UdpServer {
                         )
                         .await
                         {
-                            Ok((reply, sdn_client_ip)) => {
+                            HandshakeResult::Success(reply, sdn_client_ip) => {
                                 let mut peers = self.0.peers.lock().await;
 
                                 match peers.get_mut(&src) {
@@ -130,7 +130,16 @@ impl UdpServer {
                                     None => info!("Peer unknown"),
                                 }
                             }
-                            Err(err) => error!("handshake failed: {}", err),
+                            HandshakeResult::Error(error_response) => {
+                                match transport.send(&error_response.serialize()?, Some(&src)).await {
+                                    Ok(_) => {
+                                        info!("Authorization failed, error response sent to {}", src);
+                                    }
+                                    Err(err) => {
+                                        error!("Failed to send error response: {}", err);
+                                    }
+                                }
+                            }
                         }
                     }
                     Err(err) => error!("HandshakeReq failed: {}", err),
