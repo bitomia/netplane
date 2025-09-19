@@ -200,6 +200,32 @@ INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
         Ok(())
     }
 
+    pub async fn create_or_update_user(
+        self: &Self,
+        email: &str,
+        password_hash: &str,
+    ) -> Result<bool, anyhow::Error> {
+        match self.get_user_by_email(email).await {
+            Ok(_) => {
+                sqlx::query("UPDATE users SET password_hash = ? WHERE email = ?")
+                    .bind(password_hash)
+                    .bind(email)
+                    .execute(&self.pool)
+                    .await?;
+                Ok(false)
+            }
+            Err(_) => {
+                sqlx::query("INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)")
+                    .bind(email)
+                    .bind(password_hash)
+                    .bind("admin")
+                    .execute(&self.pool)
+                    .await?;
+                Ok(true)
+            }
+        }
+    }
+
     pub async fn get_user_by_email(self: &Self, email: &str) -> Result<User, anyhow::Error> {
         let user = sqlx::query_as!(
             User,

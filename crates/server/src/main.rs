@@ -25,7 +25,10 @@ use crate::webserver::WebServer;
 use crate::wsserver::WebSocketServer;
 
 fn echo_syntax(args: &Vec<String>) {
-    println!("Use {} [--migrate] [--transport=udp|websocket]", args[0]);
+    println!(
+        "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket]",
+        args[0]
+    );
 }
 
 fn try_start_dns_server(db: Arc<crate::db::Db>) -> Option<JoinHandle<Result<(), Error>>> {
@@ -102,11 +105,14 @@ async fn main() -> Result<(), ProcessError> {
         TransportMode::from_string(std::env::var("TRANSPORT").unwrap_or("UDP".to_string()))
             .expect("Invalid transport mode");
     let mut should_migrate = false;
+    let mut create_user_email: Option<String> = None;
 
     // Parse command line arguments
     for arg in &args[1..] {
         if arg == "--migrate" {
             should_migrate = true;
+        } else if arg.starts_with("--create-user=") {
+            create_user_email = Some(arg.split('=').nth(1).unwrap_or("").to_string());
         } else if arg.starts_with("--transport=") {
             transport_mode =
                 TransportMode::from_string(arg.split('=').nth(1).unwrap_or("UDP").to_string())
@@ -119,6 +125,52 @@ async fn main() -> Result<(), ProcessError> {
 
     if should_migrate {
         db::do_migrate().await;
+        return Ok(());
+    }
+
+    if let Some(email) = create_user_email {
+        if email.is_empty() {
+            println!("Error: Email cannot be empty");
+            echo_syntax(&args);
+            std::process::exit(1);
+        }
+
+        let password = rpassword::prompt_password(format!("Enter password for {}: ", email))
+            .expect("Failed to read password");
+
+        if password.is_empty() {
+            println!("Error: Password cannot be empty");
+            std::process::exit(1);
+        }
+
+        let confirm_password = rpassword::prompt_password("Confirm password: ".to_string())
+            .expect("Failed to read password confirmation");
+
+        if password != confirm_password {
+            println!("Error: Passwords do not match");
+            std::process::exit(1);
+        }
+
+        let db = db::Db::new().await;
+        let password_hash =
+            bcrypt::hash(password, bcrypt::DEFAULT_COST).expect("Failed to hash password");
+        match db.create_or_update_user(&email, &password_hash).await {
+            Ok(is_new_user) => {
+                if is_new_user {
+                    info!("User created successfully: {}", email);
+                    println!("User created successfully:");
+                } else {
+                    info!("User password updated successfully: {}", email);
+                    println!("User password updated successfully:");
+                }
+                println!("Email: {}", email);
+            }
+            Err(e) => {
+                info!("Failed to create/update user: {}", e);
+                println!("Failed to create/update user: {}", e);
+                std::process::exit(1);
+            }
+        }
         return Ok(());
     }
 
