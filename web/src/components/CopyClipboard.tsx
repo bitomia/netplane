@@ -45,12 +45,6 @@ const CopyClipboard = ({ children, className }) => {
   return (
     <div className={`flex justify-between items-center ${className}`}>
       <span>{children}</span>
-      <button
-        onClick={handleCopy}
-        className="px-4 py-2 text-slate-950 rounded-lg transition"
-      >
-        {copied ? <MdDone /> : <MdContentCopy />}
-      </button>
     </div>
   );
 };

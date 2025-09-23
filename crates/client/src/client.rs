@@ -7,7 +7,8 @@ use netplane_common::crypto::load_auth_key;
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{UdpTransport, WebSocketTransport};
 use netplane_common::{
-    HandshakeRep, HandshakeReq, HandshakeError, UDPHeartbeat, transport::AnyTransport, transport::Transport,
+    HandshakeError, HandshakeRep, HandshakeReq, UDPHeartbeat, transport::AnyTransport,
+    transport::Transport,
 };
 use std::env;
 use tokio::time::{Duration, interval};
@@ -54,7 +55,10 @@ async fn handshake(
             });
         } else if let Ok(error_response) = HandshakeError::deserialize(&socket_buf[..amt]) {
             error!("Authorization failed: {}", error_response.error_message);
-            return Err(anyhow!("Authorization failed: {}", error_response.error_message));
+            return Err(anyhow!(
+                "Authorization failed: {}",
+                error_response.error_message
+            ));
         } else {
             error!("Initialization failed. Keep trying");
         }
@@ -96,9 +100,11 @@ async fn create_transport(
 
 pub async fn run(
     tun_dev: String,
-    control_addr: String,
+    host: String,
+    port: Option<u16>,
     transport_type: Option<String>,
 ) -> Result<()> {
+    let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
     info!("Starting client");
     let auth_key = load_auth_key()?;
 
@@ -202,22 +208,20 @@ pub async fn run(
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [server_ip] [--tun=device] [--auth=link] [--transport=udp|websocket]",
+        "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket]",
         args[0]
     );
 }
 
-async fn auth_client(arg: String) -> Result<String> {
-    let parts: Vec<&str> = arg.split("=").collect();
-    if parts.len() != 2 {
-        return Err(anyhow!("Invalid auth argument"));
-    }
+async fn auth_client(host: &str, link_code: &str, auth_port: Option<u16>) -> Result<String> {
+    let port = auth_port.unwrap_or(8000);
+    let auth_url = format!("http://{}:{}/auth/{}", host, port, link_code);
 
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys("public.key", "private.key")?;
     let payload = netplane_common::AuthClientRequest { public_key };
 
-    let res = http_post_json(parts[1], &payload)?;
+    let res = http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
             let auth_key = res.payload;
@@ -227,8 +231,18 @@ async fn auth_client(arg: String) -> Result<String> {
     }
 }
 
+pub fn evaluation_banner() {
+    println!("{}", "*".repeat(62));
+    println!("EVALUATION BUILD {}", netplane_common::git_rev_main!());
+    println!("This build is licensed only for evaluation.");
+    println!("To obtain a full license, please contact: support@bitomia.com");
+    println!("{}", "*".repeat(62));
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    evaluation_banner();
+
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Netplane client rev {}", netplane_common::git_rev_main!());
 
@@ -247,6 +261,8 @@ async fn main() -> Result<()> {
         let mut auth_arg = None;
         let mut transport_type = None;
         let mut tun_dev = "tun0".to_string();
+        let mut port = None;
+        let mut auth_port = None;
 
         // Parse optional arguments
         for arg in &args[2..] {
@@ -256,15 +272,28 @@ async fn main() -> Result<()> {
                 transport_type = arg.split('=').nth(1).map(|s| s.to_string());
             } else if arg.starts_with("--tun=") {
                 tun_dev = arg.split('=').nth(1).unwrap_or("tun0").to_string();
+            } else if arg.starts_with("--port=") {
+                if let Some(port_str) = arg.split('=').nth(1) {
+                    port = port_str.parse::<u16>().ok();
+                }
+            } else if arg.starts_with("--auth-port=") {
+                if let Some(auth_port_str) = arg.split('=').nth(1) {
+                    auth_port = auth_port_str.parse::<u16>().ok();
+                }
             }
         }
 
         if let Some(auth_arg) = auth_arg {
-            let auth_key = auth_client(auth_arg).await?;
+            let parts: Vec<&str> = auth_arg.split("=").collect();
+            if parts.len() != 2 {
+                return Err(anyhow!("Invalid auth argument"));
+            }
+            let link_code = parts[1];
+            let auth_key = auth_client(&args[1], link_code, auth_port).await?;
             std::fs::write("auth.key", auth_key)?;
         }
 
-        let _ = run(tun_dev, args[1].clone(), transport_type).await?;
+        let _ = run(tun_dev, args[1].clone(), port, transport_type).await?;
     } else {
         echo_syntax(&args);
         std::process::exit(1);

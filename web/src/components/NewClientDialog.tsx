@@ -41,7 +41,7 @@ function NewClientForm({
         sdn_client_ip: string;
         netmask: string;
       };
-      createClient({ sdn_client_ip, netmask });
+      createClient({ sdn_client_ip, netmask: "255.255.255.0" });
       closeForm();
     },
     [createClient],
@@ -59,14 +59,6 @@ function NewClientForm({
           id="sdn_client_ip"
           name="sdn_client_ip"
           placeholder="10.0.0.1"
-          required
-        />
-        <Label htmlFor="netmask">Netmask</Label>
-        <Input
-          type="text"
-          id="netmask"
-          name="netmask"
-          placeholder="255.255.255.0"
           required
         />
       </div>

@@ -15,7 +15,6 @@ use uuid::Uuid;
 pub struct AppState {
     pub db: Arc<crate::db::Db>,
     pub server_stats: Arc<crate::server::ServerStats>,
-    pub server_url: String,
     pub jwt_secret: String,
 }
 
@@ -167,7 +166,7 @@ pub async fn get_clients(
                 .iter()
                 .map(|c| crate::db::Client {
                     id: c.id.clone(),
-                    auth_link_id: format!("{}/auth/{}", state.server_url, c.auth_link_id),
+                    auth_link_id: c.auth_link_id.clone(),
                     sdn_client_ip: c.sdn_client_ip.clone(),
                     network: c.network.clone(),
                     netmask: c.netmask.clone(),

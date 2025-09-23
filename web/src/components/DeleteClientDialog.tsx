@@ -23,13 +23,15 @@ export default ({ authLink, client, setDeleteClient, onDeleteClient }) => {
                     className="text-base font-semibold text-gray-900"
                     id="modal-title"
                   >
-                    Auth Link
+                    Authorization Code
                   </h3>
                   <div className="mt-2">
                     <p className="text-sm text-gray-500 w-full">
-                      Copy the following link to auth your client
+                      Copy the following code to authenticate your client
                     </p>
-                    <CopyClipboard className="bg-slate-100 text-slate-950 px-3 py-2 rounded w-full mt-2">{authLink}</CopyClipboard>
+                    <CopyClipboard className="bg-slate-100 text-slate-950 px-3 py-2 rounded w-full mt-2">
+                      {authLink}
+                    </CopyClipboard>
                   </div>
                 </div>
               </div>
@@ -45,14 +47,16 @@ export default ({ authLink, client, setDeleteClient, onDeleteClient }) => {
                   </h3>
                   <div className="mt-2 flex flex-row items-center">
                     <p className="text-sm text-gray-500">
-                      Are you sure you want to delete this client? All of your data will be permanently removed. This action cannot be undone.
+                      Are you sure you want to delete this client? All of your
+                      data will be permanently removed. This action cannot be
+                      undone.
                     </p>
                     <button
                       type="button"
                       className="shrink rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-xs hover:bg-red-500 sm:ml-3 sm:w-auto"
                       onClick={() => onDeleteClient(client)}
                     >
-                       Delete
+                      Delete
                     </button>
                   </div>
                 </div>

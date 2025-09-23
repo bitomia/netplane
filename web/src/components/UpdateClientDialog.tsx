@@ -43,10 +43,10 @@ function UpdateClient({
     <>
       <div className={cn("grid gap-4", className)}>
         <div>
-          <Label htmlFor="auth_link">Auth Link</Label>
+          <Label htmlFor="auth_link">Authorization Code</Label>
           <div className="mt-2">
             <p className="text-sm text-gray-500 w-full">
-              Copy the following link to auth your client
+              Copy the following code to authenticate your client
             </p>
             <CopyClipboard className="bg-slate-100 text-slate-950 px-3 py-2 rounded w-full mt-2">
               {authLink}
