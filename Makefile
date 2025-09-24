@@ -10,6 +10,18 @@ client:
 server: netplanedb
 	cargo build -p netplane_server
 
+android_debug:
+	cargo ndk -t arm64-v8a -t armeabi-v7a build -p netplane_client --lib
+
+android_emu_debug:
+	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib
+
+android_release:
+	cargo ndk -t arm64-v8a -t armeabi-v7a build -p netplane_client --lib --release
+
+android_emu_release:
+	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib --release
+
 netplanedb:
 	sqlx database create -D $(DEFAULT_NETPLANE_DB)
 	sqlx migrate run --source ./crates/server/src/migrations -D $(DEFAULT_NETPLANE_DB)

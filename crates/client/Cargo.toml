@@ -9,7 +9,7 @@ path = "src/client.rs"
 
 [lib]
 name = "netplane"
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "cdylib"]
   
 [dependencies]
 netplane_common = { path = "../common" }
@@ -31,6 +31,10 @@ bincode = "2.0.1"
 snow = "0.9.6"
 hmac = "0.12.1"
 sha2 = "0.10.9"
+jni = { version = "0.21", optional = true }
+
+[features]
+android = ["jni"]
 
 [build-dependencies]
 embed-resource = { version = "3.0.2", optional = true }
