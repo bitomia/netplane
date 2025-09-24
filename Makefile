@@ -10,16 +10,16 @@ client:
 server: netplanedb
 	cargo build -p netplane_server
 
-android_debug:
+android-debug:
 	cargo ndk -t arm64-v8a -t armeabi-v7a build -p netplane_client --lib
 
-android_emu_debug:
+android-emu-debug:
 	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib
 
-android_release:
+android-release:
 	cargo ndk -t arm64-v8a -t armeabi-v7a build -p netplane_client --lib --release
 
-android_emu_release:
+android-emu-release:
 	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib --release
 
 netplanedb:
@@ -37,6 +37,14 @@ release: netplanedb target/release/netplane target/x86_64-unknown-linux-musl/rel
 docker: netplanedb
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
+
+verify-fmt:
+	cargo fmt -- --check
+
+verify-lint:
+	cargo clippy --all-targets --all-features
+
+verify: verify-fmt verify-lint
 
 clean:
 	cargo clean
