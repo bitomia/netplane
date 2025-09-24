@@ -3,14 +3,14 @@ name = "netplane_client"
 version = "0.1.0"
 edition = "2024"
 
-#[features]
-#client = ["tray-item", "embed-resource"]
-
 [[bin]]
 name = "netplane"
 path = "src/client.rs"
-#required-features = ["client"]
-    
+
+[lib]
+name = "netplane"
+crate-type = ["staticlib"]
+  
 [dependencies]
 netplane_common = { path = "../common" }
 axum = { version = "0.8.1", features = ["ws"] }

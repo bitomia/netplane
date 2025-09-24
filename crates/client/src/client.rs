@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
 use env_logger::Env;
-use http_post::http_post_json;
 use log::{error, info, trace};
 use netplane_common::crypto::load_auth_key;
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
@@ -12,10 +11,13 @@ use netplane_common::{
 };
 use std::env;
 use tokio::time::{Duration, interval};
-//use tray_item::{TrayItem, IconSource};
 
-pub mod http_post;
-pub mod tundev;
+#[path = "http_post.rs"]
+mod http_post;
+#[path = "tundev.rs"]
+mod tundev;
+
+use http_post::http_post_json;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -112,17 +114,6 @@ pub async fn run(
 
     info!("Client connected to control");
 
-    // let icon_raw = include_bytes!("../icons/icon-red.ico");
-    // let connected_icon_raw = include_bytes!("../icons/icon-green.ico");
-    // let mut tray = TrayItem::new("Tray Example", IconSource::Data { height: 64, width: 64, data: Vec::from(icon_raw) }).unwrap();
-    // tray.add_label("Tray Label").unwrap();
-    // tray.add_menu_item("Hello", || {
-    //     println!("Hello!");
-    // }).unwrap();
-    // let mut inner = tray.inner_mut();
-    // inner.add_quit_item("Quit");
-    // inner.display();
-
     let start_params = match handshake(auth_key, control_addr, &mut transport).await {
         Ok(p) => {
             info!("Handshake successfully finished {:?}", p);
@@ -213,25 +204,25 @@ fn echo_syntax(args: &Vec<String>) {
     );
 }
 
-async fn auth_client(host: &str, link_code: &str, auth_port: Option<u16>) -> Result<String> {
+pub async fn auth_client(host: &str, link_code: &str, auth_port: Option<u16>) -> Result<()> {
     let port = auth_port.unwrap_or(8000);
     let auth_url = format!("http://{}:{}/auth/{}", host, port, link_code);
-
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys("public.key", "private.key")?;
-    let payload = netplane_common::AuthClientRequest { public_key };
 
+    let payload = netplane_common::AuthClientRequest { public_key };
     let res = http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
             let auth_key = res.payload;
-            Ok(auth_key)
+            std::fs::write("auth.key", auth_key)?;
+            Ok(())
         }
         _ => Err(anyhow!(format!("Auth failed: {}", res.payload))),
     }
 }
 
-pub fn evaluation_banner() {
+fn evaluation_banner() {
     println!("{}", "*".repeat(62));
     println!("EVALUATION BUILD {}", netplane_common::git_rev_main!());
     println!("This build is licensed only for evaluation.");
@@ -239,11 +230,14 @@ pub fn evaluation_banner() {
     println!("{}", "*".repeat(62));
 }
 
+pub fn init_logger() {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     evaluation_banner();
-
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    init_logger();
     info!("Netplane client rev {}", netplane_common::git_rev_main!());
 
     dotenv().ok();
@@ -289,8 +283,7 @@ async fn main() -> Result<()> {
                 return Err(anyhow!("Invalid auth argument"));
             }
             let link_code = parts[1];
-            let auth_key = auth_client(&args[1], link_code, auth_port).await?;
-            std::fs::write("auth.key", auth_key)?;
+            auth_client(&args[1], link_code, auth_port).await?;
         }
 
         let _ = run(tun_dev, args[1].clone(), port, transport_type).await?;
