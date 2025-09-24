@@ -1,5 +1,5 @@
 use log::{error, info};
-use netplane_common::{HandshakeRep, HandshakeReq, HandshakeError, transport::TransportMode};
+use netplane_common::{HandshakeError, HandshakeRep, HandshakeReq, transport::TransportMode};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -61,12 +61,20 @@ impl<PeerKey> Server<PeerKey> {
                     HandshakeResult::Success(reply, client.sdn_client_ip)
                 } else {
                     error!("Authorization failed: Unknown user {}", client_addr);
-                    HandshakeResult::Error(HandshakeError::new("Authorization failed: Unknown user"))
+                    HandshakeResult::Error(HandshakeError::new(
+                        "Authorization failed: Unknown user",
+                    ))
                 }
             }
             Err(error) => {
-                error!("Authorization failed: Key verification error: {} {}", client_addr, error);
-                HandshakeResult::Error(HandshakeError::new(&format!("Authorization failed: {}", error)))
+                error!(
+                    "Authorization failed: Key verification error: {} {}",
+                    client_addr, error
+                );
+                HandshakeResult::Error(HandshakeError::new(&format!(
+                    "Authorization failed: {}",
+                    error
+                )))
             }
         }
     }

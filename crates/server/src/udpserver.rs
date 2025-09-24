@@ -131,9 +131,15 @@ impl UdpServer {
                                 }
                             }
                             HandshakeResult::Error(error_response) => {
-                                match transport.send(&error_response.serialize()?, Some(&src)).await {
+                                match transport
+                                    .send(&error_response.serialize()?, Some(&src))
+                                    .await
+                                {
                                     Ok(_) => {
-                                        info!("Authorization failed, error response sent to {}", src);
+                                        info!(
+                                            "Authorization failed, error response sent to {}",
+                                            src
+                                        );
                                     }
                                     Err(err) => {
                                         error!("Failed to send error response: {}", err);
