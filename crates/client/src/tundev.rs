@@ -1,4 +1,5 @@
 use log::info;
+use std::os::unix::io::RawFd;
 use tokio::io::AsyncReadExt;
 use tun::Configuration;
 
@@ -8,7 +9,12 @@ pub struct TunDev {
 
 impl TunDev {
     #[allow(unused_variables)]
-    pub fn new(tun_dev: String, netmask: &str, destination: &str, ip_addr: &str) -> Self {
+    pub fn new(
+        tun_dev: String,
+        netmask: &str,
+        destination: &str,
+        ip_addr: &str,
+    ) -> anyhow::Result<Self> {
         info!("TUN initialized for {}", ip_addr);
 
         let mut config = Configuration::default();
@@ -17,6 +23,7 @@ impl TunDev {
             .netmask(netmask)
             .destination(destination)
             .mtu(1400);
+
         #[cfg(target_os = "linux")]
         config.platform_config(|config| {
             config.ensure_root_privileges(true);
@@ -26,9 +33,32 @@ impl TunDev {
         config.tun_name(tun_dev);
 
         config.up();
-        let dev = tun::create_as_async(&config).expect("Cannot create TUN device");
 
-        TunDev { dev }
+        let dev = tun::create_as_async(&config)
+            .map_err(|e| anyhow::anyhow!("Cannot create TUN device: {}", e))?;
+        Ok(TunDev { dev })
+    }
+
+    pub fn new_from_fd(
+        fd: RawFd,
+        netmask: &str,
+        destination: &str,
+        ip_addr: &str,
+    ) -> anyhow::Result<Self> {
+        info!("TUN initialized from FD {} for {}", fd, ip_addr);
+
+        let mut config = Configuration::default();
+        config
+            .address(ip_addr)
+            .netmask(netmask)
+            .destination(destination)
+            .raw_fd(fd)
+            .mtu(1400);
+
+        let dev = tun::create_as_async(&config)
+            .map_err(|e| anyhow::anyhow!("Cannot create TUN device from FD: {}", e))?;
+
+        Ok(TunDev { dev })
     }
 
     pub async fn send(self: &mut Self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {

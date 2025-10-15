@@ -14,6 +14,8 @@ mod dnsserver;
 mod handlers;
 mod peers;
 mod server;
+mod source;
+mod trafficlog;
 mod udpserver;
 mod webserver;
 mod wsserver;
@@ -26,8 +28,17 @@ use crate::wsserver::WebSocketServer;
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket]",
+        "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket] [--dump=<file>] [--replay=<file> --replay-delay=<seconds>]",
         args[0]
+    );
+    println!("\nOptions:");
+    println!("  --migrate              Run database migrations");
+    println!("  --create-user=<email>  Create or update a user");
+    println!("  --transport=<mode>     Transport mode: udp or websocket (default: udp)");
+    println!("  --dump=<file>          Dump traffic to file");
+    println!("  --replay=<file>        Replay traffic from dump file (requires --replay-delay)");
+    println!(
+        "  --replay-delay=<sec>   Seconds to wait before replaying (allows clients to connect)"
     );
 }
 
@@ -61,6 +72,9 @@ fn start_netplane_server(
     db: Arc<crate::db::Db>,
     server_stats: Arc<server::ServerStats>,
     transport_mode: TransportMode,
+    dump_file: Option<String>,
+    replay_file: Option<String>,
+    replay_delay: Option<u64>,
 ) -> JoinHandle<Result<(), Error>> {
     let netplane_server = tokio::spawn(async move {
         match transport_mode {
@@ -70,9 +84,15 @@ fn start_netplane_server(
                     .await
             }
             _ => {
-                UdpServer::new(Arc::clone(&db), Arc::clone(&server_stats))
-                    .start()
-                    .await
+                UdpServer::new(
+                    Arc::clone(&db),
+                    Arc::clone(&server_stats),
+                    dump_file,
+                    replay_file,
+                    replay_delay,
+                )
+                .start()
+                .await
             }
         }
     });
@@ -116,6 +136,9 @@ async fn main() -> Result<(), ProcessError> {
             .expect("Invalid transport mode");
     let mut should_migrate = false;
     let mut create_user_email: Option<String> = None;
+    let mut dump_file: Option<String> = None;
+    let mut replay_file: Option<String> = None;
+    let mut replay_delay: Option<u64> = None;
 
     // Parse command line arguments
     for arg in &args[1..] {
@@ -127,6 +150,13 @@ async fn main() -> Result<(), ProcessError> {
             transport_mode =
                 TransportMode::from_string(arg.split('=').nth(1).unwrap_or("UDP").to_string())
                     .expect("Invalid transport mode");
+        } else if arg.starts_with("--dump=") {
+            dump_file = Some(arg.split('=').nth(1).unwrap_or("").to_string());
+        } else if arg.starts_with("--replay=") {
+            replay_file = Some(arg.split('=').nth(1).unwrap_or("").to_string());
+        } else if arg.starts_with("--replay-delay=") {
+            let delay_str = arg.split('=').nth(1).unwrap_or("0");
+            replay_delay = Some(delay_str.parse().expect("Invalid replay delay value"));
         } else if arg.starts_with("--") {
             echo_syntax(&args);
             std::process::exit(1);
@@ -193,7 +223,7 @@ async fn main() -> Result<(), ProcessError> {
     tokio::select! {
         _ = async { webserver.unwrap().await }, if webserver.is_some() => { info!("Web server stopped") }
         _ = async { dnsserver.unwrap().await }, if dnsserver.is_some() => { info!("DNS server stopped") }
-        _ = start_netplane_server(Arc::clone(&db), Arc::clone(&server_stats), transport_mode) => info!("Netplane server stopped")
+        _ = start_netplane_server(Arc::clone(&db), Arc::clone(&server_stats), transport_mode, dump_file, replay_file, replay_delay) => info!("Netplane server stopped")
     }
     Ok(())
 }

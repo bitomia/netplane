@@ -1,7 +1,12 @@
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
 use env_logger::Env;
-use log::{error, info, trace};
+use log::{debug, error, info};
+use std::env;
+use std::os::unix::io::RawFd;
+use std::str::FromStr;
+use tokio::time::{Duration, interval};
+
 use netplane_common::crypto::load_auth_key;
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{UdpTransport, WebSocketTransport};
@@ -9,8 +14,6 @@ use netplane_common::{
     HandshakeError, HandshakeRep, HandshakeReq, UDPHeartbeat, transport::AnyTransport,
     transport::Transport,
 };
-use std::env;
-use tokio::time::{Duration, interval};
 
 #[path = "http_post.rs"]
 mod http_post;
@@ -30,21 +33,18 @@ async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
 }
 
 #[derive(Debug)]
-struct StartParams {
-    netmask: String,
-    destination: String,
-    ip_addr: String,
+pub struct StartParams {
+    pub netmask: String,
+    pub destination: String,
+    pub ip_addr: String,
 }
 
-async fn handshake(
-    auth_key: String,
-    server_addr: String,
-    transport: &mut AnyTransport,
-) -> Result<StartParams> {
-    info!("Starting handshake with {}", server_addr);
+pub async fn handshake(auth_key: String, transport: &mut AnyTransport) -> Result<StartParams> {
+    info!("Starting handshake");
 
     let handshake = HandshakeReq::new(&auth_key);
     transport.send(&handshake.serialize()?, None).await?;
+
     let mut socket_buf = [0; 1500];
     loop {
         let (amt, _) = transport.recv(&mut socket_buf).await?;
@@ -67,7 +67,7 @@ async fn handshake(
     }
 }
 
-async fn create_transport(
+pub async fn create_transport(
     control_addr: &str,
     transport_type: Option<String>,
 ) -> Result<AnyTransport> {
@@ -106,15 +106,13 @@ pub async fn run(
     port: Option<u16>,
     transport_type: Option<String>,
 ) -> Result<()> {
-    let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
     info!("Starting client");
-    let auth_key = load_auth_key()?;
-
+    let authkey_path = String::from_str("auth.key")?;
+    let auth_key = load_auth_key(authkey_path)?;
+    let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
     let mut transport = create_transport(&control_addr, transport_type).await?;
 
-    info!("Client connected to control");
-
-    let start_params = match handshake(auth_key, control_addr, &mut transport).await {
+    let start_params = match handshake(auth_key, &mut transport).await {
         Ok(p) => {
             info!("Handshake successfully finished {:?}", p);
             p
@@ -125,16 +123,37 @@ pub async fn run(
         }
     };
 
-    let mut socket_buf = [0; 1500];
-    let mut tun_buf = [0; 1500];
     let mut dev = tundev::TunDev::new(
         tun_dev,
         start_params.netmask.as_str(),
         start_params.destination.as_str(),
         start_params.ip_addr.as_str(),
-    );
+    )?;
 
+    update_loop(&mut dev, &mut transport).await
+}
+
+pub async fn run_from_fd(
+    tun_fd: RawFd,
+    start_params: &StartParams,
+    mut transport: &mut AnyTransport,
+) -> Result<()> {
+    info!("Starting client with fd");
+
+    let mut dev = tundev::TunDev::new_from_fd(
+        tun_fd,
+        start_params.netmask.as_str(),
+        start_params.destination.as_str(),
+        start_params.ip_addr.as_str(),
+    )?;
+
+    update_loop(&mut dev, &mut transport).await
+}
+
+async fn update_loop(dev: &mut tundev::TunDev, transport: &mut AnyTransport) -> Result<()> {
     let mut heartbeat_interval = interval(Duration::from_secs(5));
+    let mut socket_buf = [0; 1500];
+    let mut tun_buf = [0; 1500];
 
     loop {
         tokio::select! {
@@ -142,12 +161,12 @@ pub async fn run(
                 match result {
                     Ok((amt, _)) => {
                         if validate_packet(&socket_buf[..amt]) {
-                            send_tun(&mut dev, &socket_buf, amt).await;
+                            send_tun(dev, &socket_buf, amt).await;
                         } else {
-                            trace!("Ignoring non-ipv4 packet")
+                            error!("Ignoring non-ipv4 packet")
                         }
                     },
-                    Err(_) => todo!()
+                    Err(err) => error!("{}", err)
                 }
             },
             tun_ret = dev.read(&mut tun_buf) => {
@@ -158,7 +177,7 @@ pub async fn run(
                             is_loopback = header.src_ip == header.dst_ip;
                         }
                         if is_loopback {
-                            send_tun(&mut dev, &tun_buf, amt).await;
+                            send_tun(dev, &tun_buf, amt).await;
                         } else {
                             match transport.send(&tun_buf[..amt], None).await {
                                 Ok(bytes_sent) => {
@@ -166,7 +185,7 @@ pub async fn run(
                                         error!("Less bytes sent than expected to socket");
                                     }
                                 },
-                                Err(err) => error!("{}´", err)
+                                Err(err) => error!("{}", err)
                             }
                         }
                     }
@@ -181,7 +200,7 @@ pub async fn run(
                     Ok(heartbeat_data) => {
                         match transport.send(&heartbeat_data, None).await {
                             Ok(_) => {
-                                trace!("Heartbeat sent to server");
+                                debug!("Heartbeat sent to server");
                             },
                             Err(err) => {
                                 error!("Failed to send heartbeat: {}", err);
@@ -197,6 +216,7 @@ pub async fn run(
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn echo_syntax(args: &Vec<String>) {
     println!(
         "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket]",
@@ -204,39 +224,48 @@ fn echo_syntax(args: &Vec<String>) {
     );
 }
 
-pub async fn auth_client(host: &str, link_code: &str, auth_port: Option<u16>) -> Result<()> {
+pub async fn auth_client(
+    authkey_filepath: &str,
+    publickey_filepath: &str,
+    privatekey_filepath: &str,
+    host: &str,
+    link_code: &str,
+    auth_port: Option<u16>,
+) -> Result<()> {
     let port = auth_port.unwrap_or(8000);
     let auth_url = format!("http://{}:{}/auth/{}", host, port, link_code);
     let (public_key, _) =
-        netplane_common::crypto::try_load_crypto_keys("public.key", "private.key")?;
+        netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
     let payload = netplane_common::AuthClientRequest { public_key };
     let res = http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
             let auth_key = res.payload;
-            std::fs::write("auth.key", auth_key)?;
+            std::fs::write(authkey_filepath, auth_key)?;
             Ok(())
         }
         _ => Err(anyhow!(format!("Auth failed: {}", res.payload))),
     }
 }
 
-fn evaluation_banner() {
-    println!("{}", "*".repeat(62));
-    println!("EVALUATION BUILD {}", netplane_common::git_rev_main!());
-    println!("This build is licensed only for evaluation.");
-    println!("To obtain a full license, please contact: support@bitomia.com");
-    println!("{}", "*".repeat(62));
-}
-
 pub fn init_logger() {
+    #[cfg(target_os = "android")]
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Trace)
+            .with_tag("netplane"),
+    );
+
+    #[cfg(not(target_os = "android"))]
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+
+    info!("=================> LOGGER INITIALIZED");
 }
 
 #[tokio::main]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 async fn main() -> Result<()> {
-    evaluation_banner();
     init_logger();
     info!("Netplane client rev {}", netplane_common::git_rev_main!());
 
@@ -283,7 +312,15 @@ async fn main() -> Result<()> {
                 return Err(anyhow!("Invalid auth argument"));
             }
             let link_code = parts[1];
-            auth_client(&args[1], link_code, auth_port).await?;
+            auth_client(
+                "auth.key",
+                "public.key",
+                "private.key",
+                &args[1],
+                link_code,
+                auth_port,
+            )
+            .await?;
         }
 
         let _ = run(tun_dev, args[1].clone(), port, transport_type).await?;

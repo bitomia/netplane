@@ -15,8 +15,8 @@ pub struct AuthData {
     pub client_id: String,
 }
 
-pub fn load_auth_key() -> Result<String> {
-    let key = std::fs::read_to_string("auth.key").map_err(|err| {
+pub fn load_auth_key(authkey_path: String) -> Result<String> {
+    let key = std::fs::read_to_string(authkey_path.as_str()).map_err(|err| {
         std::io::Error::new(err.kind(), format!("Opening auth.key file failed: {}", err))
     })?;
     Ok(key)
