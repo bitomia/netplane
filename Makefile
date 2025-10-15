@@ -23,7 +23,6 @@ android-emu-release:
 	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib --release
 
 android: android-debug android-emu-debug android-release android-emu-release
-	cd react-native-netplane && gradle -p android copyRustLibraries
 
 netplanedb:
 	sqlx database create -D $(DEFAULT_NETPLANE_DB)
