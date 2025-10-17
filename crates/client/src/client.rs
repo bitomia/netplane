@@ -3,7 +3,6 @@ use dotenv::dotenv;
 use env_logger::Env;
 use log::{debug, error, info};
 use std::env;
-use std::os::unix::io::RawFd;
 use std::str::FromStr;
 use tokio::time::{Duration, interval};
 
@@ -21,6 +20,13 @@ mod http_post;
 mod tundev;
 
 use http_post::http_post_json;
+
+// Re-export fd module when this file is used as a binary
+// When included as a module in lib.rs, this will be a child module
+#[path = "fd.rs"]
+pub mod fd;
+
+use fd::PlatformFd;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -134,7 +140,7 @@ pub async fn run(
 }
 
 pub async fn run_from_fd(
-    tun_fd: RawFd,
+    tun_fd: PlatformFd,
     start_params: &StartParams,
     mut transport: &mut AnyTransport,
 ) -> Result<()> {

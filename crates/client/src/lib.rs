@@ -1,4 +1,6 @@
-mod client;
+pub mod client;
+// Re-export fd from client module to avoid duplication
+pub use client::fd;
 
 use log::{error, info};
 use once_cell::sync::Lazy;
@@ -9,11 +11,12 @@ use tokio::runtime::Runtime;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
 
-use client::StartParams;
 use netplane_common::crypto::load_auth_key;
 use netplane_common::transport::AnyTransport;
 
+pub use client::StartParams;
 pub use netplane_common::crypto::try_generate_crypto_keys;
+pub use fd::PlatformFd;
 
 static GLOBAL_RT: Lazy<Runtime> =
     Lazy::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
@@ -381,9 +384,15 @@ pub extern "C" fn netplane_client_run(
     }
     let transport_ref = unsafe { &mut *(transport as *mut AnyTransport) };
 
+    // Convert c_int to PlatformFd
+    #[cfg(unix)]
+    let platform_fd = client::fd::PlatformFd::from_raw_fd(tun_fd);
+    #[cfg(windows)]
+    let platform_fd = client::fd::PlatformFd::from_raw_handle(tun_fd as _);
+
     GLOBAL_RT.spawn(async move {
         tokio::select! {
-            retval = client::run_from_fd(tun_fd, &handshake_result, transport_ref) => {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ref) => {
                     reset_cancel_token();
                 match retval {
                     Ok(_) => 0,

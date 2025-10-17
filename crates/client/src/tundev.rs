@@ -1,7 +1,8 @@
 use log::info;
-use std::os::unix::io::RawFd;
 use tokio::io::AsyncReadExt;
 use tun::Configuration;
+
+use super::fd::PlatformFd;
 
 pub struct TunDev {
     pub dev: tun::AsyncDevice,
@@ -40,21 +41,33 @@ impl TunDev {
     }
 
     pub fn new_from_fd(
-        fd: RawFd,
+        fd: PlatformFd,
         netmask: &str,
         destination: &str,
         ip_addr: &str,
     ) -> anyhow::Result<Self> {
-        info!("TUN initialized from FD {} for {}", fd, ip_addr);
+        #[cfg(unix)]
+        let raw_fd = fd.as_raw_fd();
+        #[cfg(windows)]
+        let raw_fd = fd.as_raw_handle();
+
+        info!("TUN initialized from FD {:?} for {}", fd, ip_addr);
 
         let mut config = Configuration::default();
+        #[cfg(unix)]
         config
             .address(ip_addr)
             .netmask(netmask)
             .destination(destination)
-            .raw_fd(fd)
+            .raw_fd(raw_fd)
             .mtu(1400);
-
+        #[cfg(windows)]
+        config
+            .address(ip_addr)
+            .netmask(netmask)
+            .destination(destination)
+            .raw_handle(raw_fd)
+            .mtu(1400);
         let dev = tun::create_as_async(&config)
             .map_err(|e| anyhow::anyhow!("Cannot create TUN device from FD: {}", e))?;
 
