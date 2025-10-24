@@ -420,3 +420,57 @@ pub extern "C" fn netplane_client_stop() {
     let token = CANCEL_TOKEN.lock().unwrap();
     token.cancel();
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn netplane_run(
+    tun_dev: *const c_char,
+    host: *const c_char,
+    port: u16,
+    transport_type: *const c_char,
+) -> i32 {
+    GLOBAL_RT.block_on(async {
+        let tun_dev = unsafe {
+            match CStr::from_ptr(tun_dev).to_str() {
+                Ok(s) => s.to_string(),
+                Err(err) => {
+                    error!("Error parsing tun_dev: {:?}", err);
+                    return -1;
+                }
+            }
+        };
+
+        let host = unsafe {
+            match CStr::from_ptr(host).to_str() {
+                Ok(s) => s.to_string(),
+                Err(err) => {
+                    error!("Error parsing host: {:?}", err);
+                    return -1;
+                }
+            }
+        };
+
+        let port_opt = if port == 0 { None } else { Some(port) };
+
+        let transport_type_opt = if transport_type.is_null() {
+            None
+        } else {
+            unsafe {
+                match CStr::from_ptr(transport_type).to_str() {
+                    Ok(s) => Some(s.to_string()),
+                    Err(err) => {
+                        error!("Error parsing transport_type: {:?}", err);
+                        return -1;
+                    }
+                }
+            }
+        };
+
+        match client::run(tun_dev, host, port_opt, transport_type_opt).await {
+            Ok(_) => 0,
+            Err(err) => {
+                error!("Error running client: {:?}", err);
+                -1
+            }
+        }
+    })
+}

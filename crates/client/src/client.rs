@@ -265,8 +265,6 @@ pub fn init_logger() {
 
     #[cfg(not(target_os = "android"))]
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
-
-    info!("=================> LOGGER INITIALIZED");
 }
 
 #[tokio::main]

@@ -44,6 +44,15 @@ jobs:
     - name: Run tests
       run: cargo test -p netplane_client --verbose --target ${{ matrix.target }}
 
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 'stable'
+
+    - name: Run EE tests
+      working-directory: ee/gonetplane
+      run: make test
+
     - name: Archive binary
       shell: bash
       run: |
