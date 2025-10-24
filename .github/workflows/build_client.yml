@@ -49,7 +49,11 @@ jobs:
       with:
         go-version: 'stable'
 
-    - name: Run EE tests
+    - name: Build gonetplane
+      working-directory: ee/gonetplane
+      run: make bindgen
+
+    - name: Run gonetplane tests
       working-directory: ee/gonetplane
       run: make test
 
