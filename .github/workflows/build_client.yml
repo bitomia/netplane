@@ -25,7 +25,7 @@ jobs:
             suffix: macos
             archive: netplane-macos.tgz
             binary: netplane
-            target: x86_64-apple-darwin
+            target: universal-apple-darwin
           - os: windows-latest
             suffix: windows
             archive: netplane-windows.zip
@@ -36,13 +36,44 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install Rust target (if needed)
+      if: matrix.target != 'universal-apple-darwin'
       run: rustup target add ${{ matrix.target }}
 
-    - name: Build client
+    - name: Install Rust targets for universal binary
+      if: matrix.target == 'universal-apple-darwin'
+      run: |
+        rustup target add x86_64-apple-darwin
+        rustup target add aarch64-apple-darwin
+
+    - name: Install cbindgen
+      run: cargo install --force cbindgen
+
+    - name: Build client (non-macOS)
+      if: matrix.target != 'universal-apple-darwin'
       run: cargo build --release -p netplane_client --verbose --target ${{ matrix.target }}
 
+    - name: Build client (macOS universal)
+      if: matrix.target == 'universal-apple-darwin'
+      run: |
+        cargo build --release -p netplane_client --verbose --target x86_64-apple-darwin
+        cargo build --release -p netplane_client --verbose --target aarch64-apple-darwin
+        mkdir -p target/universal-apple-darwin/release
+        lipo -create \
+          target/x86_64-apple-darwin/release/${{ matrix.binary }} \
+          target/aarch64-apple-darwin/release/${{ matrix.binary }} \
+          -output target/universal-apple-darwin/release/${{ matrix.binary }}
+        lipo -create \
+          target/x86_64-apple-darwin/release/libnetplane.a \
+          target/aarch64-apple-darwin/release/libnetplane.a \
+          -output target/universal-apple-darwin/release/libnetplane.a
+
     - name: Run tests
+      if: matrix.target != 'universal-apple-darwin'
       run: cargo test -p netplane_client --verbose --target ${{ matrix.target }}
+
+    - name: Run tests (macOS universal - native arch only)
+      if: matrix.target == 'universal-apple-darwin'
+      run: cargo test -p netplane_client --verbose
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -52,6 +83,10 @@ jobs:
     - name: Build gonetplane
       working-directory: ee/gonetplane
       run: make bindgen
+
+    - name: Set LD_LIBRARY_PATH for Linux
+      if: runner.os == 'Linux'
+      run: export LD_LIBRARY_PATH="../../target/${{ matrix.target }}/release:$LD_LIBRARY_PATH"
 
     - name: Run gonetplane tests
       working-directory: ee/gonetplane

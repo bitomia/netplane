@@ -2,8 +2,10 @@ package gonetplane
 
 /*
 #cgo CFLAGS: -I.
-#cgo LDFLAGS: -L../../target/release -lnetplane
-#cgo darwin LDFLAGS: -framework Security -framework SystemConfiguration
+#cgo linux,arm64   LDFLAGS: -L../../target/aarch64-unknown-linux-gnu/release -lnetplane
+#cgo linux,amd64   LDFLAGS: -L../../target/x86_64-unknown-linux-gnu/release -lnetplane
+#cgo windows,amd64 LDFLAGS: -L../../target/x86_64-pc-windows-gnu/release -lnetplane
+#cgo darwin LDFLAGS: -L../../target/universal-apple-darwin/release -lnetplane -framework Security -framework SystemConfiguration
 #include "netplane.h"
 #include <stdlib.h>
 */
