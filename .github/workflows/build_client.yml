@@ -84,12 +84,11 @@ jobs:
       working-directory: ee/gonetplane
       run: make bindgen
 
-    - name: Set LD_LIBRARY_PATH for Linux
+    - name: Run gonetplane tests (Linux)
       if: runner.os == 'Linux'
-      run: export LD_LIBRARY_PATH="../../target/${{ matrix.target }}/release:$LD_LIBRARY_PATH"
-
-    - name: Run gonetplane tests
       working-directory: ee/gonetplane
+      env:
+        LD_LIBRARY_PATH: ${{ github.workspace }}/target/${{ matrix.target }}/release
       run: make test
 
     - name: Archive binary
