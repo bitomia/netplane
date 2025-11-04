@@ -16,6 +16,8 @@ use netplane_common::{
 
 #[path = "http_post.rs"]
 mod http_post;
+#[path = "tray.rs"]
+mod tray;
 #[path = "tundev.rs"]
 mod tundev;
 
@@ -223,6 +225,7 @@ async fn update_loop(dev: &mut tundev::TunDev, transport: &mut AnyTransport) -> 
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[allow(dead_code)]
 fn echo_syntax(args: &Vec<String>) {
     println!(
         "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket]",
@@ -267,9 +270,9 @@ pub fn init_logger() {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 }
 
-#[tokio::main]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
-async fn main() -> Result<()> {
+#[allow(dead_code)]
+fn main() -> Result<()> {
     init_logger();
     info!("Netplane client rev {}", netplane_common::git_rev_main!());
 
@@ -310,24 +313,86 @@ async fn main() -> Result<()> {
             }
         }
 
-        if let Some(auth_arg) = auth_arg {
-            let parts: Vec<&str> = auth_arg.split("=").collect();
-            if parts.len() != 2 {
-                return Err(anyhow!("Invalid auth argument"));
-            }
-            let link_code = parts[1];
-            auth_client(
-                "auth.key",
-                "public.key",
-                "private.key",
-                &args[1],
-                link_code,
-                auth_port,
-            )
-            .await?;
+        let host = args[1].clone();
+
+        // Run tokio runtime in a separate thread to keep main thread for tray
+        #[cfg(target_os = "macos")]
+        {
+            // Run the client in a tokio runtime on a background thread
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    if let Some(auth_arg) = auth_arg {
+                        let parts: Vec<&str> = auth_arg.split("=").collect();
+                        if parts.len() == 2 {
+                            let link_code = parts[1];
+                            let _ = auth_client(
+                                "auth.key",
+                                "public.key",
+                                "private.key",
+                                &host,
+                                link_code,
+                                auth_port,
+                            )
+                            .await;
+                        }
+                    }
+
+                    let _ = run(tun_dev, host, port, transport_type).await;
+                });
+            });
+
+            // Initialize and display tray on main thread (blocks)
+            tray::init_tray_and_display()?;
         }
 
-        let _ = run(tun_dev, args[1].clone(), port, transport_type).await?;
+        #[cfg(not(target_os = "macos"))]
+        {
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(async {
+                // Initialize tray icon after validating arguments
+                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                let tray_rx = tray::init_tray().ok();
+
+                if let Some(auth_arg) = auth_arg {
+                    let parts: Vec<&str> = auth_arg.split("=").collect();
+                    if parts.len() != 2 {
+                        return Err(anyhow!("Invalid auth argument"));
+                    }
+                    let link_code = parts[1];
+                    auth_client(
+                        "auth.key",
+                        "public.key",
+                        "private.key",
+                        &host,
+                        link_code,
+                        auth_port,
+                    )
+                    .await?;
+                }
+
+                // Spawn tray message handler on supported platforms
+                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                if let Some(rx) = tray_rx {
+                    tokio::spawn(async move {
+                        loop {
+                            if let Ok(msg) = rx.try_recv() {
+                                match msg {
+                                    tray::TrayMessage::Quit => {
+                                        info!("Quit requested from tray");
+                                        std::process::exit(0);
+                                    }
+                                }
+                            }
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        }
+                    });
+                    info!("Tray message handler spawned");
+                }
+
+                run(tun_dev, host, port, transport_type).await
+            })?;
+        }
     } else {
         echo_syntax(&args);
         std::process::exit(1);
