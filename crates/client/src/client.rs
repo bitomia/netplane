@@ -316,7 +316,7 @@ fn main() -> Result<()> {
         let host = args[1].clone();
 
         // Run tokio runtime in a separate thread to keep main thread for tray
-        #[cfg(target_os = "macos")]
+        #[cfg(all(feature = "tray", target_os = "macos"))]
         {
             // Run the client in a tokio runtime on a background thread
             std::thread::spawn(move || {
@@ -346,12 +346,12 @@ fn main() -> Result<()> {
             tray::init_tray_and_display()?;
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(feature = "tray", target_os = "macos")))]
         {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(async {
                 // Initialize tray icon after validating arguments
-                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
                 let tray_rx = tray::init_tray().ok();
 
                 if let Some(auth_arg) = auth_arg {
@@ -372,7 +372,7 @@ fn main() -> Result<()> {
                 }
 
                 // Spawn tray message handler on supported platforms
-                #[cfg(any(target_os = "windows", target_os = "linux"))]
+                #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
                 if let Some(rx) = tray_rx {
                     tokio::spawn(async move {
                         loop {

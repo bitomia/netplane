@@ -1,9 +1,9 @@
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 use anyhow::Result;
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 use log::info;
 
-#[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 #[allow(dead_code)]
 pub enum TrayMessage {
     Quit,
@@ -11,7 +11,7 @@ pub enum TrayMessage {
 
 // macOS-specific tray initialization that runs display() on main thread
 // This function blocks until the app quits
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "tray", target_os = "macos"))]
 #[allow(dead_code)]
 pub fn init_tray_and_display() -> Result<()> {
     use tray_item::{IconSource, TrayItem};
@@ -41,7 +41,7 @@ pub fn init_tray_and_display() -> Result<()> {
 }
 
 // Non-macOS tray initialization
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
 pub fn init_tray() -> Result<std::sync::mpsc::Receiver<TrayMessage>> {
     use tray_item::{IconSource, TrayItem};
 
@@ -71,10 +71,10 @@ pub fn init_tray() -> Result<std::sync::mpsc::Receiver<TrayMessage>> {
     Ok(rx)
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux"))))]
 pub enum TrayMessage {}
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(not(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux"))))]
 pub fn init_tray() -> anyhow::Result<std::sync::mpsc::Receiver<TrayMessage>> {
-    Err(anyhow::anyhow!("Tray not supported on this platform"))
+    Err(anyhow::anyhow!("Tray not supported on this platform or tray feature not enabled"))
 }
