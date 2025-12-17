@@ -6,8 +6,9 @@ use log::info;
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
-use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinHandle;
+#[cfg(unix)]
+use tokio::signal::unix::{SignalKind, signal};
 
 mod db;
 mod dnsserver;
@@ -117,18 +118,37 @@ async fn main() -> Result<(), ProcessError> {
     dotenv().ok();
     crypto::check_env();
 
-    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
-    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
+    #[cfg(unix)]
+    {
+        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
+        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
 
-    tokio::spawn(async move {
-        tokio::select! {
-            _ = sigterm.recv() => {}
-            _ = sigint.recv() => {}
-        }
-        info!("Shutting down...");
-        // TODO shutdown gracefully
-        std::process::exit(0);
-    });
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = sigterm.recv() => {}
+                _ = sigint.recv() => {}
+            }
+            info!("Shutting down...");
+            // TODO shutdown gracefully
+            std::process::exit(0);
+        });
+    }
+
+    #[cfg(not(unix))]
+    {
+        tokio::spawn(async move {
+            match tokio::signal::ctrl_c().await {
+                Ok(()) => {
+                    info!("Shutting down...");
+                    // TODO shutdown gracefully
+                    std::process::exit(0);
+                }
+                Err(err) => {
+                    eprintln!("Unable to listen for shutdown signal: {}", err);
+                }
+            }
+        });
+    }
 
     let args: Vec<String> = std::env::args().collect();
     let mut transport_mode =

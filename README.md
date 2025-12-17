@@ -2,13 +2,17 @@
 
 ## Dependencies
 
+Install bun latest version: https://bun.sh/
+
+Install sqlx-cli:
+
 ```
 cargo install sqlx-cli
 ```
 
 ## Building
 
-Installing cargo-make:
+Netplane uses make to manage build. In order to build all main targets (database, webapp, server and client), just launch:
 
 ```shell
 make

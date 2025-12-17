@@ -1,51 +1,65 @@
-.PHONY: client server
-
 DEFAULT_NETPLANE_DB=sqlite://netplane.db
 
-all: client server
+.PHONY: all
+all: webapp client server
 
+.PHONY: client
 client:
 	cargo build -p netplane_client
 
+.PHONY: server
 server: netplanedb
 	cargo build -p netplane_server
 
+.PHONY: android-debug
 android-debug:
 	cargo ndk -t arm64-v8a -t armeabi-v7a build -p netplane_client --lib
 
+.PHONY: android-emu-debug
 android-emu-debug:
 	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib
 
+.PHONY: android-release
 android-release:
 	cargo ndk -t arm64-v8a -t armeabi-v7a build -p netplane_client --lib --release
 
+.PHONY: android-emu-release
 android-emu-release:
 	cargo ndk -t x86_64 -t x86 build -p netplane_client --lib --release
 
+.PHONY: android
 android: android-debug android-emu-debug android-release android-emu-release
 
+.PHONY: netplanedb
 netplanedb:
 	sqlx database create -D $(DEFAULT_NETPLANE_DB)
 	sqlx migrate run --source ./crates/server/src/migrations -D $(DEFAULT_NETPLANE_DB)
 	cargo sqlx prepare --workspace -D $(DEFAULT_NETPLANE_DB)
 
+.PHONY: webapp
 webapp:
-	cd web; pnpm install --frozen-lockfile; pnpm run build; cd -
+	bun install --frozen-lockfile --cwd web
+	bun run --cwd web build
 
+.PHONY: release
 release: netplanedb target/release/netplane target/x86_64-unknown-linux-musl/release/netplane-server
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
+.PHONY: docker
 docker: netplanedb
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
+.PHONY: verify-fmt
 verify-fmt:
 	cargo fmt -- --check
 
+.PHONY: verify-lint
 verify-lint:
 	cargo clippy --all-targets --all-features
 
+.PHONY: verify
 verify: verify-fmt verify-lint
 
 clean:

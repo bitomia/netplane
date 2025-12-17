@@ -8,7 +8,6 @@ name = "netplane"
 path = "src/client.rs"
 
 [lib]
-name = "netplane"
 crate-type = ["staticlib", "cdylib"]
   
 [dependencies]
