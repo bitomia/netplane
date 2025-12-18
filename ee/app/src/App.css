@@ -1,0 +1,27 @@
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+
+  --logo-display-light: block;
+  --logo-display-dark: none;
+}
+
+/* Light/Dark theme logo display */
+.logo-light {
+  display: var(--logo-display-light);
+}
+
+.logo-dark {
+  display: var(--logo-display-dark);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --logo-display-light: none;
+    --logo-display-dark: block;
+  }
+}

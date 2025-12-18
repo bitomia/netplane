@@ -15,8 +15,8 @@ use netplane_common::crypto::load_auth_key;
 use netplane_common::transport::AnyTransport;
 
 pub use client::StartParams;
-pub use netplane_common::crypto::try_generate_crypto_keys;
 pub use fd::PlatformFd;
+pub use netplane_common::crypto::try_generate_crypto_keys;
 
 static GLOBAL_RT: Lazy<Runtime> =
     Lazy::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
