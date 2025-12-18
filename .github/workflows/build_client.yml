@@ -62,10 +62,6 @@ jobs:
           target/x86_64-apple-darwin/release/${{ matrix.binary }} \
           target/aarch64-apple-darwin/release/${{ matrix.binary }} \
           -output target/universal-apple-darwin/release/${{ matrix.binary }}
-        lipo -create \
-          target/x86_64-apple-darwin/release/libnetplane.a \
-          target/aarch64-apple-darwin/release/libnetplane.a \
-          -output target/universal-apple-darwin/release/libnetplane.a
 
     - name: Run tests
       if: matrix.target != 'universal-apple-darwin'
