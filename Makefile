@@ -1,7 +1,10 @@
 DEFAULT_NETPLANE_DB=sqlite://netplane.db
 
 .PHONY: all
-all: webapp client server
+all: webapp crates
+
+.PHONE: crates
+crates: client server
 
 .PHONY: client
 client:
