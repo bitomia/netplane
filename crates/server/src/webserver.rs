@@ -1,4 +1,4 @@
-use axum::{Router, routing::get, routing::post, serve::Serve};
+use axum::{routing::get, routing::post, serve::Serve, Router};
 use axum_embed::ServeEmbed;
 use log::info;
 use rust_embed::RustEmbed;
@@ -10,8 +10,8 @@ use tower_http::cors::CorsLayer;
 struct Assets;
 
 use crate::handlers::{
-    AppState, auth_client, create_client, delete_client, get_clients, get_server_stats,
-    get_user_data, login, logout,
+    auth_client, create_client, delete_client, get_clients, get_server_stats, get_user_data, login,
+    logout, AppState,
 };
 
 pub struct WebServer {}

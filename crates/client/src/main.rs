@@ -5,12 +5,13 @@ use log::info;
 use std::env;
 
 pub mod client;
+mod peer_session;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket]",
+        "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
         args[0]
     );
 }
@@ -38,6 +39,8 @@ fn main() -> Result<()> {
         let mut tun_dev = "tun0".to_string();
         let mut port = None;
         let mut auth_port = None;
+        let mut loopback_relay = false;
+        let mut no_encryption = false;
 
         // Parse optional arguments
         for arg in &args[2..] {
@@ -55,6 +58,10 @@ fn main() -> Result<()> {
                 if let Some(auth_port_str) = arg.split('=').nth(1) {
                     auth_port = auth_port_str.parse::<u16>().ok();
                 }
+            } else if arg == "--loopback-relay" {
+                loopback_relay = true;
+            } else if arg == "--no-encryption" {
+                no_encryption = true;
             }
         }
 
@@ -63,7 +70,6 @@ fn main() -> Result<()> {
         // Run tokio runtime in a separate thread to keep main thread for tray
         #[cfg(all(feature = "tray", target_os = "macos"))]
         {
-            // Run the client in a tokio runtime on a background thread
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
@@ -83,11 +89,18 @@ fn main() -> Result<()> {
                         }
                     }
 
-                    let _ = client::run(tun_dev, host, port, transport_type).await;
+                    let _ = run(
+                        tun_dev,
+                        host,
+                        port,
+                        transport_type,
+                        loopback_relay,
+                        no_encryption,
+                    )
+                    .await;
                 });
             });
 
-            // Initialize and display tray on main thread (blocks)
             tray::init_tray_and_display()?;
         }
 
@@ -95,7 +108,6 @@ fn main() -> Result<()> {
         {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(async {
-                // Initialize tray icon after validating arguments
                 #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
                 let tray_rx = tray::init_tray().ok();
 
@@ -116,7 +128,6 @@ fn main() -> Result<()> {
                     .await?;
                 }
 
-                // Spawn tray message handler on supported platforms
                 #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
                 if let Some(rx) = tray_rx {
                     tokio::spawn(async move {
@@ -135,7 +146,15 @@ fn main() -> Result<()> {
                     info!("Tray message handler spawned");
                 }
 
-                client::run(tun_dev, host, port, transport_type).await
+                client::run(
+                    tun_dev,
+                    host,
+                    port,
+                    transport_type,
+                    loopback_relay,
+                    no_encryption,
+                )
+                .await
             })?;
         }
     } else {

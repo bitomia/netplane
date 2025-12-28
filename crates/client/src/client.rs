@@ -1,16 +1,18 @@
 use anyhow::{Result, anyhow};
+use base64::{Engine as _, engine::general_purpose};
 use env_logger::Env;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::env;
+use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tokio::time::{Duration, interval};
 
-use netplane_common::crypto::load_auth_key;
+use netplane_common::crypto::{load_auth_key, try_load_crypto_keys};
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
-use netplane_common::transport::{UdpTransport, WebSocketTransport};
+use netplane_common::transport::{AnyTransport, Transport, UdpTransport, WebSocketTransport};
 use netplane_common::{
-    HandshakeError, HandshakeRep, HandshakeReq, UDPHeartbeat, transport::AnyTransport,
-    transport::Transport,
+    HandshakeError, HandshakeRep, HandshakeReq, MessageType, PeerEventType, RelayPacket,
+    UDPHeartbeat, get_message_type,
 };
 
 #[path = "http_post.rs"]
@@ -20,10 +22,9 @@ mod tray;
 #[path = "tundev.rs"]
 mod tundev;
 
+use crate::peer_session::PeerSessionManager;
 use http_post::http_post_json;
 
-// Re-export fd module when this file is used as a binary
-// When included as a module in lib.rs, this will be a child module
 #[path = "fd.rs"]
 pub mod fd;
 
@@ -46,22 +47,37 @@ pub struct StartParams {
     pub ip_addr: String,
 }
 
-pub async fn handshake(auth_key: String, transport: &mut AnyTransport) -> Result<StartParams> {
-    info!("Starting handshake");
+/// Handshake with the relay server
+pub async fn handshake(
+    auth_key: String,
+    server_addr: String,
+    transport: &mut AnyTransport,
+) -> Result<(StartParams, String)> {
+    info!("Starting handshake with relay server {}", server_addr);
 
-    let handshake = HandshakeReq::new(&auth_key);
+    // Load client crypto keys - needed for E2E encryption with other clients
+    let (client_pub, _) = try_load_crypto_keys("public.key", "private.key")
+        .map_err(|e| anyhow!("Failed to load crypto keys: {}", e))?;
+
+    let handshake = HandshakeReq::new_with_crypto(&auth_key, &client_pub);
+
     transport.send(&handshake.serialize()?, None).await?;
 
     let mut socket_buf = [0; 1500];
     loop {
         let (amt, _) = transport.recv(&mut socket_buf).await?;
-        if let Ok(handshake) = HandshakeRep::deserialize(&socket_buf[..amt]) {
-            info!("Successful handshake {:?}", handshake);
-            return Ok(StartParams {
-                netmask: handshake.netmask,
-                destination: handshake.network,
-                ip_addr: handshake.sdn_ip_addr,
-            });
+
+        if let Ok(handshake_rep) = HandshakeRep::deserialize(&socket_buf[..amt]) {
+            info!("Successful handshake with relay server {:?}", handshake_rep);
+
+            return Ok((
+                StartParams {
+                    netmask: handshake_rep.netmask,
+                    destination: handshake_rep.network,
+                    ip_addr: handshake_rep.sdn_ip_addr,
+                },
+                client_pub,
+            ));
         } else if let Ok(error_response) = HandshakeError::deserialize(&socket_buf[..amt]) {
             error!("Authorization failed: {}", error_response.error_message);
             return Err(anyhow!(
@@ -112,23 +128,29 @@ pub async fn run(
     host: String,
     port: Option<u16>,
     transport_type: Option<String>,
+    loopback_relay: bool,
+    no_encryption: bool,
 ) -> Result<()> {
     info!("Starting client");
+
     let authkey_path = String::from_str("auth.key")?;
     let auth_key = load_auth_key(authkey_path)?;
     let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
     let mut transport = create_transport(&control_addr, transport_type).await?;
 
-    let start_params = match handshake(auth_key, &mut transport).await {
-        Ok(p) => {
+    info!("Client connected to relay server");
+
+    let (start_params, client_pub) = match handshake(auth_key, control_addr, &mut transport).await {
+        Ok((p, pub_key)) => {
             info!("Handshake successfully finished {:?}", p);
-            p
+            (p, pub_key)
         }
         Err(err) => {
             error!("Handshake failed: {}", err);
             std::process::exit(1)
         }
     };
+    let (own_sdn_ip, peer_manager) = create_p2p_session(&start_params)?;
 
     let mut dev = tundev::TunDev::new(
         tun_dev,
@@ -137,15 +159,27 @@ pub async fn run(
         start_params.ip_addr.as_str(),
     )?;
 
-    update_loop(&mut dev, &mut transport).await
+    update_loop(
+        &mut dev,
+        &mut transport,
+        peer_manager,
+        own_sdn_ip,
+        loopback_relay,
+        no_encryption,
+    )
+    .await
 }
 
 pub async fn run_from_fd(
     tun_fd: PlatformFd,
     start_params: &StartParams,
-    mut transport: &mut AnyTransport,
+    transport: &mut AnyTransport,
+    loopback_relay: bool,
+    no_encryption: bool,
 ) -> Result<()> {
     info!("Starting client with fd");
+
+    let (own_sdn_ip, peer_manager) = create_p2p_session(start_params)?;
 
     let mut dev = tundev::TunDev::new_from_fd(
         tun_fd,
@@ -154,72 +188,306 @@ pub async fn run_from_fd(
         start_params.ip_addr.as_str(),
     )?;
 
-    update_loop(&mut dev, &mut transport).await
+    update_loop(
+        &mut dev,
+        transport,
+        peer_manager,
+        own_sdn_ip,
+        loopback_relay,
+        no_encryption,
+    )
+    .await
 }
 
-async fn update_loop(dev: &mut tundev::TunDev, transport: &mut AnyTransport) -> Result<()> {
+fn create_p2p_session(
+    start_params: &StartParams,
+) -> Result<(Ipv4Addr, PeerSessionManager), anyhow::Error> {
+    let (client_pub, client_priv) = try_load_crypto_keys("public.key", "private.key")?;
+    let client_priv_bytes = general_purpose::URL_SAFE_NO_PAD.decode(&client_priv)?;
+    let own_sdn_ip = Ipv4Addr::from_str(&start_params.ip_addr)?;
+    let peer_manager = PeerSessionManager::new(own_sdn_ip, client_priv_bytes, client_pub);
+
+    Ok((own_sdn_ip, peer_manager))
+}
+
+async fn update_loop(
+    dev: &mut tundev::TunDev,
+    transport: &mut AnyTransport,
+    mut peer_manager: PeerSessionManager,
+    own_sdn_ip: Ipv4Addr,
+    loopback_relay: bool,
+    no_encryption: bool,
+) -> Result<()> {
     let mut heartbeat_interval = interval(Duration::from_secs(5));
     let mut socket_buf = [0; 1500];
     let mut tun_buf = [0; 1500];
 
     loop {
         tokio::select! {
+            // Receive from relay server
             result = transport.recv(&mut socket_buf) => {
                 match result {
                     Ok((amt, _)) => {
-                        if validate_packet(&socket_buf[..amt]) {
-                            send_tun(dev, &socket_buf, amt).await;
-                        } else {
-                            error!("Ignoring non-ipv4 packet")
-                        }
+                        handle_relay_server_message(
+                            &socket_buf[..amt],
+                            transport,
+                            dev,
+                            &mut peer_manager,
+                            &own_sdn_ip,
+                            no_encryption,
+                        ).await;
                     },
-                    Err(err) => error!("{}", err)
+                    Err(err) => error!("Receive error: {}", err)
                 }
             },
+
+            // Receive from TUN device
             tun_ret = dev.read(&mut tun_buf) => {
                 match tun_ret {
                     Ok(amt) => {
-                        let mut is_loopback = false;
-                        if let Some(header) = parse_ipv4_header(&tun_buf[..amt]) {
-                            is_loopback = header.src_ip == header.dst_ip;
-                        }
-                        if is_loopback {
-                            send_tun(dev, &tun_buf, amt).await;
-                        } else {
-                            match transport.send(&tun_buf[..amt], None).await {
-                                Ok(bytes_sent) => {
-                                    if bytes_sent != amt {
-                                        error!("Less bytes sent than expected to socket");
-                                    }
-                                },
-                                Err(err) => error!("{}", err)
-                            }
-                        }
+                        handle_outgoing_packet(
+                            &tun_buf[..amt],
+                            transport,
+                            dev,
+                            &mut peer_manager,
+                            &own_sdn_ip,
+                            loopback_relay,
+                            no_encryption,
+                        ).await;
                     }
-                    Err(err) => {
-                        error!("{}", err);
-                    }
+                    Err(err) => error!("TUN read error: {}", err)
                 }
             },
+
+            // Send heartbeat to relay server
             _ = heartbeat_interval.tick() => {
                 let heartbeat = UDPHeartbeat::new();
-                match heartbeat.serialize() {
-                    Ok(heartbeat_data) => {
-                        match transport.send(&heartbeat_data, None).await {
-                            Ok(_) => {
-                                debug!("Heartbeat sent to server");
-                            },
-                            Err(err) => {
-                                error!("Failed to send heartbeat: {}", err);
-                            }
-                        }
-                    },
-                    Err(err) => {
-                        error!("Failed to serialize heartbeat: {}", err);
+                if let Ok(data) = heartbeat.serialize() {
+                    if let Err(err) = transport.send(&data, None).await {
+                        error!("Failed to send heartbeat: {}", err);
+                    } else {
+                        debug!("Heartbeat sent");
                     }
                 }
             }
         }
+    }
+}
+
+async fn handle_relay_server_message(
+    data: &[u8],
+    transport: &mut AnyTransport,
+    dev: &mut tundev::TunDev,
+    peer_manager: &mut PeerSessionManager,
+    own_sdn_ip: &Ipv4Addr,
+    no_encryption: bool,
+) {
+    match get_message_type(data) {
+        MessageType::PeerList(list) => {
+            info!("Received peer list with {} peers", list.peers.len());
+            for peer in list.peers {
+                peer_manager.add_peer(peer);
+            }
+        }
+
+        MessageType::PeerAnnounce(announce) => match announce.event_type {
+            PeerEventType::Connected => {
+                info!("Peer connected: {}", announce.peer.sdn_ip);
+                peer_manager.add_peer(announce.peer);
+            }
+            PeerEventType::Disconnected => {
+                info!("Peer disconnected: {}", announce.peer.sdn_ip);
+                if let Ok(ip) = Ipv4Addr::from_str(&announce.peer.sdn_ip) {
+                    peer_manager.remove_peer(&ip);
+                }
+            }
+        },
+
+        MessageType::P2PHandshakeInit(init) => {
+            debug!("Received P2P handshake init from {}", init.initiator_sdn_ip);
+            match peer_manager.handle_handshake_init(&init) {
+                Ok(resp) => {
+                    if let Ok(data) = resp.serialize() {
+                        if let Err(e) = transport.send(&data, None).await {
+                            error!("Failed to send P2P handshake response: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to handle P2P handshake init: {}", e);
+                }
+            }
+        }
+
+        MessageType::P2PHandshakeResp(resp) => {
+            debug!(
+                "Received P2P handshake response from {}",
+                resp.responder_sdn_ip
+            );
+            match peer_manager.handle_handshake_resp(&resp) {
+                Ok(()) => {
+                    // Flush any queued packets
+                    if let Ok(responder_ip) = Ipv4Addr::from_str(&resp.responder_sdn_ip) {
+                        let pending = peer_manager.take_pending_packets(&responder_ip);
+                        for packet in pending {
+                            if let Some(header) = parse_ipv4_header(&packet) {
+                                if let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip) {
+                                    if let Ok(encrypted) =
+                                        peer_manager.encrypt_for(&dst_ip, &packet).await
+                                    {
+                                        let relay = RelayPacket::new(
+                                            &own_sdn_ip.to_string(),
+                                            &dst_ip.to_string(),
+                                            encrypted,
+                                        );
+                                        if let Ok(data) = relay.serialize() {
+                                            if let Err(e) = transport.send(&data, None).await {
+                                                error!("Failed to send queued packet: {}", e);
+                                            } else {
+                                                debug!("Sent queued packet to {}", dst_ip);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to handle P2P handshake response: {}", e);
+                }
+            }
+        }
+
+        MessageType::RelayPacket(relay) => {
+            if no_encryption {
+                // No encryption mode - payload is plaintext
+                if validate_packet(&relay.encrypted_payload) {
+                    send_tun(dev, &relay.encrypted_payload, relay.encrypted_payload.len()).await;
+                } else {
+                    warn!("Received invalid IPv4 packet (no-encryption mode)");
+                }
+            } else {
+                // E2E encrypted packet from another peer
+                if let Ok(src_ip) = Ipv4Addr::from_str(&relay.src_sdn_ip) {
+                    match peer_manager
+                        .decrypt_from(&src_ip, &relay.encrypted_payload)
+                        .await
+                    {
+                        Ok(decrypted) => {
+                            if validate_packet(&decrypted) {
+                                send_tun(dev, &decrypted, decrypted.len()).await;
+                            } else {
+                                warn!("Decrypted packet is not valid IPv4");
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to decrypt packet from {}: {}", src_ip, e);
+                        }
+                    }
+                }
+            }
+        }
+
+        MessageType::Heartbeat(_) => {
+            debug!("Heartbeat acknowledgment received");
+        }
+
+        _ => {
+            if validate_packet(data) {
+                warn!("Received unencrypted packet");
+            } else {
+                debug!("Unknown message type received");
+            }
+        }
+    }
+}
+
+/// Handle an outgoing packet from the TUN device
+async fn handle_outgoing_packet(
+    packet: &[u8],
+    transport: &mut AnyTransport,
+    dev: &mut tundev::TunDev,
+    peer_manager: &mut PeerSessionManager,
+    own_sdn_ip: &Ipv4Addr,
+    loopback_relay: bool,
+    no_encryption: bool,
+) {
+    let header = match parse_ipv4_header(packet) {
+        Some(h) => h,
+        None => {
+            warn!("Invalid IPv4 packet from TUN");
+            return;
+        }
+    };
+
+    let dst_ip = match Ipv4Addr::from_str(&header.dst_ip) {
+        Ok(ip) => ip,
+        Err(_) => {
+            warn!("Invalid destination IP: {}", header.dst_ip);
+            return;
+        }
+    };
+
+    // Handle loopback - direct path unless --loopback-relay is enabled
+    if dst_ip == *own_sdn_ip && !loopback_relay {
+        send_tun(dev, packet, packet.len()).await;
+        return;
+    }
+
+    // No encryption mode - send plaintext through relay
+    if no_encryption {
+        let relay = RelayPacket::new(
+            &own_sdn_ip.to_string(),
+            &dst_ip.to_string(),
+            packet.to_vec(),
+        );
+        if let Ok(data) = relay.serialize() {
+            if let Err(e) = transport.send(&data, None).await {
+                error!("Failed to send relay packet: {}", e);
+            }
+        }
+        return;
+    }
+
+    // Check if we have a session with this peer
+    if peer_manager.has_session(&dst_ip) {
+        // Encrypt and send
+        match peer_manager.encrypt_for(&dst_ip, packet).await {
+            Ok(encrypted) => {
+                let relay =
+                    RelayPacket::new(&own_sdn_ip.to_string(), &dst_ip.to_string(), encrypted);
+                if let Ok(data) = relay.serialize() {
+                    if let Err(e) = transport.send(&data, None).await {
+                        error!("Failed to send relay packet: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to encrypt packet for {}: {}", dst_ip, e);
+            }
+        }
+    } else if peer_manager.knows_peer(&dst_ip) {
+        // Queue packet and initiate handshake if not already in progress
+        peer_manager.queue_packet(&dst_ip, packet.to_vec());
+
+        if !peer_manager.handshake_in_progress(&dst_ip) {
+            match peer_manager.initiate_handshake(&dst_ip) {
+                Ok(init) => {
+                    if let Ok(data) = init.serialize() {
+                        if let Err(e) = transport.send(&data, None).await {
+                            error!("Failed to send P2P handshake init: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to initiate handshake with {}: {}", dst_ip, e);
+                }
+            }
+        }
+    } else {
+        // Unknown peer - drop packet
+        debug!("Dropping packet to unknown peer: {}", dst_ip);
     }
 }
 

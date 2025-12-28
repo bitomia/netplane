@@ -4,9 +4,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Json,
 };
-use axum_extra::{TypedHeader, headers::Cookie};
+use axum_extra::{headers::Cookie, TypedHeader};
 use bcrypt::verify;
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -161,19 +161,17 @@ pub async fn get_clients(
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
     match state.db.get_all_clients().await {
-        Ok(clients) => web_ok!(
-            clients
-                .iter()
-                .map(|c| crate::db::Client {
-                    id: c.id.clone(),
-                    auth_link_id: c.auth_link_id.clone(),
-                    sdn_client_ip: c.sdn_client_ip.clone(),
-                    network: c.network.clone(),
-                    netmask: c.netmask.clone(),
-                    used: c.used,
-                })
-                .collect::<Vec<crate::db::Client>>()
-        ),
+        Ok(clients) => web_ok!(clients
+            .iter()
+            .map(|c| crate::db::Client {
+                id: c.id.clone(),
+                auth_link_id: c.auth_link_id.clone(),
+                sdn_client_ip: c.sdn_client_ip.clone(),
+                network: c.network.clone(),
+                netmask: c.netmask.clone(),
+                used: c.used,
+            })
+            .collect::<Vec<crate::db::Client>>()),
         Err(error) => web_err!(error.to_string()),
     }
 }
