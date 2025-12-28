@@ -1,7 +1,3 @@
-pub mod client;
-// Re-export fd from client module to avoid duplication
-pub use client::fd;
-
 use log::{error, info};
 use once_cell::sync::Lazy;
 use std::ffi::{CStr, CString};
@@ -14,7 +10,9 @@ use tokio_util::sync::CancellationToken;
 use netplane_common::crypto::load_auth_key;
 use netplane_common::transport::AnyTransport;
 
-pub use client::StartParams;
+pub mod client;
+mod fd;
+
 pub use fd::PlatformFd;
 pub use netplane_common::crypto::try_generate_crypto_keys;
 
@@ -372,7 +370,7 @@ pub extern "C" fn netplane_client_run(
                 }
             }
         };
-        StartParams {
+        client::StartParams {
             netmask,
             destination,
             ip_addr,
