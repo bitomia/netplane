@@ -393,7 +393,7 @@ pub extern "C" fn netplane_client_run(
     #[cfg(unix)]
     let platform_fd = PlatformFd::from_raw_fd(tun_fd);
     #[cfg(windows)]
-    let platform_fd = client::fd::PlatformFd::from_raw_handle(tun_fd as _);
+    let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
 
     GLOBAL_RT.spawn(async move {
         tokio::select! {

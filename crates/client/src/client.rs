@@ -90,13 +90,16 @@ pub async fn create_transport(
 
     match transport_type.to_lowercase().as_str() {
         "websocket" | "ws" => {
-            info!("Starting websocket connection");
+            info!("Starting websocket connection {}", control_addr);
+
             let control_addr = format!("ws://{}", control_addr);
             let transport = WebSocketTransport::connect(control_addr.as_str()).await?;
+
             Ok(AnyTransport::WebSocket(transport))
         }
         "udp" => {
-            info!("Starting UDP connection");
+            info!("Starting UDP connection {}", control_addr);
+
             let transport = UdpTransport::bind("0.0.0.0:0")
                 .await
                 .map_err(|_| anyhow!("Cannot bind UDP socket"))?;
@@ -104,6 +107,7 @@ pub async fn create_transport(
                 .connect(control_addr)
                 .await
                 .map_err(|_| anyhow!("Cannot connect UDP socket"))?;
+
             Ok(AnyTransport::Udp(transport))
         }
         _ => Err(anyhow!(
