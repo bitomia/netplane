@@ -1,9 +1,18 @@
-#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(all(
+    feature = "tray",
+    any(target_os = "windows", target_os = "macos", target_os = "linux")
+))]
 use anyhow::Result;
-#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(all(
+    feature = "tray",
+    any(target_os = "windows", target_os = "macos", target_os = "linux")
+))]
 use log::info;
 
-#[cfg(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+#[cfg(all(
+    feature = "tray",
+    any(target_os = "windows", target_os = "macos", target_os = "linux")
+))]
 #[allow(dead_code)]
 pub enum TrayMessage {
     Quit,
@@ -71,10 +80,18 @@ pub fn init_tray() -> Result<std::sync::mpsc::Receiver<TrayMessage>> {
     Ok(rx)
 }
 
-#[cfg(not(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux"))))]
+#[cfg(not(all(
+    feature = "tray",
+    any(target_os = "windows", target_os = "macos", target_os = "linux")
+)))]
 pub enum TrayMessage {}
 
-#[cfg(not(all(feature = "tray", any(target_os = "windows", target_os = "macos", target_os = "linux"))))]
+#[cfg(not(all(
+    feature = "tray",
+    any(target_os = "windows", target_os = "macos", target_os = "linux")
+)))]
 pub fn init_tray() -> anyhow::Result<std::sync::mpsc::Receiver<TrayMessage>> {
-    Err(anyhow::anyhow!("Tray not supported on this platform or tray feature not enabled"))
+    Err(anyhow::anyhow!(
+        "Tray not supported on this platform or tray feature not enabled"
+    ))
 }

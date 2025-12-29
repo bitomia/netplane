@@ -12,6 +12,7 @@ use netplane_common::transport::AnyTransport;
 
 pub mod client;
 mod fd;
+mod peer_session;
 
 pub use fd::PlatformFd;
 pub use netplane_common::crypto::try_generate_crypto_keys;
@@ -46,13 +47,14 @@ async fn do_handshake(
 
     let transport_ref = unsafe { &mut *(transport as *mut AnyTransport) };
 
-    let start_params = match client::handshake(auth_key, transport_ref).await {
-        Ok(params) => params,
-        Err(err) => {
-            error!("Handshake failed: {:?}", err);
-            return -6;
-        }
-    };
+    let (start_params, _noise_session) =
+        match client::handshake(auth_key, "connected".to_string(), transport_ref).await {
+            Ok(params) => params,
+            Err(err) => {
+                error!("Handshake failed: {:?}", err);
+                return -6;
+            }
+        };
 
     let netmask_cstr = match CString::new(start_params.netmask) {
         Ok(s) => s.into_raw(),
@@ -336,6 +338,8 @@ pub extern "C" fn netplane_client_run(
     tun_fd: c_int,
     transport: *mut std::ffi::c_void,
     handshake: *mut HandshakeResult,
+    loopback_relay: bool,
+    no_encryption: bool,
 ) -> i32 {
     let cancel_token = {
         let token = CANCEL_TOKEN.lock().unwrap();
@@ -390,7 +394,7 @@ pub extern "C" fn netplane_client_run(
 
     GLOBAL_RT.spawn(async move {
         tokio::select! {
-            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ref) => {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ref, loopback_relay, no_encryption) => {
                     reset_cancel_token();
                 match retval {
                     Ok(_) => 0,
@@ -425,6 +429,8 @@ pub extern "C" fn netplane_run(
     host: *const c_char,
     port: u16,
     transport_type: *const c_char,
+    loopback_relay: bool,
+    no_encryption: bool,
 ) -> i32 {
     GLOBAL_RT.block_on(async {
         let tun_dev = unsafe {
@@ -463,7 +469,16 @@ pub extern "C" fn netplane_run(
             }
         };
 
-        match client::run(tun_dev, host, port_opt, transport_type_opt).await {
+        match client::run(
+            tun_dev,
+            host,
+            port_opt,
+            transport_type_opt,
+            loopback_relay,
+            no_encryption,
+        )
+        .await
+        {
             Ok(_) => 0,
             Err(err) => {
                 error!("Error running client: {:?}", err);

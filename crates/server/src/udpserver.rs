@@ -1,8 +1,10 @@
 use anyhow::Result;
 use log::{error, info, trace, warn};
-use netplane_common::packet::{parse_ipv4_header, validate_packet};
 use netplane_common::transport::{Transport, UdpTransport};
-use netplane_common::{HandshakeReq, PeerState, UDPHeartbeat};
+use netplane_common::{
+    get_message_type, MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType,
+    PeerInfo, PeerList, PeerState, RelayPacket,
+};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -10,11 +12,12 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tokio::time;
 
 use crate::db;
+use crate::peers::PeersRouting;
 use crate::peers::PeersVec;
 use crate::peers::*;
 use crate::server::*;
@@ -46,7 +49,7 @@ impl UdpServer {
                 replay_file,
                 replay_delay,
             }
-        } else if let Some(_) = replay_file {
+        } else if replay_file.is_some() {
             Self {
                 server: Server { peers, db, stats },
                 traffic_logger: None,
@@ -122,8 +125,8 @@ impl UdpServer {
         // Start heartbeat timeout cleanup task
         let peers_for_cleanup = self.server.peers.clone();
         tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(5)); // Check interval
-            let timeout = Duration::from_secs(5); // Hearbeat timeout
+            let mut interval = time::interval(Duration::from_secs(5));
+            let timeout = Duration::from_secs(15); // Increased timeout for E2E
 
             loop {
                 interval.tick().await;
@@ -132,9 +135,9 @@ impl UdpServer {
                 let mut expired_peers = Vec::new();
 
                 for (addr, peer) in peers.iter() {
-                    let peer = peer.as_any().downcast_ref::<UdpPeer>().unwrap();
-                    if peer.get_state() == PeerState::HandshakeDone
-                        && peer.is_heartbeat_expired(timeout)
+                    let udp_peer = peer.as_any().downcast_ref::<UdpPeer>().unwrap();
+                    if udp_peer.get_state() == PeerState::HandshakeDone
+                        && udp_peer.is_heartbeat_expired(timeout)
                     {
                         expired_peers.push(*addr);
                     }
@@ -143,6 +146,7 @@ impl UdpServer {
                 for addr in expired_peers {
                     warn!("Removing peer {:?} due to heartbeat timeout", addr);
                     peers.remove(&addr);
+                    // Note: peer disconnect broadcast handled below in main loop
                 }
             }
         });
@@ -184,6 +188,50 @@ impl UdpServer {
         Ok(())
     }
 
+    /// Broadcast a message to all connected peers except the specified one
+    async fn broadcast_to_peers(
+        &self,
+        transport: &mut UdpTransport,
+        msg: &[u8],
+        exclude: Option<&SocketAddr>,
+    ) {
+        // Collect addresses first to avoid holding lock across await
+        let addrs: Vec<SocketAddr> = {
+            let peers = self.server.peers.lock().await;
+            peers
+                .iter()
+                .filter(|(addr, peer)| {
+                    peer.get_state() == PeerState::HandshakeDone
+                        && exclude.map_or(true, |ex| ex != *addr)
+                })
+                .map(|(addr, _)| *addr)
+                .collect()
+        };
+
+        for addr in addrs {
+            if let Err(e) = transport.send(msg, Some(&addr)).await {
+                error!("Failed to broadcast to {:?}: {}", addr, e);
+            }
+        }
+    }
+
+    /// Send peer list to a specific peer
+    async fn send_peer_list(&self, transport: &mut UdpTransport, to: &SocketAddr) {
+        let peer_list = self.server.peers.get_peer_list().await;
+        // Filter out the peer we're sending to
+        let filtered: Vec<PeerInfo> = peer_list
+            .into_iter()
+            .filter(|p| Ipv4Addr::from_str(&p.sdn_ip).ok() != Some(Ipv4Addr::UNSPECIFIED))
+            .collect();
+
+        let msg = PeerList::new(filtered);
+        if let Ok(serialized) = msg.serialize() {
+            if let Err(e) = transport.send(&serialized, Some(to)).await {
+                error!("Failed to send peer list to {:?}: {}", to, e);
+            }
+        }
+    }
+
     async fn network(
         &mut self,
         src: &SocketAddr,
@@ -198,48 +246,42 @@ impl UdpServer {
             let peer = peers.entry(*src).or_insert(UdpPeer::new(PeerData {
                 sdn_addr: Ipv4Addr::UNSPECIFIED,
                 state: PeerState::HandshakePending,
+                client_public_key: None,
             }));
             peer.get_state()
         };
 
         match peer_state {
             PeerState::HandshakeDone => {
-                if validate_packet(&buf[..amt]) {
-                    if let Some(header) = parse_ipv4_header(&buf[..amt]) {
-                        if let Some(ref logger) = self.traffic_logger {
-                            logger
-                                .log_packet(&header.dst_ip.to_string(), &buf[..amt])
-                                .await;
-                        }
-
-                        let peers_vec = self.server.peers.to_vec().await;
-                        for (dst_peer_addr, dst_peer_sdn_addr) in peers_vec {
-                            if *src == dst_peer_addr {
-                                continue;
-                            }
-
-                            if header.dst_ip == dst_peer_sdn_addr.to_string()
-                                || dst_peer_addr.ip().is_multicast()
-                            {
-                                transport.send(&buf[..amt], Some(&dst_peer_addr)).await?;
-                                self.server.stats.add_out_bytes(amt);
-                            }
+                // Route based on message type
+                match get_message_type(&buf[..amt]) {
+                    MessageType::RelayPacket(relay) => {
+                        self.handle_relay_packet(transport, src, &relay, &buf[..amt])
+                            .await?;
+                    }
+                    MessageType::P2PHandshakeInit(init) => {
+                        self.handle_p2p_handshake_init(transport, &init, &buf[..amt])
+                            .await?;
+                    }
+                    MessageType::P2PHandshakeResp(resp) => {
+                        self.handle_p2p_handshake_resp(transport, &resp, &buf[..amt])
+                            .await?;
+                    }
+                    MessageType::Heartbeat(_) => {
+                        trace!("Heartbeat received from {:?}", src);
+                        let mut peers = self.server.peers.lock().await;
+                        if let Some(peer) = peers.get_mut(src) {
+                            let udp_peer = peer.as_any_mut().downcast_mut::<UdpPeer>().unwrap();
+                            udp_peer.update_last_heartbeat();
                         }
                     }
-                } else if let Ok(_) = UDPHeartbeat::deserialize(&buf[..amt]) {
-                    trace!("Heartbeat received from {:?}", src);
-
-                    let mut peers = self.server.peers.lock().await;
-                    if let Some(peer) = peers.get_mut(src) {
-                        let peer = peer.as_any_mut().downcast_mut::<UdpPeer>().unwrap();
-                        peer.update_last_heartbeat();
+                    _ => {
+                        warn!("Unknown or unexpected message type from {:?}", src);
                     }
-                } else {
-                    error!("Unknown packet");
                 }
             }
-            PeerState::HandshakePending => match HandshakeReq::deserialize(&buf[..amt]) {
-                Ok(handshake) => {
+            PeerState::HandshakePending => {
+                if let MessageType::HandshakeReq(handshake) = get_message_type(&buf[..amt]) {
                     match Server::<SocketAddr>::process_handshake(
                         handshake,
                         &self.server.db,
@@ -247,44 +289,144 @@ impl UdpServer {
                     )
                     .await
                     {
-                        HandshakeResult::Success(reply, sdn_client_ip) => {
-                            let mut peers = self.server.peers.lock().await;
+                        HandshakeResult::Success(reply, sdn_client_ip, client_pub_key) => {
+                            // Send handshake reply
+                            match transport.send(&reply.serialize()?, Some(src)).await {
+                                Ok(_) => {
+                                    info!("User {} connected with SDN IP {}", src, sdn_client_ip);
 
-                            match peers.get_mut(&src) {
-                                Some(peer) => {
-                                    peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip)?);
+                                    // Create peer info for announcements
+                                    let peer_info = PeerInfo::new(&sdn_client_ip, &client_pub_key);
 
-                                    match transport.send(&reply.serialize()?, Some(&src)).await {
-                                        Ok(_) => {
-                                            info!("User successfully connected");
+                                    // Update peer state
+                                    {
+                                        let mut peers = self.server.peers.lock().await;
+                                        if let Some(peer) = peers.get_mut(src) {
+                                            peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip)?);
+                                            peer.set_client_public_key(Some(client_pub_key));
                                             peer.set_state(PeerState::HandshakeDone);
                                         }
-                                        Err(err) => {
-                                            error!("Send handshake reply failed: {}", err);
-                                        }
+                                    }
+
+                                    // Send current peer list to new peer
+                                    self.send_peer_list(transport, src).await;
+
+                                    // Broadcast new peer to existing peers
+                                    let announce =
+                                        PeerAnnounce::new(PeerEventType::Connected, peer_info);
+                                    if let Ok(serialized) = announce.serialize() {
+                                        self.broadcast_to_peers(transport, &serialized, Some(src))
+                                            .await;
                                     }
                                 }
-                                None => info!("Peer unknown"),
+                                Err(err) => {
+                                    error!("Send handshake reply failed: {}", err);
+                                }
                             }
                         }
                         HandshakeResult::Error(error_response) => {
-                            match transport
-                                .send(&error_response.serialize()?, Some(&src))
+                            if let Err(err) = transport
+                                .send(&error_response.serialize()?, Some(src))
                                 .await
                             {
-                                Ok(_) => {
-                                    info!("Authorization failed, error response sent to {}", src);
-                                }
-                                Err(err) => {
-                                    error!("Failed to send error response: {}", err);
-                                }
+                                error!("Failed to send error response: {}", err);
+                            } else {
+                                info!("Authorization failed, error response sent to {}", src);
                             }
                         }
                     }
+                } else {
+                    error!("Expected HandshakeReq from {:?}", src);
                 }
-                Err(err) => error!("HandshakeReq failed: {}", err),
-            },
+            }
         }
+        Ok(())
+    }
+
+    /// Handle E2E encrypted relay packet - just forward based on destination SDN IP
+    async fn handle_relay_packet(
+        &self,
+        transport: &mut UdpTransport,
+        src: &SocketAddr,
+        relay: &RelayPacket,
+        raw_data: &[u8],
+    ) -> Result<()> {
+        let dst_sdn_ip = Ipv4Addr::from_str(&relay.dst_sdn_ip)?;
+
+        // Log traffic if configured
+        if let Some(ref logger) = self.traffic_logger {
+            logger.log_packet(&relay.dst_sdn_ip, raw_data).await;
+        }
+
+        // Find destination peer and forward
+        if let Some(dst_addr) = self.server.peers.find_by_sdn_ip(&dst_sdn_ip).await {
+            if dst_addr != *src {
+                if let Err(e) = transport.send(raw_data, Some(&dst_addr)).await {
+                    error!("Failed to relay packet to {:?}: {}", dst_addr, e);
+                } else {
+                    self.server.stats.add_out_bytes(raw_data.len());
+                }
+            }
+        } else {
+            trace!("Destination {} not found for relay", relay.dst_sdn_ip);
+        }
+
+        Ok(())
+    }
+
+    /// Handle P2P handshake init - route to responder
+    async fn handle_p2p_handshake_init(
+        &self,
+        transport: &mut UdpTransport,
+        init: &P2PHandshakeInit,
+        raw_data: &[u8],
+    ) -> Result<()> {
+        let responder_sdn_ip = Ipv4Addr::from_str(&init.responder_sdn_ip)?;
+
+        info!(
+            "Routing P2P handshake init from {} to {}",
+            init.initiator_sdn_ip, init.responder_sdn_ip
+        );
+
+        if let Some(dst_addr) = self.server.peers.find_by_sdn_ip(&responder_sdn_ip).await {
+            if let Err(e) = transport.send(raw_data, Some(&dst_addr)).await {
+                error!("Failed to route P2P handshake init: {}", e);
+            }
+        } else {
+            warn!(
+                "P2P handshake responder {} not found",
+                init.responder_sdn_ip
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Handle P2P handshake response - route to initiator
+    async fn handle_p2p_handshake_resp(
+        &self,
+        transport: &mut UdpTransport,
+        resp: &P2PHandshakeResp,
+        raw_data: &[u8],
+    ) -> Result<()> {
+        let initiator_sdn_ip = Ipv4Addr::from_str(&resp.initiator_sdn_ip)?;
+
+        info!(
+            "Routing P2P handshake response from {} to {}",
+            resp.responder_sdn_ip, resp.initiator_sdn_ip
+        );
+
+        if let Some(dst_addr) = self.server.peers.find_by_sdn_ip(&initiator_sdn_ip).await {
+            if let Err(e) = transport.send(raw_data, Some(&dst_addr)).await {
+                error!("Failed to route P2P handshake response: {}", e);
+            }
+        } else {
+            warn!(
+                "P2P handshake initiator {} not found",
+                resp.initiator_sdn_ip
+            );
+        }
+
         Ok(())
     }
 }

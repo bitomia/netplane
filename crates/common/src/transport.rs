@@ -1,5 +1,5 @@
 use futures_util::stream::{SplitSink, SplitStream};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{Future, SinkExt, StreamExt};
 use serde::Serialize;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
@@ -11,6 +11,8 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
 use tungstenite::Bytes;
+
+use crate::noise_session::NoiseSession;
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -199,6 +201,8 @@ impl Transport for UdpTransport {
 pub enum AnyTransport {
     WebSocket(WebSocketTransport),
     Udp(UdpTransport),
+    EncryptedWebSocket(EncryptedTransport<WebSocketTransport>),
+    EncryptedUdp(EncryptedTransport<UdpTransport>),
 }
 
 impl Transport for AnyTransport {
@@ -206,6 +210,8 @@ impl Transport for AnyTransport {
         match self {
             AnyTransport::WebSocket(ws) => ws.send(buf, addr).await,
             AnyTransport::Udp(udp) => udp.send(buf, addr).await,
+            AnyTransport::EncryptedWebSocket(enc_ws) => enc_ws.send(buf, addr).await,
+            AnyTransport::EncryptedUdp(enc_udp) => enc_udp.send(buf, addr).await,
         }
     }
 
@@ -213,6 +219,72 @@ impl Transport for AnyTransport {
         match self {
             AnyTransport::WebSocket(ws) => ws.recv(buf).await,
             AnyTransport::Udp(udp) => udp.recv(buf).await,
+            AnyTransport::EncryptedWebSocket(enc_ws) => enc_ws.recv(buf).await,
+            AnyTransport::EncryptedUdp(enc_udp) => enc_udp.recv(buf).await,
         }
+    }
+}
+
+pub struct EncryptedTransport<T: Transport> {
+    inner: T,
+    noise_session: Option<NoiseSession>,
+}
+
+impl<T: Transport> EncryptedTransport<T> {
+    pub fn new(transport: T) -> Self {
+        Self {
+            inner: transport,
+            noise_session: None,
+        }
+    }
+
+    pub fn with_noise_session(transport: T, session: NoiseSession) -> Self {
+        Self {
+            inner: transport,
+            noise_session: Some(session),
+        }
+    }
+
+    pub fn set_noise_session(&mut self, session: NoiseSession) {
+        self.noise_session = Some(session);
+    }
+
+    pub fn is_encrypted(&self) -> bool {
+        self.noise_session.is_some()
+    }
+}
+
+impl<T: Transport + Send> Transport for EncryptedTransport<T> {
+    async fn send(&mut self, buf: &[u8], addr: Option<&SocketAddr>) -> tokio::io::Result<usize> {
+        let noise_session = self.noise_session.as_ref().ok_or_else(|| {
+            tokio::io::Error::new(
+                tokio::io::ErrorKind::NotConnected,
+                "No noise session established - encryption required",
+            )
+        })?;
+        let encrypted = noise_session
+            .encrypt(buf)
+            .await
+            .map_err(|e| tokio::io::Error::new(tokio::io::ErrorKind::Other, e.to_string()))?;
+        self.inner.send(&encrypted, addr).await
+    }
+
+    async fn recv(&mut self, buf: &mut [u8]) -> tokio::io::Result<(usize, SocketAddr)> {
+        let (amt, addr) = self.inner.recv(buf).await?;
+
+        let noise_session = self.noise_session.as_ref().ok_or_else(|| {
+            tokio::io::Error::new(
+                tokio::io::ErrorKind::NotConnected,
+                "No noise session established - encryption required",
+            )
+        })?;
+        let decrypted = noise_session
+            .decrypt(&buf[..amt])
+            .await
+            .map_err(|e| tokio::io::Error::new(tokio::io::ErrorKind::Other, e.to_string()))?;
+
+        let len = decrypted.len().min(buf.len());
+        buf[..len].copy_from_slice(&decrypted[..len]);
+        Ok((len, addr))
     }
 }

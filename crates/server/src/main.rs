@@ -1,14 +1,14 @@
 use anyhow::Error;
-use axum::{Router, serve::Serve};
+use axum::{serve::Serve, Router};
 use dotenv::dotenv;
 use env_logger::Env;
-use log::info;
+use log::{info, warn};
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
 #[cfg(unix)]
-use tokio::signal::unix::{SignalKind, signal};
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::task::JoinHandle;
 
 mod db;
 mod dnsserver;
@@ -232,6 +232,12 @@ async fn main() -> Result<(), ProcessError> {
             }
         }
         return Ok(());
+    }
+
+    if let Err(err) =
+        netplane_common::crypto::try_generate_crypto_keys("server_public.key", "server_private.key")
+    {
+        warn!("Crypto keys generation: {}", err.to_string());
     }
 
     let db = Arc::new(db::Db::new().await);

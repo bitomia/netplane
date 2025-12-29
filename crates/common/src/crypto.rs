@@ -7,8 +7,9 @@ use std::fs::write;
 use std::io::{Error, ErrorKind};
 use std::path::Path;
 
+use crate::noise_session::*;
+
 type HmacSha256 = Hmac<Sha256>;
-static PATTERN: &'static str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthData {
@@ -33,7 +34,7 @@ pub fn try_generate_crypto_keys(
         ));
     }
 
-    let parsed_pattern = match PATTERN.parse() {
+    let parsed_pattern = match NOISE_PARAMS.parse() {
         Ok(value) => value,
         Err(_) => {
             return Err(Error::new(ErrorKind::Other, "Error parsing pattern"));
@@ -126,6 +127,49 @@ mod tests {
         assert!(snow_test().is_ok(), "snow test failed");
     }
 
+    #[tokio::test]
+    async fn test_noise_session_encrypt_decrypt() {
+        // Generate two sets of keys for client and server
+        let client_keypair = snow::Builder::new(NOISE_PARAMS.parse().unwrap())
+            .generate_keypair()
+            .unwrap();
+        let server_keypair = snow::Builder::new(NOISE_PARAMS.parse().unwrap())
+            .generate_keypair()
+            .unwrap();
+
+        // Create handshake states
+        let client =
+            create_noise_initiator(&client_keypair.private, &server_keypair.public).unwrap();
+        let server =
+            create_noise_responder(&server_keypair.private, &client_keypair.public).unwrap();
+
+        // Perform handshake
+        let (client_session, server_session) = perform_noise_handshake(client, server).unwrap();
+
+        // Test data encryption/decryption
+        let test_data = b"Hello, encrypted world!";
+
+        // Encrypt with client, decrypt with server
+        let encrypted = client_session.encrypt(test_data).await.unwrap();
+        let decrypted = server_session.decrypt(&encrypted).await.unwrap();
+
+        assert_eq!(
+            test_data,
+            decrypted.as_slice(),
+            "Failed to decrypt data encrypted by client"
+        );
+
+        // Encrypt with server, decrypt with client
+        let encrypted = server_session.encrypt(test_data).await.unwrap();
+        let decrypted = client_session.decrypt(&encrypted).await.unwrap();
+
+        assert_eq!(
+            test_data,
+            decrypted.as_slice(),
+            "Failed to decrypt data encrypted by server"
+        );
+    }
+
     #[test]
     fn test_sign_key() {
         unsafe {
@@ -144,14 +188,14 @@ mod tests {
     }
 
     fn snow_test() -> Result<(), anyhow::Error> {
-        let client_keypair = snow::Builder::new(PATTERN.parse()?).generate_keypair()?;
-        let server_keypair = snow::Builder::new(PATTERN.parse()?).generate_keypair()?;
+        let client_keypair = snow::Builder::new(NOISE_PARAMS.parse()?).generate_keypair()?;
+        let server_keypair = snow::Builder::new(NOISE_PARAMS.parse()?).generate_keypair()?;
 
-        let mut client = snow::Builder::new(PATTERN.parse()?)
+        let mut client = snow::Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(&client_keypair.private)
             .remote_public_key(&server_keypair.public)
             .build_initiator()?;
-        let mut server = snow::Builder::new(PATTERN.parse()?)
+        let mut server = snow::Builder::new(NOISE_PARAMS.parse()?)
             .local_private_key(&server_keypair.private)
             .remote_public_key(&client_keypair.public)
             .build_responder()?;

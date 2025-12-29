@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use log::info;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, Pool, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{sqlite::SqlitePoolOptions, FromRow, Pool, Sqlite};
 use std::{env, path::Path as FilePath};
 
 const DEFAULT_DATABASE_URL: &str = "sqlite://netplane.db";
