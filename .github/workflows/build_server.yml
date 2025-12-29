@@ -45,6 +45,9 @@ jobs:
     - name: Build web assets
       run: cd web && bun run build
 
+    - name: Prepare database
+      run: make db-prepare
+
     - name: Build server and docker image
       run: make docker
 
