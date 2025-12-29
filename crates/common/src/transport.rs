@@ -111,6 +111,7 @@ impl WebSocketTransport {
 impl Transport for WebSocketTransport {
     async fn send(&mut self, buf: &[u8], _addr: Option<&SocketAddr>) -> tokio::io::Result<usize> {
         let mut write = self.write.lock().await;
+
         match write
             .send(Message::Binary(Bytes::copy_from_slice(buf)))
             .await
@@ -125,6 +126,7 @@ impl Transport for WebSocketTransport {
 
     async fn recv(&mut self, buf: &mut [u8]) -> tokio::io::Result<(usize, SocketAddr)> {
         let mut read = self.read.lock().await;
+
         if let Some(message) = read.next().await {
             match message {
                 Ok(msg) => {
@@ -163,13 +165,17 @@ pub struct UdpTransport {
 impl UdpTransport {
     pub async fn connect(&self, addr: &str) -> Result<(), TransportError> {
         let mut addr = addr.to_socket_addrs().expect("Invalid server address");
-        let addr = addr.next().expect("Cannot resolve server address");
+        let addr = addr
+            .find(|addr| addr.is_ipv4())
+            .expect("Invalid server address");
+
         match self.socket.connect(addr).await {
             Ok(val) => val,
             Err(err) => {
                 return Err(TransportError::UDP(err));
             }
         };
+
         Ok(())
     }
 
