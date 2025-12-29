@@ -11,7 +11,7 @@ client:
 	cargo build -p netplane_client
 
 .PHONY: server
-server: netplanedb
+server: db-check
 	cargo build -p netplane_server
 
 .PHONY: android-debug
@@ -33,11 +33,15 @@ android-emu-release:
 .PHONY: android
 android: android-debug android-emu-debug android-release android-emu-release
 
-.PHONY: netplanedb
-netplanedb:
+.PHONY: db-prepare
+db-prepare:
 	sqlx database create -D $(DEFAULT_NETPLANE_DB)
 	sqlx migrate run --source ./crates/server/src/migrations -D $(DEFAULT_NETPLANE_DB)
-	cargo sqlx prepare --workspace -D $(DEFAULT_NETPLANE_DB)
+	cargo sqlx prepare --workspace -D $(DEFAULT_NETPLANE_DB) -- -p netplane_server
+
+.PHONY: db-check
+db-check:
+	cargo sqlx prepare --check --workspace -D $(DEFAULT_NETPLANE_DB) -- -p netplane_server
 
 .PHONY: webapp
 webapp:
@@ -45,12 +49,12 @@ webapp:
 	bun run --cwd web build
 
 .PHONY: release
-release: netplanedb target/release/netplane target/x86_64-unknown-linux-musl/release/netplane-server
+release: target/release/netplane target/x86_64-unknown-linux-musl/release/netplane-server
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
 .PHONY: docker
-docker: netplanedb
+docker:
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
