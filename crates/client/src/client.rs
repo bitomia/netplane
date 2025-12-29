@@ -15,20 +15,10 @@ use netplane_common::{
     UDPHeartbeat, get_message_type,
 };
 
-#[path = "http_post.rs"]
-mod http_post;
-#[path = "tray.rs"]
-mod tray;
-#[path = "tundev.rs"]
-mod tundev;
-
+use crate::fd::PlatformFd;
+use crate::http_post;
 use crate::peer_session::PeerSessionManager;
-use http_post::http_post_json;
-
-#[path = "fd.rs"]
-pub mod fd;
-
-use fd::PlatformFd;
+use crate::tundev;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessError(u32);
@@ -505,7 +495,7 @@ pub async fn auth_client(
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
     let payload = netplane_common::AuthClientRequest { public_key };
-    let res = http_post_json(&auth_url, &payload)?;
+    let res = http_post::http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
             let auth_key = res.payload;

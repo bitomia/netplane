@@ -12,9 +12,12 @@ use netplane_common::transport::AnyTransport;
 
 pub mod client;
 mod fd;
+mod http_post;
 mod peer_session;
+mod tray;
+mod tundev;
 
-pub use fd::PlatformFd;
+use crate::fd::PlatformFd;
 pub use netplane_common::crypto::try_generate_crypto_keys;
 
 static GLOBAL_RT: Lazy<Runtime> =
@@ -388,7 +391,7 @@ pub extern "C" fn netplane_client_run(
 
     // Convert c_int to PlatformFd
     #[cfg(unix)]
-    let platform_fd = client::fd::PlatformFd::from_raw_fd(tun_fd);
+    let platform_fd = PlatformFd::from_raw_fd(tun_fd);
     #[cfg(windows)]
     let platform_fd = client::fd::PlatformFd::from_raw_handle(tun_fd as _);
 
