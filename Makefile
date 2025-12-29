@@ -49,7 +49,7 @@ webapp:
 	bun run --cwd web build
 
 .PHONY: release
-release: target/release/netplane target/x86_64-unknown-linux-musl/release/netplane-server
+release:
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
