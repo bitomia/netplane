@@ -2,10 +2,10 @@ package gonetplane
 
 /*
 #cgo CFLAGS: -I.
-#cgo linux,arm64   LDFLAGS: -L../../target/aarch64-unknown-linux-gnu/release -lnetplane
-#cgo linux,amd64   LDFLAGS: -L../../target/x86_64-unknown-linux-gnu/release -lnetplane
-#cgo windows,amd64 LDFLAGS: -L../../target/x86_64-pc-windows-msvc/release -lnetplane
-#cgo darwin LDFLAGS: -L../../target/universal-apple-darwin/release -lnetplane -framework Security -framework SystemConfiguration
+#cgo linux,arm64   LDFLAGS: -L../../target/aarch64-unknown-linux-gnu/release -lnetplane_client
+#cgo linux,amd64   LDFLAGS: -L../../target/x86_64-unknown-linux-gnu/release -lnetplane_client
+#cgo windows,amd64 LDFLAGS: -L../../target/x86_64-pc-windows-msvc/release -lnetplane_client
+#cgo darwin LDFLAGS: -L../../target/universal-apple-darwin/release -lnetplane_client -framework Security -framework SystemConfiguration
 #include "netplane.h"
 #include <stdlib.h>
 */
@@ -155,7 +155,7 @@ func ClientRun(tunFd int, transport *Transport, handshake *HandshakeResult) erro
 		return errors.New("handshake is nil")
 	}
 
-	result := C.netplane_client_run(C.int(tunFd), transport.ptr, handshake.cResult)
+	result := C.netplane_client_run(C.int(tunFd), transport.ptr, handshake.cResult, false, false)
 
 	if result != 0 {
 		return fmt.Errorf("client run failed with code: %d", result)
@@ -183,7 +183,7 @@ func Run(tunDev, host string, port uint16, transportType string) error {
 		defer C.free(unsafe.Pointer(cTransportType))
 	}
 
-	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType)
+	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false)
 
 	if result != 0 {
 		return fmt.Errorf("run failed with code: %d", result)
