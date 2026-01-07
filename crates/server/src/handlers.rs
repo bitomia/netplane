@@ -4,7 +4,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Json,
 };
-use axum_extra::{headers::Cookie, headers::Authorization, headers::authorization::Bearer, TypedHeader};
+use axum_extra::{
+    headers::authorization::Bearer, headers::Authorization, headers::Cookie, TypedHeader,
+};
 use bcrypt::verify;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -254,6 +256,14 @@ pub async fn auth_client(
         Ok(auth_key) => (StatusCode::OK, Ok(auth_key)),
         Err(error) => web_err!(error.to_string()),
     }
+}
+
+pub async fn verify_client(
+    State(state): State<AppState>,
+    auth: Option<TypedHeader<Authorization<Bearer>>>, // TODO not optional
+) -> (StatusCode, Result<String, Json<ServerError>>) {
+    // TODO
+    web_err!("Not implemented".to_string())
 }
 
 pub async fn get_user_data(
