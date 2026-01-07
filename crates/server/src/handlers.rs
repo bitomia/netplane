@@ -151,22 +151,7 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::err
 pub async fn get_clients(
     State(state): State<AppState>,
     TypedHeader(cookie): TypedHeader<Cookie>,
-    auth: Option<TypedHeader<Authorization<Bearer>>>,
 ) -> WebResult<Vec<crate::db::Client>> {
-
-    //Se comprueba si existe clave de autorizacion
-    // si funciona si hace el verify_jwt
-    // si no se comprueba por cookie 
-
-    //let token = obtener_cabecera_authorization
-
-    if let Some(TypedHeader(Authorization(bearer))) = auth {
-        println!("Hay token");
-    } else {
-        println!("No hay token");
-    }
-
-
     let token = match cookie.get("auth_token") {
         Some(token) => token,
         None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
@@ -175,9 +160,6 @@ pub async fn get_clients(
     if verify_jwt(token, &state.jwt_secret).is_err() {
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
-
-    println!("Ha pasado por la cookie sin fallos");
-
 
     match state.db.get_all_clients().await {
         Ok(clients) => web_ok!(clients
@@ -277,10 +259,18 @@ pub async fn auth_client(
 pub async fn get_user_data(
     State(state): State<AppState>,
     TypedHeader(cookie): TypedHeader<Cookie>,
+    auth: Option<TypedHeader<Authorization<Bearer>>>,
 ) -> WebResult<UserDataResponse> {
-    let token = match cookie.get("auth_token") {
-        Some(token) => token,
-        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    let token = if let Some(TypedHeader(Authorization(ref bearer))) = auth {
+        println!("Hay token: {:?}", bearer.token());
+        bearer.token()
+    } else {
+        println!("No hay token");
+
+        match cookie.get("auth_token") {
+            Some(auth_token) => auth_token,
+            None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+        }
     };
 
     let claims = match verify_jwt(token, &state.jwt_secret) {
