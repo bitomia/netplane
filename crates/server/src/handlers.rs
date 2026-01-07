@@ -263,6 +263,12 @@ pub async fn verify_client(
     auth: Option<TypedHeader<Authorization<Bearer>>>, // TODO not optional
 ) -> (StatusCode, Result<String, Json<ServerError>>) {
     // TODO
+    match verify_signed_key(bearer_token) {
+        Ok(auth_client) => {
+            state.db.get_client(auth_client.client_id) ...
+            ...
+        }
+    }
     web_err!("Not implemented".to_string())
 }
 
