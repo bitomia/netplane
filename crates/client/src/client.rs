@@ -3,6 +3,7 @@ use base64::{Engine as _, engine::general_purpose};
 use env_logger::Env;
 use log::{debug, error, info, warn};
 use std::env;
+use std::io;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tokio::time::{Duration, interval};
@@ -17,6 +18,7 @@ use netplane_common::{
 
 use crate::fd::PlatformFd;
 use crate::http_post;
+use crate::http_get;
 use crate::peer_session::PeerSessionManager;
 use crate::tundev;
 
@@ -494,6 +496,28 @@ pub async fn auth_client(
     auth_port: Option<u16>,
 ) -> Result<()> {
     let port = auth_port.unwrap_or(8000);
+
+    match load_auth_key(authkey_filepath.to_string()) {
+        Ok(key) => {
+            let auth_url = format!("http://{}:{}/api/user", host, port);
+            let res = http_get::http_get(&auth_url, &key)?; 
+
+            println!("Existe el auth: {res:?}");
+
+            if res.status_code == axum::http::StatusCode::OK {
+                return Ok(())
+            }
+        } 
+        Err(err) => {
+            if let Some(io_err) = err.downcast_ref::<io::Error>() {
+                match io_err.kind() {
+                    io::ErrorKind::NotFound => (),
+                    _ => return Err(anyhow!(format!("Couldn't open file")))
+                }
+            }
+        }
+    };
+
     let auth_url = format!("http://{}:{}/auth/{}", host, port, link_code);
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
@@ -506,7 +530,10 @@ pub async fn auth_client(
             std::fs::write(authkey_filepath, auth_key)?;
             Ok(())
         }
-        _ => Err(anyhow!(format!("Auth failed: {}", res.payload))),
+        _ => {
+            println!("Pasa por aqui");
+            Err(anyhow!(format!("Auth failed: {}", res.payload)))
+        } 
     }
 }
 
