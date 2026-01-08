@@ -6,8 +6,8 @@ use std::env;
 
 pub mod client;
 mod fd;
-mod http_post;
 mod http_get;
+mod http_post;
 mod peer_session;
 mod tray;
 mod tundev;

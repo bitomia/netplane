@@ -262,19 +262,17 @@ pub async fn verify_client(
     State(state): State<AppState>,
     TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
 ) -> (StatusCode, Result<(), Json<ServerError>>) {
-    // TODO
     let bearer_token = bearer.token().to_string();
 
     match netplane_common::crypto::verify_signed_key(bearer_token) {
         Ok(auth_client) => {
-            if let Ok(client) = state.db.get_client(&auth_client.client_id).await {
-                println!("La clave es correcta y el cliente {:?} existe", client);
+            if let Ok(_) = state.db.get_client(&auth_client.client_id).await {
                 (StatusCode::OK, Ok(()))
             } else {
-                web_err!("ERROR: El usuario no existe".to_string())
+                web_err!(StatusCode::UNAUTHORIZED, "User does not exist".to_string())
             }
         }
-        Err(_) => web_err!("ERROR: Token Invalido".to_string())
+        Err(_) => web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string()),
     }
 }
 

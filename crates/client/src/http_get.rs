@@ -56,8 +56,6 @@ pub fn http_get(url: &str, key: &str) -> Result<Response> {
         key,
     );
 
-    println!("{request}");
-
     stream.write_all(request.as_bytes())?;
     stream.flush()?;
 
