@@ -17,8 +17,7 @@ use netplane_common::{
 };
 
 use crate::fd::PlatformFd;
-use crate::http_get;
-use crate::http_post;
+use crate::http_client;
 use crate::peer_session::PeerSessionManager;
 use crate::tundev;
 
@@ -500,7 +499,7 @@ pub async fn auth_client(
     match load_auth_key(authkey_filepath.to_string()) {
         Ok(key) => {
             let auth_url = format!("http://{}:{}/auth", host, port);
-            let res = http_get::http_get(&auth_url, &key)?;
+            let res = http_client::http_get(&auth_url, &key)?;
 
             if res.status_code == axum::http::StatusCode::OK {
                 warn!("Client already authenticated");
@@ -522,7 +521,7 @@ pub async fn auth_client(
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
     let payload = netplane_common::AuthClientRequest { public_key };
-    let res = http_post::http_post_json(&auth_url, &payload)?;
+    let res = http_client::http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
             let auth_key = res.payload;

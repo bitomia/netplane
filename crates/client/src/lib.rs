@@ -12,8 +12,7 @@ use netplane_common::transport::AnyTransport;
 
 pub mod client;
 mod fd;
-mod http_get;
-mod http_post;
+mod http_client;
 mod peer_session;
 mod tray;
 mod tundev;
