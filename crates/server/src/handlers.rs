@@ -260,33 +260,31 @@ pub async fn auth_client(
 
 pub async fn verify_client(
     State(state): State<AppState>,
-    auth: Option<TypedHeader<Authorization<Bearer>>>, // TODO not optional
-) -> (StatusCode, Result<String, Json<ServerError>>) {
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+) -> (StatusCode, Result<(), Json<ServerError>>) {
     // TODO
-    match verify_signed_key(bearer_token) {
+    let bearer_token = bearer.token().to_string();
+
+    match netplane_common::crypto::verify_signed_key(bearer_token) {
         Ok(auth_client) => {
-            state.db.get_client(auth_client.client_id) ...
-            ...
+            if let Ok(client) = state.db.get_client(&auth_client.client_id).await {
+                println!("La clave es correcta y el cliente {:?} existe", client);
+                (StatusCode::OK, Ok(()))
+            } else {
+                web_err!("ERROR: El usuario no existe".to_string())
+            }
         }
+        Err(_) => web_err!("ERROR: Token Invalido".to_string())
     }
-    web_err!("Not implemented".to_string())
 }
 
 pub async fn get_user_data(
     State(state): State<AppState>,
     TypedHeader(cookie): TypedHeader<Cookie>,
-    auth: Option<TypedHeader<Authorization<Bearer>>>,
 ) -> WebResult<UserDataResponse> {
-    let token = if let Some(TypedHeader(Authorization(ref bearer))) = auth {
-        println!("Hay token: {:?}", bearer.token());
-        bearer.token()
-    } else {
-        println!("No hay token");
-
-        match cookie.get("auth_token") {
-            Some(auth_token) => auth_token,
-            None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
-        }
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
     };
 
     let claims = match verify_jwt(token, &state.jwt_secret) {
