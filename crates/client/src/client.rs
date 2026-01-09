@@ -528,7 +528,7 @@ pub async fn auth_client(
             std::fs::write(authkey_filepath, auth_key)?;
             Ok(())
         }
-        _ => Err(anyhow!(format!("Auth failed: {}", res.payload))),
+        _ => Err(anyhow!(format!("Link failed"))),
     }
 }
 
