@@ -6,7 +6,7 @@ use std::env;
 
 pub mod client;
 mod fd;
-mod http_post;
+mod http_client;
 mod peer_session;
 mod tray;
 mod tundev;

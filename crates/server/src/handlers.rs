@@ -4,7 +4,9 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Json,
 };
-use axum_extra::{headers::Cookie, TypedHeader};
+use axum_extra::{
+    headers::authorization::Bearer, headers::Authorization, headers::Cookie, TypedHeader,
+};
 use bcrypt::verify;
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
@@ -160,6 +162,7 @@ pub async fn get_clients(
     if verify_jwt(token, &state.jwt_secret).is_err() {
         return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
     }
+
     match state.db.get_all_clients().await {
         Ok(clients) => web_ok!(clients
             .iter()
@@ -252,6 +255,24 @@ pub async fn auth_client(
     {
         Ok(auth_key) => (StatusCode::OK, Ok(auth_key)),
         Err(error) => web_err!(error.to_string()),
+    }
+}
+
+pub async fn verify_client(
+    State(state): State<AppState>,
+    TypedHeader(Authorization(bearer)): TypedHeader<Authorization<Bearer>>,
+) -> (StatusCode, Result<(), Json<ServerError>>) {
+    let bearer_token = bearer.token().to_string();
+
+    match netplane_common::crypto::verify_signed_key(bearer_token) {
+        Ok(auth_client) => {
+            if let Ok(_) = state.db.get_client(&auth_client.client_id).await {
+                (StatusCode::OK, Ok(()))
+            } else {
+                web_err!(StatusCode::UNAUTHORIZED, "User does not exist".to_string())
+            }
+        }
+        Err(_) => web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string()),
     }
 }
 

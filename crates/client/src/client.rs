@@ -3,6 +3,7 @@ use base64::{Engine as _, engine::general_purpose};
 use env_logger::Env;
 use log::{debug, error, info, warn};
 use std::env;
+use std::io;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tokio::time::{Duration, interval};
@@ -16,7 +17,7 @@ use netplane_common::{
 };
 
 use crate::fd::PlatformFd;
-use crate::http_post;
+use crate::http_client;
 use crate::peer_session::PeerSessionManager;
 use crate::tundev;
 
@@ -494,12 +495,33 @@ pub async fn auth_client(
     auth_port: Option<u16>,
 ) -> Result<()> {
     let port = auth_port.unwrap_or(8000);
+
+    match load_auth_key(authkey_filepath.to_string()) {
+        Ok(key) => {
+            let auth_url = format!("http://{}:{}/auth", host, port);
+            let res = http_client::http_get(&auth_url, &key)?;
+
+            if res.status_code == axum::http::StatusCode::OK {
+                warn!("Client already authenticated");
+                return Ok(());
+            }
+        }
+        Err(err) => {
+            if let Some(io_err) = err.downcast_ref::<io::Error>() {
+                match io_err.kind() {
+                    io::ErrorKind::NotFound => (),
+                    _ => return Err(anyhow!(format!("Auth failed: \"Couldn't open file\""))),
+                }
+            }
+        }
+    };
+
     let auth_url = format!("http://{}:{}/auth/{}", host, port, link_code);
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
     let payload = netplane_common::AuthClientRequest { public_key };
-    let res = http_post::http_post_json(&auth_url, &payload)?;
+    let res = http_client::http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
             let auth_key = res.payload;

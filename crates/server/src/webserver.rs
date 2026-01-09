@@ -11,7 +11,7 @@ struct Assets;
 
 use crate::handlers::{
     auth_client, create_client, delete_client, get_clients, get_server_stats, get_user_data, login,
-    logout, AppState,
+    logout, verify_client, AppState,
 };
 
 pub struct WebServer {}
@@ -34,6 +34,7 @@ impl WebServer {
         let cors = CorsLayer::new().allow_credentials(true);
 
         let app = Router::new()
+            // Endpoints for the administation web panel
             .route(
                 "/api/clients",
                 get(get_clients).post(create_client).delete(delete_client),
@@ -42,7 +43,9 @@ impl WebServer {
             .route("/api/logout", get(logout))
             .route("/api/user", get(get_user_data))
             .route("/api/server", get(get_server_stats))
+            // Endpoints for netplane clients
             .route("/auth/{auth_key}", post(auth_client))
+            .route("/auth", get(verify_client))
             .layer(cors)
             .with_state(state)
             .fallback_service(ServeEmbed::<Assets>::new());
