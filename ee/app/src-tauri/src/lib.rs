@@ -1,7 +1,7 @@
-use log::info;
-use anyhow::{Result, anyhow};
-use netplane_client::client;
+use anyhow::{anyhow, Result};
 use dotenv::dotenv;
+use log::info;
+use netplane_client::client;
 use tauri::Error;
 
 type TauriResult<T> = Result<T, Error>;
@@ -11,8 +11,7 @@ type TauriResult<T> = Result<T, Error>;
 fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
     dotenv().ok();
 
-    if let Err(err) =
-        netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
+    if let Err(err) = netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
             return Err(anyhow::Error::from(err).into());
@@ -29,67 +28,43 @@ fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
     let mut no_encryption = false;
 
     if !auth.is_empty() {
-        auth_arg = Some(format!("--auth={}",auth).to_string());
-    } 
+        auth_arg = Some(format!("--auth={}", auth).to_string());
+    }
 
     if !transport.is_empty() {
         transport_type = Some(transport.to_string());
     }
 
-   #[cfg(not(all(feature = "tray", target_os = "macos")))]
-    {
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async {
-            #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
-            let tray_rx = tray::init_tray().ok();
-
-            if let Some(auth_arg) = auth_arg {
-                let parts: Vec<&str> = auth_arg.split("=").collect();
-                if parts.len() != 2 {
-                    return Err(anyhow!("Invalid auth argument"));
-                }
-                let link_code = parts[1];
-                client::auth_client(
-                    "auth.key",
-                    "public.key",
-                    "private.key",
-                    &host,
-                    link_code,
-                    auth_port,
-                )
-                .await?;
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        if let Some(auth_arg) = auth_arg {
+            let parts: Vec<&str> = auth_arg.split("=").collect();
+            if parts.len() != 2 {
+                return Err(anyhow!("Invalid auth argument"));
             }
-
-            #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
-            if let Some(rx) = tray_rx {
-                tokio::spawn(async move {
-                    loop {
-                        if let Ok(msg) = rx.try_recv() {
-                            match msg {
-                                tray::TrayMessage::Quit => {
-                                    info!("Quit requested from tray");
-                                    std::process::exit(0);
-                                }
-                            }
-                        }
-                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                    }
-                });
-                info!("Tray message handler spawned");
-            }
-
-            client::run(
-                tun_dev,
-                host,
-                port,
-                transport_type,
-                loopback_relay,
-                no_encryption,
+            let link_code = parts[1];
+            client::auth_client(
+                "auth.key",
+                "public.key",
+                "private.key",
+                &host,
+                link_code,
+                auth_port,
             )
-            .await
-        })?;
-    }
-    
+            .await?;
+        }
+
+        client::run(
+            tun_dev,
+            host,
+            port,
+            transport_type,
+            loopback_relay,
+            no_encryption,
+        )
+        .await
+    })?;
+
     Ok(())
 }
 
