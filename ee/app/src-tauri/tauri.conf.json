@@ -12,8 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "app",
+        "title": "Netplane",
         "width": 800,
+        "minWidth": 475,
         "height": 600
       }
     ],

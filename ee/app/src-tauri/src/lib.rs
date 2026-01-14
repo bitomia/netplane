@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use dotenv::dotenv;
 use log::info;
 use netplane_client::client;
@@ -19,7 +19,6 @@ fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
     }
 
     let host = server.to_string();
-    let mut auth_arg: Option<String> = None;
     let mut transport_type: Option<String> = None;
     let mut tun_dev = "tun0".to_string();
     let mut port: Option<u16> = Some(5000);
@@ -27,22 +26,14 @@ fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
     let mut loopback_relay = false;
     let mut no_encryption = false;
 
-    if !auth.is_empty() {
-        auth_arg = Some(format!("--auth={}", auth).to_string());
-    }
-
     if !transport.is_empty() {
         transport_type = Some(transport.to_string());
     }
 
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
-        if let Some(auth_arg) = auth_arg {
-            let parts: Vec<&str> = auth_arg.split("=").collect();
-            if parts.len() != 2 {
-                return Err(anyhow!("Invalid auth argument"));
-            }
-            let link_code = parts[1];
+        if !auth.is_empty() {
+            let link_code = auth;
             client::auth_client(
                 "auth.key",
                 "public.key",

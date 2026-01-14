@@ -4,6 +4,7 @@ import netplaneLogoLight from "./assets/netplane_light.svg";
 import netplaneLogoDark from "./assets/netplane_dark.svg";
 import "./App.css";
 import "@radix-ui/themes/styles.css";
+import * as ToggleGroup from "@radix-ui/react-toggle-group"
 
 function App() {
   const [clientMsg, setClient] = useState("");
@@ -18,10 +19,6 @@ function App() {
     } catch (error) {
       console.error("Error al crear client:", error);
     }
-
-
-
-    //setClient(await invoke("client", { server, auth, transport }));
   }
 
   return (
@@ -55,31 +52,81 @@ function App() {
       >
         <input
           id="server-input"
-          onChange={(e) => setServer(e.currentTarget.value)}
+          onChange={(s) => setServer(s.currentTarget.value)}
           placeholder="Enter server name..."
-          className="w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
+          className="
+          w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
+          bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
+          duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
           required
         />
         <input
           id="link-input"
-          onChange={(e) => setAuth(e.currentTarget.value)}
+          onChange={(a) => setAuth(a.currentTarget.value)}
           placeholder="Enter auth code..."
-          className="w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white" 
+          className="
+          w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
+          bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
+          duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white" 
         />
         <span className="text-center">Select transport mode</span>
-        <select
-          id="transport-select"
+        <ToggleGroup.Root
+          type="single"
           value={transport}
-          onChange={(e) => setTransport(e.currentTarget.value)}
-          className="w-2/5 mx-auto rounded-lg border border-transparent px-4 py-3 text-base font-medium bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
+          onValueChange={setTransport}
+          className="
+            h-9 place-items-center
+            w-2/3 mx-auto flex rounded-full
+            bg-white dark:bg-neutral-800
+            shadow-md p-1
+            focus-within:ring-2 focus-within:ring-blue-500
+            dark:focus-within:ring-white"
         >
-          <option value="" selected disabled hidden>Transport mode</option>
-          <option value="udp">UDP</option>
-          <option value="websocket">WebSocket</option>
-        </select>
+          <ToggleGroup.Item
+            value="udp"
+            className="
+              items-center justify-center
+              flex-1 px-4 py-1 text-base font-medium
+              rounded-full transition-colors duration-200
+              text-neutral-900 dark:text-white
+              data-[state=on]:bg-blue-600
+              data-[state=on]:text-white
+              data-[state=on]:hover:bg-blue-500
+              hover:bg-neutral-100 dark:hover:bg-neutral-700
+              dark:data-[state=on]:bg-white
+              dark:data-[state=on]:text-black
+              dark:data-[state=on]:hover:bg-neutral-200"
+          >
+            UDP
+          </ToggleGroup.Item>
+
+          <ToggleGroup.Item
+            value="websocket"
+            className="
+              items-center justify-center
+              flex-1 px-4 py-1 text-base font-medium
+              rounded-full transition-colors duration-200
+              text-neutral-900 dark:text-white
+              data-[state=on]:bg-blue-600
+              data-[state=on]:text-white
+              data-[state=on]:hover:bg-blue-500
+              hover:bg-neutral-100 dark:hover:bg-neutral-700
+              dark:data-[state=on]:bg-white
+              dark:data-[state=on]:text-black
+              dark:data-[state=on]:hover:bg-neutral-200"
+          >
+            WebSocket
+          </ToggleGroup.Item>
+        </ToggleGroup.Root>
         <button
           type="submit"
-          className="w-1/3 mx-auto rounded-lg border border-transparent px-6 py-3 text-base font-medium bg-neutral-800 text-neutral-900 text-white shadow-md transition-all duration-250 cursor-pointer hover:border-blue-600 active:border-blue-600 active:bg-neutral-200 dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white outline-none"
+          className="
+            w-1/3 mx-auto rounded-lg px-4 py-3 text-base font-medium
+            bg-neutral-800 text-white shadow-md
+            transition-all duration-250 cursor-pointer
+            hover:border-blue-600 active:border-blue-600 active:bg-neutral-200
+            dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white
+            outline-none"
         >
           Start now
         </button>
