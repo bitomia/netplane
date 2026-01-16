@@ -2,19 +2,23 @@ use anyhow::Result;
 use dotenv::dotenv;
 use log::info;
 use netplane_client::client;
-use tauri::Error;
 
-type TauriResult<T> = Result<T, Error>;
+type TauriResult<T> = Result<T, String>;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
+async fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
     dotenv().ok();
+
+    if server.is_empty()
+    {
+        return Err("ERROR: No hay servidor".to_string())
+    }
 
     if let Err(err) = netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
-            return Err(anyhow::Error::from(err).into());
+            return Err(err.to_string())
         }
     }
 
@@ -30,31 +34,36 @@ fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
         transport_type = Some(transport.to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
-        if !auth.is_empty() {
-            let link_code = auth;
-            client::auth_client(
-                "auth.key",
-                "public.key",
-                "private.key",
-                &host,
-                link_code,
-                auth_port,
-            )
-            .await?;
-        }
+    if !auth.is_empty() {
+        let link_code = auth;
 
-        client::run(
-            tun_dev,
-            host,
-            port,
-            transport_type,
-            loopback_relay,
-            no_encryption,
+
+        let autentication = client::auth_client(
+            "auth.key",
+            "public.key",
+            "private.key",
+            &host,
+            link_code,
+            auth_port,
         )
-        .await
-    })?;
+        .await;
+
+        match autentication {
+            Ok(()) => (),
+            Err(err) => return Err(err.to_string())
+        }
+        
+    }
+
+    /*client::run(
+        tun_dev,
+        host,
+        port,
+        transport_type,
+        loopback_relay,
+        no_encryption,
+    )
+    .await?;*/
 
     Ok(())
 }
