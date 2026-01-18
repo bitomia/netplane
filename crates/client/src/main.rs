@@ -150,7 +150,7 @@ fn main() -> Result<()> {
                     info!("Tray message handler spawned");
                 }
 
-                client::run(
+                match client::run(
                     tun_dev,
                     host,
                     port,
@@ -158,7 +158,10 @@ fn main() -> Result<()> {
                     loopback_relay,
                     no_encryption,
                 )
-                .await
+                    .await?.await {
+                        Ok(_) => Ok(()),
+                        Err(err) => Err(anyhow!("Run error: {}", err.to_string()))
+                    }
             })?;
         }
     } else {

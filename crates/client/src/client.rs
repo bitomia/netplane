@@ -125,7 +125,7 @@ pub async fn run(
     transport_type: Option<String>,
     loopback_relay: bool,
     no_encryption: bool,
-) -> Result<()> {
+) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client");
 
     let authkey_path = String::from_str("auth.key")?;
@@ -135,7 +135,8 @@ pub async fn run(
 
     info!("Client connected to relay server");
 
-    let (start_params, client_pub) = match handshake(auth_key, control_addr, &mut transport).await {
+    let (start_params, _client_pub) = match handshake(auth_key, control_addr, &mut transport).await
+    {
         Ok((p, pub_key)) => {
             info!("Handshake successfully finished {:?}", p);
             (p, pub_key)
@@ -147,52 +148,50 @@ pub async fn run(
     };
     let (own_sdn_ip, peer_manager) = create_p2p_session(&start_params)?;
 
-    let mut dev = tundev::TunDev::new(
+    let dev = tundev::TunDev::new(
         tun_dev,
         start_params.netmask.as_str(),
         start_params.destination.as_str(),
         start_params.ip_addr.as_str(),
     )?;
 
-    update_loop(
-        &mut dev,
-        &mut transport,
-        peer_manager,
-        own_sdn_ip,
-        loopback_relay,
-        no_encryption,
-    )
-    .await
-}
-
-pub async fn run_from_fd(
-    tun_fd: PlatformFd,
-    start_params: &StartParams,
-    transport: &mut AnyTransport,
-    loopback_relay: bool,
-    no_encryption: bool,
-) -> Result<()> {
-    info!("Starting client with fd");
-
-    let (own_sdn_ip, peer_manager) = create_p2p_session(start_params)?;
-
-    let mut dev = tundev::TunDev::new_from_fd(
-        tun_fd,
-        start_params.netmask.as_str(),
-        start_params.destination.as_str(),
-        start_params.ip_addr.as_str(),
-    )?;
-
-    update_loop(
-        &mut dev,
+    Ok(update_loop(
+        dev,
         transport,
         peer_manager,
         own_sdn_ip,
         loopback_relay,
         no_encryption,
-    )
-    .await
+    ))
 }
+
+// pub async fn run_from_fd(
+//     tun_fd: PlatformFd,
+//     start_params: &StartParams,
+//     transport: &'static mut AnyTransport,
+//     loopback_relay: bool,
+//     no_encryption: bool,
+// ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
+//     info!("Starting client with fd");
+
+//     let (own_sdn_ip, peer_manager) = create_p2p_session(start_params)?;
+
+//     let dev = tundev::TunDev::new_from_fd(
+//         tun_fd,
+//         start_params.netmask.as_str(),
+//         start_params.destination.as_str(),
+//         start_params.ip_addr.as_str(),
+//     )?;
+
+//     Ok(update_loop(
+//         dev,
+//         transport,
+//         peer_manager,
+//         own_sdn_ip,
+//         loopback_relay,
+//         no_encryption,
+//     ))
+// }
 
 fn create_p2p_session(
     start_params: &StartParams,
@@ -205,68 +204,69 @@ fn create_p2p_session(
     Ok((own_sdn_ip, peer_manager))
 }
 
-async fn update_loop(
-    dev: &mut tundev::TunDev,
-    transport: &mut AnyTransport,
+fn update_loop(
+    mut dev: tundev::TunDev,
+    mut transport: AnyTransport,
     mut peer_manager: PeerSessionManager,
     own_sdn_ip: Ipv4Addr,
     loopback_relay: bool,
     no_encryption: bool,
-) -> Result<()> {
-    let mut heartbeat_interval = interval(Duration::from_secs(5));
-    let mut socket_buf = [0; 1500];
-    let mut tun_buf = [0; 1500];
-
-    loop {
-        tokio::select! {
-            // Receive from relay server
-            result = transport.recv(&mut socket_buf) => {
-                match result {
-                    Ok((amt, _)) => {
-                        handle_relay_server_message(
-                            &socket_buf[..amt],
-                            transport,
-                            dev,
-                            &mut peer_manager,
-                            &own_sdn_ip,
-                            no_encryption,
-                        ).await;
-                    },
-                    Err(err) => error!("Receive error: {}", err)
-                }
-            },
-
-            // Receive from TUN device
-            tun_ret = dev.read(&mut tun_buf) => {
-                match tun_ret {
-                    Ok(amt) => {
-                        handle_outgoing_packet(
-                            &tun_buf[..amt],
-                            transport,
-                            dev,
-                            &mut peer_manager,
-                            &own_sdn_ip,
-                            loopback_relay,
-                            no_encryption,
-                        ).await;
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut heartbeat_interval = interval(Duration::from_secs(5));
+        let mut socket_buf = [0; 1500];
+        let mut tun_buf = [0; 1500];
+        loop {
+            tokio::select! {
+                // Receive from relay server
+                result = transport.recv(&mut socket_buf) => {
+                    match result {
+                        Ok((amt, _)) => {
+                            handle_relay_server_message(
+                                &socket_buf[..amt],
+                                &mut transport,
+                                &mut dev,
+                                &mut peer_manager,
+                                &own_sdn_ip,
+                                no_encryption,
+                            ).await;
+                        },
+                        Err(err) => error!("Receive error: {}", err)
                     }
-                    Err(err) => error!("TUN read error: {}", err)
-                }
-            },
+                },
 
-            // Send heartbeat to relay server
-            _ = heartbeat_interval.tick() => {
-                let heartbeat = UDPHeartbeat::new();
-                if let Ok(data) = heartbeat.serialize() {
-                    if let Err(err) = transport.send(&data, None).await {
-                        error!("Failed to send heartbeat: {}", err);
-                    } else {
-                        debug!("Heartbeat sent");
+                // Receive from TUN device
+                tun_ret = dev.read(&mut tun_buf) => {
+                    match tun_ret {
+                        Ok(amt) => {
+                            handle_outgoing_packet(
+                                &tun_buf[..amt],
+                                &mut transport,
+                                &mut dev,
+                                &mut peer_manager,
+                                &own_sdn_ip,
+                                loopback_relay,
+                                no_encryption,
+                            ).await;
+                        }
+                        Err(err) => error!("TUN read error: {}", err)
+                    }
+                },
+
+                // Send heartbeat to relay server
+                _ = heartbeat_interval.tick() => {
+                    let heartbeat = UDPHeartbeat::new();
+                    if let Ok(data) = heartbeat.serialize() {
+                        if let Err(err) = transport.send(&data, None).await {
+                            error!("Failed to send heartbeat: {}", err);
+                        } else {
+                            debug!("Heartbeat sent");
+                        }
                     }
                 }
             }
         }
-    }
+    })
 }
 
 async fn handle_relay_server_message(
