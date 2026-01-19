@@ -1,23 +1,20 @@
-use anyhow::Result;
+use anyhow::anyhow;
 use dotenv::dotenv;
 use log::info;
 use netplane_client::client;
 
-type TauriResult<T> = Result<T, String>;
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
-async fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
+async fn client(server: &str, auth: &str, transport: &str) -> tauri::Result<()> {
     dotenv().ok();
 
     if server.is_empty() {
-        return Err("ERROR: No hay servidor".to_string());
+        return Err(anyhow!("ERROR: No hay servidor").into())
     }
 
     if let Err(err) = netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
-            return Err(err.to_string());
+            return Err(err.into());
         }
     }
 
@@ -36,7 +33,7 @@ async fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
     if !auth.is_empty() {
         let link_code = auth;
 
-        let autentication = client::auth_client(
+        client::auth_client(
             "auth.key",
             "public.key",
             "private.key",
@@ -44,12 +41,7 @@ async fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
             link_code,
             auth_port,
         )
-        .await;
-
-        match autentication {
-            Ok(()) => (),
-            Err(err) => return Err(err.to_string()),
-        }
+        .await?;
     }
 
     client::run(
@@ -59,7 +51,8 @@ async fn client(server: &str, auth: &str, transport: &str) -> TauriResult<()> {
         transport_type,
         loopback_relay,
         no_encryption,
-    );
+    )
+    .await?;
 
     Ok(())
 }

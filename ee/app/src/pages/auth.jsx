@@ -4,9 +4,9 @@ import netplaneLogoLight from "../assets/netplane_light.svg";
 import netplaneLogoDark from "../assets/netplane_dark.svg";
 import "@radix-ui/themes/styles.css";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from "react-router-dom";
 
-export function Auth( { setisLogged } ) {
+export function Auth({ setisLogged }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
@@ -18,26 +18,35 @@ export function Auth( { setisLogged } ) {
       const c = await invoke("client", { server, auth, transport });
 
       setisLogged(true);
-      navigate('/success');
+      navigate("/success");
     } catch (error) {
       setErrorMsg(error);
-      
+
       console.error("Error al crear client:", error);
     }
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-8 bg-neutral-100 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
+    <main
+      className="
+      min-h-screen flex flex-col items-center justify-center
+      px-4 sm:px-6 py-8 bg-neutral-100 dark:bg-neutral-900
+      text-neutral-900 dark:text-neutral-100"
+    >
       {/* Logo Section */}
       <div className="flex justify-center mb-6 sm:mb-8">
         <img
           src={netplaneLogoLight}
-          className="logo-light h-20 sm:h-24 md:h-28 lg:h-32 p-4 transition-all duration-700 hover:drop-shadow-[0_0_2em_rgba(36,200,219,0.8)]"
+          className="
+          logo-light h-20 sm:h-24 md:h-28 lg:h-32 p-4 transition-all
+          duration-700 hover:drop-shadow-[0_0_2em_rgba(36,200,219,0.8)]"
           alt="Netplane"
         />
         <img
           src={netplaneLogoDark}
-          className="logo-dark h-20 sm:h-24 md:h-28 lg:h-32 p-4 transition-all duration-700 hover:drop-shadow-[0_0_2em_rgba(36,200,219,0.8)]"
+          className="
+          logo-dark h-20 sm:h-24 md:h-28 lg:h-32 p-4 transition-all
+          duration-700 hover:drop-shadow-[0_0_2em_rgba(36,200,219,0.8)]"
           alt="Netplane"
         />
       </div>
@@ -71,7 +80,7 @@ export function Auth( { setisLogged } ) {
           className="
           w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
           bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
-          duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white" 
+          duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
         />
         <span className="text-center">Select transport mode</span>
         <ToggleGroup.Root
@@ -138,7 +147,7 @@ export function Auth( { setisLogged } ) {
 
       {/* Greeting Message */}
       {errorMsg && (
-        <p className='mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600'>
+        <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">
           {errorMsg}
         </p>
       )}

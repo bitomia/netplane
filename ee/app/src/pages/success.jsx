@@ -1,7 +1,4 @@
-
-
 export function Success( { isLogged } ) {
-
     if(!isLogged) {
         return <Navigate to="/" />;
     }

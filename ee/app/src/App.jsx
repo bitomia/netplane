@@ -5,7 +5,6 @@ import { Auth } from './pages/auth';
 import { Success } from './pages/success';
 
 function App() {
-
   const [isLogged, setisLogged] = useState(false);
 
   return (
