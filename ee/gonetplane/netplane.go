@@ -169,8 +169,13 @@ func ClientStop() {
 	C.netplane_client_stop()
 }
 
-// Run runs the netplane client with the given parameters
-func Run(tunDev, host string, port uint16, transportType string) error {
+// CancelToken is an opaque handle to a cancellation token
+type CancelToken struct {
+	ptr unsafe.Pointer
+}
+
+// Run runs the netplane client with the given parameters and returns a CancelToken
+func Run(tunDev, host string, port uint16, transportType string) (*CancelToken, error) {
 	cTunDev := C.CString(tunDev)
 	defer C.free(unsafe.Pointer(cTunDev))
 
@@ -183,11 +188,27 @@ func Run(tunDev, host string, port uint16, transportType string) error {
 		defer C.free(unsafe.Pointer(cTransportType))
 	}
 
-	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false)
+	var tokenPtr unsafe.Pointer
+	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false, &tokenPtr)
 
 	if result != 0 {
-		return fmt.Errorf("run failed with code: %d", result)
+		return nil, fmt.Errorf("run failed with code: %d", result)
 	}
 
-	return nil
+	return &CancelToken{ptr: tokenPtr}, nil
+}
+
+// Cancel cancels the operation associated with this token
+func (t *CancelToken) Cancel() {
+	if t != nil && t.ptr != nil {
+		C.netplane_cancel(t.ptr)
+	}
+}
+
+// Free releases the resources associated with this token
+func (t *CancelToken) Free() {
+	if t != nil && t.ptr != nil {
+		C.netplane_free_cancel_token(t.ptr)
+		t.ptr = nil
+	}
 }

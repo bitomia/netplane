@@ -85,7 +85,7 @@ pub async fn handshake(
 pub async fn create_transport(
     control_addr: &str,
     transport_type: Option<String>,
-) -> Result<AnyTransport> {
+) -> Result<Box<AnyTransport>> {
     let transport_type = transport_type
         .or_else(|| env::var("TRANSPORT").ok())
         .unwrap_or_else(|| "udp".to_string());
@@ -97,7 +97,7 @@ pub async fn create_transport(
             let control_addr = format!("ws://{}", control_addr);
             let transport = WebSocketTransport::connect(control_addr.as_str()).await?;
 
-            Ok(AnyTransport::WebSocket(transport))
+            Ok(Box::new(AnyTransport::WebSocket(transport)))
         }
         "udp" => {
             info!("Starting UDP connection {}", control_addr);
@@ -110,7 +110,7 @@ pub async fn create_transport(
                 .await
                 .map_err(|_| anyhow!("Cannot connect UDP socket"))?;
 
-            Ok(AnyTransport::Udp(transport))
+            Ok(Box::new(AnyTransport::Udp(transport)))
         }
         _ => Err(anyhow!(
             "Unsupported transport type: {}. Use 'websocket' or 'udp'",
@@ -168,33 +168,34 @@ pub async fn run(
     ))
 }
 
-// pub async fn run_from_fd(
-//     tun_fd: PlatformFd,
-//     start_params: &StartParams,
-//     transport: &'static mut AnyTransport,
-//     loopback_relay: bool,
-//     no_encryption: bool,
-// ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
-//     info!("Starting client with fd");
+pub async fn run_from_fd(
+    tun_fd: PlatformFd,
+    start_params: &StartParams,
+    transport: Box<AnyTransport>,
+    loopback_relay: bool,
+    no_encryption: bool,
+) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
+    info!("Starting client with fd");
 
-//     let (own_sdn_ip, peer_manager) = create_p2p_session(start_params)?;
+    let (own_sdn_ip, peer_manager) = create_p2p_session(start_params)?;
 
-//     let dev = tundev::TunDev::new_from_fd(
-//         tun_fd,
-//         start_params.netmask.as_str(),
-//         start_params.destination.as_str(),
-//         start_params.ip_addr.as_str(),
-//     )?;
+    let dev = tundev::TunDev::new_from_fd(
+        tun_fd,
+        start_params.netmask.as_str(),
+        start_params.destination.as_str(),
+        start_params.ip_addr.as_str(),
+    )?;
 
-//     Ok(update_loop(
-//         dev,
-//         transport,
-//         peer_manager,
-//         own_sdn_ip,
-//         loopback_relay,
-//         no_encryption,
-//     ))
-// }
+    Ok(update_loop(
+        dev,
+        transport,
+        peer_manager,
+        own_sdn_ip,
+        loopback_relay,
+        no_encryption,
+        None,
+    ))
+}
 
 fn create_p2p_session(
     start_params: &StartParams,
@@ -209,7 +210,7 @@ fn create_p2p_session(
 
 fn update_loop(
     mut dev: tundev::TunDev,
-    mut transport: AnyTransport,
+    mut transport: Box<AnyTransport>,
     mut peer_manager: PeerSessionManager,
     own_sdn_ip: Ipv4Addr,
     loopback_relay: bool,

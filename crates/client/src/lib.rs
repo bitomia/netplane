@@ -338,88 +338,83 @@ fn reset_cancel_token() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn netplane_client_run(
-    _tun_fd: c_int,
-    _transport: *mut std::ffi::c_void,
-    _handshake: *mut HandshakeResult,
-    _loopback_relay: bool,
-    _no_encryption: bool,
+    tun_fd: c_int,
+    transport: *mut std::ffi::c_void,
+    handshake: *mut HandshakeResult,
+    loopback_relay: bool,
+    no_encryption: bool,
 ) -> i32 {
-    // TODO uncomment and fix transport_ref
-    //
-    // let cancel_token = {
-    //     let token = CANCEL_TOKEN.lock().unwrap();
-    //     token.child_token()
-    // };
+    let cancel_token = {
+        let token = CANCEL_TOKEN.lock().unwrap();
+        token.child_token()
+    };
 
-    // let handshake_result = {
-    //     let netmask = unsafe {
-    //         match CStr::from_ptr((*handshake).netmask).to_str() {
-    //             Ok(s) => s.to_string(),
-    //             Err(err) => {
-    //                 error!("Error: {:?}", err);
-    //                 return -3;
-    //             }
-    //         }
-    //     };
-    //     let destination = unsafe {
-    //         match CStr::from_ptr((*handshake).destination).to_str() {
-    //             Ok(s) => s.to_string(),
-    //             Err(err) => {
-    //                 error!("Error: {:?}", err);
-    //                 return -3;
-    //             }
-    //         }
-    //     };
-    //     let ip_addr = unsafe {
-    //         match CStr::from_ptr((*handshake).ip_addr).to_str() {
-    //             Ok(s) => s.to_string(),
-    //             Err(err) => {
-    //                 error!("Error: {:?}", err);
-    //                 return -3;
-    //             }
-    //         }
-    //     };
-    //     client::StartParams {
-    //         netmask,
-    //         destination,
-    //         ip_addr,
-    //     }
-    // };
-    // if transport.is_null() {
-    //     error!("Transport pointer is null");
-    //     return -4;
-    // }
-    //
-    //
-    // let transport_ref = unsafe { &mut *(transport as *mut AnyTransport) };
-    //
-    // GLOBAL_RT.spawn(async move {
-    //     // Convert c_int to PlatformFd
-    //     #[cfg(unix)]
-    //     let platform_fd = PlatformFd::from_raw_fd(tun_fd);
-    //     #[cfg(windows)]
-    //     let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
+    let handshake_result = {
+        let netmask = unsafe {
+            match CStr::from_ptr((*handshake).netmask).to_str() {
+                Ok(s) => s.to_string(),
+                Err(err) => {
+                    error!("Error: {:?}", err);
+                    return -3;
+                }
+            }
+        };
+        let destination = unsafe {
+            match CStr::from_ptr((*handshake).destination).to_str() {
+                Ok(s) => s.to_string(),
+                Err(err) => {
+                    error!("Error: {:?}", err);
+                    return -3;
+                }
+            }
+        };
+        let ip_addr = unsafe {
+            match CStr::from_ptr((*handshake).ip_addr).to_str() {
+                Ok(s) => s.to_string(),
+                Err(err) => {
+                    error!("Error: {:?}", err);
+                    return -3;
+                }
+            }
+        };
+        client::StartParams {
+            netmask,
+            destination,
+            ip_addr,
+        }
+    };
+    if transport.is_null() {
+        error!("Transport pointer is null");
+        return -4;
+    }
 
+    let transport_ptr = unsafe { Box::from_raw(transport as *mut AnyTransport) };
 
-    //     tokio::select! {
-    //         retval = client::run_from_fd(platform_fd, &handshake_result, transport_ref, loopback_relay, no_encryption) => {
-    //                 reset_cancel_token();
-    //             match retval {
-    //                 Ok(_) => 0,
-    //                 Err(err) => {
-    //                     error!("Error running client: {}", err);
-    //                     return -12;
-    //                 }
-    //             }
-    //         },
-    //         _ = cancel_token.cancelled() => {
-    //             info!("Client stopped");
-    //             reset_cancel_token();
-    //             1
-    //         },
-    //     }
-    // });
+    GLOBAL_RT.spawn(async move {
+        // Convert c_int to PlatformFd
+        #[cfg(unix)]
+        let platform_fd = PlatformFd::from_raw_fd(tun_fd);
+        #[cfg(windows)]
+        let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
 
+        tokio::select! {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption) => {
+                    reset_cancel_token();
+                match retval {
+                    Ok(_) => 0,
+                    Err(err) => {
+                        error!("Error running client: {}", err);
+                        return -12;
+                    }
+                }
+            },
+            _ = cancel_token.cancelled() => {
+                info!("Client stopped");
+                reset_cancel_token();
+                1
+            },
+        }
+    });
     0
 }
 
@@ -439,8 +434,18 @@ pub extern "C" fn netplane_run(
     transport_type: *const c_char,
     loopback_relay: bool,
     no_encryption: bool,
-    option_token: Option<CancellationToken>,
+    cancel_token_out: *mut *mut std::ffi::c_void,
 ) -> i32 {
+    let cancel_token = CancellationToken::new();
+    let cancel_token_clone = cancel_token.clone();
+
+    // Return the token pointer to the caller if requested
+    if !cancel_token_out.is_null() {
+        unsafe {
+            *cancel_token_out = Box::into_raw(Box::new(cancel_token_clone)) as *mut std::ffi::c_void;
+        }
+    }
+
     GLOBAL_RT.block_on(async {
         let tun_dev = unsafe {
             match CStr::from_ptr(tun_dev).to_str() {
@@ -485,7 +490,7 @@ pub extern "C" fn netplane_run(
             transport_type_opt,
             loopback_relay,
             no_encryption,
-            option_token,
+            Some(cancel_token),
         )
         .await
         {
@@ -496,4 +501,23 @@ pub extern "C" fn netplane_run(
             }
         }
     })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn netplane_cancel(token: *mut std::ffi::c_void) {
+    if token.is_null() {
+        return;
+    }
+    let token = unsafe { &*(token as *const CancellationToken) };
+    token.cancel();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn netplane_free_cancel_token(token: *mut std::ffi::c_void) {
+    if token.is_null() {
+        return;
+    }
+    unsafe {
+        let _ = Box::from_raw(token as *mut CancellationToken);
+    }
 }
