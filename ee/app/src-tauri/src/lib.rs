@@ -2,9 +2,20 @@ use anyhow::anyhow;
 use dotenv::dotenv;
 use log::info;
 use netplane_client::client;
+use std::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+
+struct AppState {
+    disconnect_token: Mutex<CancellationToken>,
+}
 
 #[tauri::command]
-async fn client(server: &str, auth: &str, transport: &str) -> tauri::Result<()> {
+async fn client(
+    app_state: tauri::State<'_, AppState>,
+    server: &str,
+    auth: &str,
+    transport: &str,
+) -> tauri::Result<()> {
     dotenv().ok();
 
     if server.is_empty() {
@@ -44,6 +55,19 @@ async fn client(server: &str, auth: &str, transport: &str) -> tauri::Result<()> 
         .await?;
     }
 
+    let cloned_token = {
+        let mut token = match app_state.disconnect_token.lock() {
+            Ok(t) => t,
+            Err(e) => return Err(anyhow!("{}", e).into()),
+        };
+
+        if (*token).is_cancelled() {
+            *token = CancellationToken::new();
+        }
+
+        (*token).clone()
+    };
+
     client::run(
         tun_dev,
         host,
@@ -51,8 +75,16 @@ async fn client(server: &str, auth: &str, transport: &str) -> tauri::Result<()> 
         transport_type,
         loopback_relay,
         no_encryption,
+        Some(cloned_token),
     )
     .await?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_update(token_state: tauri::State<'_, AppState>) -> tauri::Result<()> {
+    token_state.disconnect_token.lock().unwrap().cancel();
 
     Ok(())
 }
@@ -64,8 +96,11 @@ pub fn run() {
     info!("Netplane app starting");
 
     tauri::Builder::default()
+        .manage(AppState {
+            disconnect_token: Mutex::new(CancellationToken::new()),
+        })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![client])
+        .invoke_handler(tauri::generate_handler![client, stop_update])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

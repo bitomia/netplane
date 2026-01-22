@@ -157,6 +157,7 @@ fn main() -> Result<()> {
                     transport_type,
                     loopback_relay,
                     no_encryption,
+                    None,
                 )
                     .await?.await {
                         Ok(_) => Ok(()),

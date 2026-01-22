@@ -5,13 +5,13 @@ import { Auth } from './pages/auth';
 import { Success } from './pages/success';
 
 function App() {
-  const [isLogged, setisLogged] = useState(false);
+  const [isLogged, setIsLogged] = useState(false);
 
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Auth setisLogged={setisLogged}/>}/>
-        <Route path="/success" element={<Success isLogged={isLogged}/>}/>
+        <Route path="/" element={<Auth setIsLogged={setIsLogged}/>}/>
+        <Route path="/success" element={<Success isLogged={isLogged} setIsLogged={setIsLogged}/>}/>
       </Routes>
     </Router>
   )

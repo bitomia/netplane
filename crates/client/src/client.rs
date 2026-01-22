@@ -7,6 +7,7 @@ use std::io;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tokio::time::{Duration, interval};
+use tokio_util::sync::CancellationToken;
 
 use netplane_common::crypto::{load_auth_key, try_load_crypto_keys};
 use netplane_common::packet::{parse_ipv4_header, validate_packet};
@@ -125,6 +126,7 @@ pub async fn run(
     transport_type: Option<String>,
     loopback_relay: bool,
     no_encryption: bool,
+    option_token: Option<CancellationToken>,
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client");
 
@@ -162,6 +164,7 @@ pub async fn run(
         own_sdn_ip,
         loopback_relay,
         no_encryption,
+        option_token,
     ))
 }
 
@@ -211,6 +214,7 @@ fn update_loop(
     own_sdn_ip: Ipv4Addr,
     loopback_relay: bool,
     no_encryption: bool,
+    option_token: Option<CancellationToken>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut heartbeat_interval = interval(Duration::from_secs(5));
@@ -263,6 +267,16 @@ fn update_loop(
                             debug!("Heartbeat sent");
                         }
                     }
+                },
+
+                Some(_) = async {
+                    match &option_token {
+                        Some(t) => Some(t.cancelled().await),
+                        None => None,
+                    }
+                } => {
+                    info!("Update loop stopped");
+                    break;
                 }
             }
         }
