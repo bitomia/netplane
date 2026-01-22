@@ -14,7 +14,6 @@ pub mod client;
 mod fd;
 mod http_client;
 mod peer_session;
-mod tray;
 mod tundev;
 
 use crate::fd::PlatformFd;
@@ -442,7 +441,8 @@ pub extern "C" fn netplane_run(
     // Return the token pointer to the caller if requested
     if !cancel_token_out.is_null() {
         unsafe {
-            *cancel_token_out = Box::into_raw(Box::new(cancel_token_clone)) as *mut std::ffi::c_void;
+            *cancel_token_out =
+                Box::into_raw(Box::new(cancel_token_clone)) as *mut std::ffi::c_void;
         }
     }
 
