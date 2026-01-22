@@ -28,3 +28,4 @@ netplane_common = { path = "../../../crates/common/" }
 dotenv = "0.15.0"
 anyhow = "1.0.100"
 tokio = "1.49.0"
+tokio-util = "0.7.17"

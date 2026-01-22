@@ -439,6 +439,7 @@ pub extern "C" fn netplane_run(
     transport_type: *const c_char,
     loopback_relay: bool,
     no_encryption: bool,
+    option_token: Option<CancellationToken>,
 ) -> i32 {
     GLOBAL_RT.block_on(async {
         let tun_dev = unsafe {
@@ -484,6 +485,7 @@ pub extern "C" fn netplane_run(
             transport_type_opt,
             loopback_relay,
             no_encryption,
+            option_token,
         )
         .await
         {

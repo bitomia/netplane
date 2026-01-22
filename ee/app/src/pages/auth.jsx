@@ -6,7 +6,7 @@ import "@radix-ui/themes/styles.css";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { useNavigate } from "react-router-dom";
 
-export function Auth({ setisLogged }) {
+export function Auth({ setIsLogged }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
@@ -17,7 +17,7 @@ export function Auth({ setisLogged }) {
     try {
       const c = await invoke("client", { server, auth, transport });
 
-      setisLogged(true);
+      setIsLogged(true);
       navigate("/success");
     } catch (error) {
       setErrorMsg(error);
@@ -145,7 +145,7 @@ export function Auth({ setisLogged }) {
         </button>
       </form>
 
-      {/* Greeting Message */}
+      {/* Error Message */}
       {errorMsg && (
         <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">
           {errorMsg}
