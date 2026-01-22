@@ -8,7 +8,6 @@ pub mod client;
 mod fd;
 mod http_client;
 mod peer_session;
-mod tray;
 mod tundev;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -71,100 +70,39 @@ fn main() -> Result<()> {
 
         let host = args[1].clone();
 
-        // Run tokio runtime in a separate thread to keep main thread for tray
-        #[cfg(all(feature = "tray", target_os = "macos"))]
-        {
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async {
-                    if let Some(auth_arg) = auth_arg {
-                        let parts: Vec<&str> = auth_arg.split("=").collect();
-                        if parts.len() == 2 {
-                            let link_code = parts[1];
-                            let _ = auth_client(
-                                "auth.key",
-                                "public.key",
-                                "private.key",
-                                &host,
-                                link_code,
-                                auth_port,
-                            )
-                            .await;
-                        }
-                    }
-
-                    let _ = run(
-                        tun_dev,
-                        host,
-                        port,
-                        transport_type,
-                        loopback_relay,
-                        no_encryption,
-                    )
-                    .await;
-                });
-            });
-
-            tray::init_tray_and_display()?;
-        }
-
-        #[cfg(not(all(feature = "tray", target_os = "macos")))]
-        {
-            let rt = tokio::runtime::Runtime::new()?;
-            rt.block_on(async {
-                #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
-                let tray_rx = tray::init_tray().ok();
-
-                if let Some(auth_arg) = auth_arg {
-                    let parts: Vec<&str> = auth_arg.split("=").collect();
-                    if parts.len() != 2 {
-                        return Err(anyhow!("Invalid auth argument"));
-                    }
-                    let link_code = parts[1];
-                    client::auth_client(
-                        "auth.key",
-                        "public.key",
-                        "private.key",
-                        &host,
-                        link_code,
-                        auth_port,
-                    )
-                    .await?;
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            if let Some(auth_arg) = auth_arg {
+                let parts: Vec<&str> = auth_arg.split("=").collect();
+                if parts.len() != 2 {
+                    return Err(anyhow!("Invalid auth argument"));
                 }
-
-                #[cfg(all(feature = "tray", any(target_os = "windows", target_os = "linux")))]
-                if let Some(rx) = tray_rx {
-                    tokio::spawn(async move {
-                        loop {
-                            if let Ok(msg) = rx.try_recv() {
-                                match msg {
-                                    tray::TrayMessage::Quit => {
-                                        info!("Quit requested from tray");
-                                        std::process::exit(0);
-                                    }
-                                }
-                            }
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                        }
-                    });
-                    info!("Tray message handler spawned");
-                }
-
-                match client::run(
-                    tun_dev,
-                    host,
-                    port,
-                    transport_type,
-                    loopback_relay,
-                    no_encryption,
-                    None,
+                let link_code = parts[1];
+                client::auth_client(
+                    "auth.key",
+                    "public.key",
+                    "private.key",
+                    &host,
+                    link_code,
+                    auth_port,
                 )
-                    .await?.await {
-                        Ok(_) => Ok(()),
-                        Err(err) => Err(anyhow!("Run error: {}", err.to_string()))
-                    }
-            })?;
-        }
+                .await?;
+            }
+
+            client::run(
+                tun_dev,
+                host,
+                port,
+                transport_type,
+                loopback_relay,
+                no_encryption,
+                None,
+            )
+            .await?
+            .await?;
+
+            Ok(())
+        })?;
     } else {
         echo_syntax(&args);
         std::process::exit(1);
