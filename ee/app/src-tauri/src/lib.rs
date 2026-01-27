@@ -30,13 +30,21 @@ async fn client(
         PathBuf::new()
     };
 
-    let authkey_path = key_directory.join("auth.key");
-    let public_filepath = key_directory.join("public.key");
-    let private_filepath = key_directory.join("private.key");
+    let authkey_path = key_directory
+        .join("auth.key")
+        .into_os_string()
+        .into_string()
+        .expect("auth.key path should not be empty");
 
-    let authkey_path_str = authkey_path.to_str().unwrap_or("");
-    let public_filepath_str = public_filepath.to_str().unwrap_or("");
-    let private_filepath_str = private_filepath.to_str().unwrap_or("");
+    let public_filepath = key_directory.join("public.key")
+        .into_os_string()
+        .into_string()
+        .expect("public.key path should not be empty");
+    
+    let private_filepath = key_directory.join("private.key")
+        .into_os_string()
+        .into_string()
+        .expect("private.key path should not be empty");
 
     dotenv().ok();
 
@@ -45,7 +53,7 @@ async fn client(
     }
 
     if let Err(err) =
-        netplane_common::crypto::try_generate_crypto_keys(public_filepath_str, private_filepath_str)
+        netplane_common::crypto::try_generate_crypto_keys(&public_filepath, &private_filepath)
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
             return Err(err.into());
@@ -68,9 +76,9 @@ async fn client(
         let link_code = auth;
 
         client::auth_client(
-            authkey_path_str,
-            public_filepath_str,
-            private_filepath_str,
+            &authkey_path,
+            &public_filepath,
+            &private_filepath,
             &host,
             link_code,
             auth_port,
@@ -98,9 +106,9 @@ async fn client(
         transport_type,
         loopback_relay,
         no_encryption,
-        authkey_path_str,
-        public_filepath_str,
-        private_filepath_str,
+        &authkey_path,
+        &public_filepath,
+        &private_filepath,
         Some(cloned_token),
     )
     .await?;
