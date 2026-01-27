@@ -27,6 +27,8 @@ static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
 
 async fn do_handshake(
     authkey_path: *const c_char,
+    public_filepath: *const c_char,
+    private_filepath: *const c_char,
     transport: *mut std::ffi::c_void,
     result: *mut HandshakeResult,
 ) -> i32 {
@@ -47,16 +49,43 @@ async fn do_handshake(
         }
     };
 
+    let public_filepath = unsafe {
+        match CStr::from_ptr(public_filepath).to_str() {
+            Ok(s) => s,
+            Err(err) => {
+                error!("Error parsing public_key: {:?}", err);
+                return -2;
+            }
+        }
+    };
+
+    let private_filepath = unsafe {
+        match CStr::from_ptr(private_filepath).to_str() {
+            Ok(s) => s,
+            Err(err) => {
+                error!("Error parsing private_key: {:?}", err);
+                return -2;
+            }
+        }
+    };
+
     let transport_ref = unsafe { &mut *(transport as *mut AnyTransport) };
 
-    let (start_params, _noise_session) =
-        match client::handshake(auth_key, "connected".to_string(), transport_ref).await {
-            Ok(params) => params,
-            Err(err) => {
-                error!("Handshake failed: {:?}", err);
-                return -6;
-            }
-        };
+    let (start_params, _noise_session) = match client::handshake(
+        auth_key,
+        public_filepath,
+        private_filepath,
+        "connected".to_string(),
+        transport_ref,
+    )
+    .await
+    {
+        Ok(params) => params,
+        Err(err) => {
+            error!("Handshake failed: {:?}", err);
+            return -6;
+        }
+    };
 
     let netmask_cstr = match CString::new(start_params.netmask) {
         Ok(s) => s.into_raw(),
@@ -241,12 +270,14 @@ pub extern "C" fn netplane_try_generate_crypto_keys(
 #[unsafe(no_mangle)]
 pub extern "C" fn netplane_client_handshake(
     authkey_path: *const c_char,
+    public_filepath: *const c_char,
+    private_filepath: *const c_char,
     transport: *mut std::ffi::c_void,
     result: *mut HandshakeResult,
 ) -> i32 {
     GLOBAL_RT.block_on(async {
         tokio::select! {
-            ret = do_handshake(authkey_path, transport, result) => ret,
+            ret = do_handshake(authkey_path, public_filepath, private_filepath, transport, result) => ret,
             _ = sleep(Duration::from_secs(10)) => {
                 error!("Handshake timeout");
                 -100
@@ -342,6 +373,8 @@ pub extern "C" fn netplane_client_run(
     handshake: *mut HandshakeResult,
     loopback_relay: bool,
     no_encryption: bool,
+    public_filepath: *const c_char,
+    private_filepath: *const c_char,
 ) -> i32 {
     let cancel_token = {
         let token = CANCEL_TOKEN.lock().unwrap();
@@ -389,6 +422,26 @@ pub extern "C" fn netplane_client_run(
 
     let transport_ptr = unsafe { Box::from_raw(transport as *mut AnyTransport) };
 
+    let public_filepath = unsafe {
+        match CStr::from_ptr(public_filepath).to_str() {
+            Ok(s) => s,
+            Err(err) => {
+                error!("Error parsing public_key: {:?}", err);
+                return -4;
+            }
+        }
+    };
+
+    let private_filepath = unsafe {
+        match CStr::from_ptr(private_filepath).to_str() {
+            Ok(s) => s,
+            Err(err) => {
+                error!("Error parsing private_key: {:?}", err);
+                return -4;
+            }
+        }
+    };
+
     GLOBAL_RT.spawn(async move {
         // Convert c_int to PlatformFd
         #[cfg(unix)]
@@ -397,7 +450,7 @@ pub extern "C" fn netplane_client_run(
         let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
 
         tokio::select! {
-            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption) => {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, public_filepath, private_filepath) => {
                     reset_cancel_token();
                 match retval {
                     Ok(_) => 0,
@@ -433,6 +486,9 @@ pub extern "C" fn netplane_run(
     transport_type: *const c_char,
     loopback_relay: bool,
     no_encryption: bool,
+    authkey_path: *const c_char,
+    public_filepath: *const c_char,
+    private_filepath: *const c_char,
     cancel_token_out: *mut *mut std::ffi::c_void,
 ) -> i32 {
     let cancel_token = CancellationToken::new();
@@ -483,6 +539,36 @@ pub extern "C" fn netplane_run(
             }
         };
 
+        let authkey_path = unsafe {
+            match CStr::from_ptr(authkey_path).to_str() {
+                Ok(s) => s,
+                Err(err) => {
+                    error!("Error parsing auth_key: {:?}", err);
+                    return -1;
+                }
+            }
+        };
+
+        let public_filepath = unsafe {
+            match CStr::from_ptr(public_filepath).to_str() {
+                Ok(s) => s,
+                Err(err) => {
+                    error!("Error parsing public_key: {:?}", err);
+                    return -1;
+                }
+            }
+        };
+
+        let private_filepath = unsafe {
+            match CStr::from_ptr(private_filepath).to_str() {
+                Ok(s) => s,
+                Err(err) => {
+                    error!("Error parsing private_key: {:?}", err);
+                    return -1;
+                }
+            }
+        };
+
         match client::run(
             tun_dev,
             host,
@@ -490,6 +576,9 @@ pub extern "C" fn netplane_run(
             transport_type_opt,
             loopback_relay,
             no_encryption,
+            authkey_path,
+            public_filepath,
+            private_filepath,
             Some(cancel_token),
         )
         .await

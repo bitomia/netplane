@@ -96,6 +96,9 @@ fn main() -> Result<()> {
                 transport_type,
                 loopback_relay,
                 no_encryption,
+                "auth.key",
+                "public.key",
+                "private.key",
                 None,
             )
             .await?

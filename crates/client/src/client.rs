@@ -42,13 +42,15 @@ pub struct StartParams {
 /// Handshake with the relay server
 pub async fn handshake(
     auth_key: String,
+    public_filepath: &str,
+    private_filepath: &str,
     server_addr: String,
     transport: &mut AnyTransport,
 ) -> Result<(StartParams, String)> {
     info!("Starting handshake with relay server {}", server_addr);
 
     // Load client crypto keys - needed for E2E encryption with other clients
-    let (client_pub, _) = try_load_crypto_keys("public.key", "private.key")
+    let (client_pub, _) = try_load_crypto_keys(public_filepath, private_filepath)
         .map_err(|e| anyhow!("Failed to load crypto keys: {}", e))?;
 
     let handshake = HandshakeReq::new_with_crypto(&auth_key, &client_pub);
@@ -126,18 +128,27 @@ pub async fn run(
     transport_type: Option<String>,
     loopback_relay: bool,
     no_encryption: bool,
+    authkey_path: &str,
+    public_filepath: &str,
+    private_filepath: &str,
     option_token: Option<CancellationToken>,
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client");
 
-    let authkey_path = String::from_str("auth.key")?;
-    let auth_key = load_auth_key(authkey_path)?;
+    let auth_key = load_auth_key(authkey_path.to_string())?;
     let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
     let mut transport = create_transport(&control_addr, transport_type).await?;
 
     info!("Client connected to relay server");
 
-    let (start_params, _client_pub) = match handshake(auth_key, control_addr, &mut transport).await
+    let (start_params, _client_pub) = match handshake(
+        auth_key,
+        public_filepath,
+        private_filepath,
+        control_addr,
+        &mut transport,
+    )
+    .await
     {
         Ok((p, pub_key)) => {
             info!("Handshake successfully finished {:?}", p);
@@ -148,7 +159,8 @@ pub async fn run(
             std::process::exit(1)
         }
     };
-    let (own_sdn_ip, peer_manager) = create_p2p_session(&start_params)?;
+    let (own_sdn_ip, peer_manager) =
+        create_p2p_session(&start_params, public_filepath, private_filepath)?;
 
     let dev = tundev::TunDev::new(
         tun_dev,
@@ -174,10 +186,13 @@ pub async fn run_from_fd(
     transport: Box<AnyTransport>,
     loopback_relay: bool,
     no_encryption: bool,
+    public_filepath: &str,
+    private_filepath: &str,
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client with fd");
 
-    let (own_sdn_ip, peer_manager) = create_p2p_session(start_params)?;
+    let (own_sdn_ip, peer_manager) =
+        create_p2p_session(start_params, public_filepath, private_filepath)?;
 
     let dev = tundev::TunDev::new_from_fd(
         tun_fd,
@@ -199,8 +214,10 @@ pub async fn run_from_fd(
 
 fn create_p2p_session(
     start_params: &StartParams,
+    public_filepath: &str,
+    private_filepath: &str,
 ) -> Result<(Ipv4Addr, PeerSessionManager), anyhow::Error> {
-    let (client_pub, client_priv) = try_load_crypto_keys("public.key", "private.key")?;
+    let (client_pub, client_priv) = try_load_crypto_keys(public_filepath, private_filepath)?;
     let client_priv_bytes = general_purpose::URL_SAFE_NO_PAD.decode(&client_priv)?;
     let own_sdn_ip = Ipv4Addr::from_str(&start_params.ip_addr)?;
     let peer_manager = PeerSessionManager::new(own_sdn_ip, client_priv_bytes, client_pub);

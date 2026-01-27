@@ -2,12 +2,15 @@ use anyhow::anyhow;
 use dotenv::dotenv;
 use log::info;
 use netplane_client::client;
-use std::sync::Mutex;
+use std::{path::PathBuf, sync::Mutex};
 use tauri::Manager;
 use tokio_util::sync::CancellationToken;
 
 #[cfg(not(target_os = "android"))]
-use tauri::{ menu::{Menu, MenuItem}, tray::TrayIconBuilder};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
 
 struct AppState {
     disconnect_token: Mutex<CancellationToken>,
@@ -15,18 +18,34 @@ struct AppState {
 
 #[tauri::command]
 async fn client(
+    app: tauri::AppHandle,
     app_state: tauri::State<'_, AppState>,
     server: &str,
     auth: &str,
     transport: &str,
 ) -> tauri::Result<()> {
+    let key_directory = if cfg!(target_os = "android") {
+        app.path().app_data_dir()?
+    } else {
+        PathBuf::new()
+    };
+
+    let authkey_path = key_directory.join("auth.key");
+    let public_filepath = key_directory.join("public.key");
+    let private_filepath = key_directory.join("private.key");
+
+    let authkey_path_str = authkey_path.to_str().unwrap_or("");
+    let public_filepath_str = public_filepath.to_str().unwrap_or("");
+    let private_filepath_str = private_filepath.to_str().unwrap_or("");
+
     dotenv().ok();
 
     if server.is_empty() {
-        return Err(anyhow!("ERROR: No hay servidor").into())
+        return Err(anyhow!("ERROR: No hay servidor").into());
     }
 
-    if let Err(err) = netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
+    if let Err(err) =
+        netplane_common::crypto::try_generate_crypto_keys(public_filepath_str, private_filepath_str)
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
             return Err(err.into());
@@ -35,11 +54,11 @@ async fn client(
 
     let host = server.to_string();
     let mut transport_type: Option<String> = None;
-    let mut tun_dev = "tun0".to_string();
-    let mut port: Option<u16> = Some(5000);
-    let mut auth_port: Option<u16> = Some(8000);
-    let mut loopback_relay = false;
-    let mut no_encryption = false;
+    let tun_dev = "tun0".to_string();
+    let port: Option<u16> = Some(5000);
+    let auth_port: Option<u16> = Some(8000);
+    let loopback_relay = false;
+    let no_encryption = false;
 
     if !transport.is_empty() {
         transport_type = Some(transport.to_string());
@@ -49,9 +68,9 @@ async fn client(
         let link_code = auth;
 
         client::auth_client(
-            "auth.key",
-            "public.key",
-            "private.key",
+            authkey_path_str,
+            public_filepath_str,
+            private_filepath_str,
             &host,
             link_code,
             auth_port,
@@ -79,6 +98,9 @@ async fn client(
         transport_type,
         loopback_relay,
         no_encryption,
+        authkey_path_str,
+        public_filepath_str,
+        private_filepath_str,
         Some(cloned_token),
     )
     .await?;
@@ -100,6 +122,7 @@ pub fn run() {
     info!("Netplane app starting");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .manage(AppState {
             disconnect_token: Mutex::new(CancellationToken::new()),
         })
