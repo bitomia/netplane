@@ -1,9 +1,21 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { listen } from '@tauri-apps/api/event';
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 
 export function Success( { isLogged, setIsLogged } ) {
     const navigate = useNavigate();
+
+    useEffect(() => {
+        const unlisten = listen('disconnect', () => {
+            setIsLogged(false);
+            navigate("/");
+        });
+
+        return () => {
+            unlisten.then(unlisten => unlisten());
+        };
+    }, [navigate]);
     
     async function stop_update() {
         await invoke("stop_update", {});

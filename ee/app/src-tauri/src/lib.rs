@@ -3,10 +3,9 @@ use dotenv::dotenv;
 use log::info;
 use netplane_client::client;
 use std::sync::Mutex;
+use std::path::Path;
 use tauri::{
-    menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-    Manager,
+    Emitter, Manager, image::Image, menu::{Menu, MenuItem}, tray::TrayIconBuilder
 };
 use tokio_util::sync::CancellationToken;
 
@@ -16,11 +15,13 @@ struct AppState {
 
 #[tauri::command]
 async fn client(
-    app_state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
     server: &str,
     auth: &str,
     transport: &str,
 ) -> tauri::Result<()> {
+    let app_state = app_handle.state::<AppState>();
+
     dotenv().ok();
 
     if server.is_empty() {
@@ -36,11 +37,11 @@ async fn client(
 
     let host = server.to_string();
     let mut transport_type: Option<String> = None;
-    let mut tun_dev = "tun0".to_string();
-    let mut port: Option<u16> = Some(5000);
-    let mut auth_port: Option<u16> = Some(8000);
-    let mut loopback_relay = false;
-    let mut no_encryption = false;
+    let tun_dev = "tun0".to_string();
+    let port: Option<u16> = Some(5000);
+    let auth_port: Option<u16> = Some(8000);
+    let loopback_relay = false;
+    let no_encryption = false;
 
     if !transport.is_empty() {
         transport_type = Some(transport.to_string());
@@ -84,12 +85,43 @@ async fn client(
     )
     .await?;
 
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let connected_icon = Image::from_path(Path::new("icons/connected.ico")).unwrap();
+        tray.set_icon(Some(connected_icon))?;
+
+        let show = MenuItem::with_id(&app_handle, "show", "Show", true, None::<&str>)?;
+        let quit = MenuItem::with_id(&app_handle, "quit", "Quit", true, None::<&str>)?;
+        let disconnect = MenuItem::with_id(&app_handle, "disconnect", "Disconnect", true, None::<&str>)?;
+        let menu = Menu::with_items(&app_handle, &[&show, &quit, &disconnect])?;
+
+        tray.set_menu(Some(menu))?;
+
+    }
+
     Ok(())
 }
 
 #[tauri::command]
-async fn stop_update(token_state: tauri::State<'_, AppState>) -> tauri::Result<()> {
-    token_state.disconnect_token.lock().unwrap().cancel();
+async fn stop_update(app_handle: tauri::AppHandle) -> tauri::Result<()> {
+    inner_stop_update(app_handle).await
+}
+
+async fn inner_stop_update(app_handle: tauri::AppHandle) -> tauri::Result<()> {
+    let app_state = app_handle.state::<AppState>();
+
+    app_state.disconnect_token.lock().unwrap().cancel();
+
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let disconnected_icon = Image::from_path(Path::new("icons/disconnected.ico")).unwrap();
+        tray.set_icon(Some(disconnected_icon))?;
+
+        let show = MenuItem::with_id(&app_handle, "show", "Show", true, None::<&str>)?;
+        let quit = MenuItem::with_id(&app_handle, "quit", "Quit", true, None::<&str>)?;
+
+        let menu = Menu::with_items(&app_handle, &[&show, &quit])?;
+
+        tray.set_menu(Some(menu))?;
+    }
 
     Ok(())
 }
@@ -106,12 +138,16 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+
             let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
             let menu = Menu::with_items(app, &[&show, &quit])?;
 
+            let disconnected_icon = Image::from_path(Path::new("icons/disconnected.ico")).unwrap();
+
             TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(disconnected_icon)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -123,6 +159,14 @@ pub fn run() {
                     }
                     "quit" => {
                         app.exit(0);
+                    }
+                    "disconnect" => {
+
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn( async move {
+                           inner_stop_update(app_handle).await;
+                        });
+                        app.emit("disconnect", ()).expect("Can't disconnect");
                     }
                     _ => {}
                 })
