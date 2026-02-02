@@ -1,7 +1,12 @@
 use anyhow::anyhow;
 use dotenv::dotenv;
 use log::info;
+
 use netplane_client::client;
+
+#[cfg(target_os = "android")]
+use netplane_client::{client::create_transport, client::StartParams, fd::PlatformFd};
+
 use std::{path::PathBuf, sync::Mutex};
 use tauri::Manager;
 use tokio_util::sync::CancellationToken;
@@ -36,12 +41,14 @@ async fn client(
         .into_string()
         .expect("auth.key path should not be empty");
 
-    let public_filepath = key_directory.join("public.key")
+    let public_filepath = key_directory
+        .join("public.key")
         .into_os_string()
         .into_string()
         .expect("public.key path should not be empty");
-    
-    let private_filepath = key_directory.join("private.key")
+
+    let private_filepath = key_directory
+        .join("private.key")
         .into_os_string()
         .into_string()
         .expect("private.key path should not be empty");
@@ -99,19 +106,47 @@ async fn client(
         (*token).clone()
     };
 
-    client::run(
-        tun_dev,
-        host,
-        port,
-        transport_type,
-        loopback_relay,
-        no_encryption,
-        &authkey_path,
-        &public_filepath,
-        &private_filepath,
-        Some(cloned_token),
-    )
-    .await?;
+    #[cfg(not(target_os = "android"))]
+    {
+        client::run(
+            tun_dev,
+            host,
+            port,
+            transport_type,
+            loopback_relay,
+            no_encryption,
+            &authkey_path,
+            &public_filepath,
+            &private_filepath,
+            Some(cloned_token),
+        )
+        .await?;
+    }
+    #[cfg(target_os = "android")]
+    {
+        // TODO placeholders params
+        let fd = PlatformFd::Unix(0);
+        let start_params = StartParams {
+            netmask: "255.255.255.0".to_string(),
+            destination: "192.168.1.37".to_string(),
+            ip_addr: "10.0.0.3".to_string(),
+        };
+
+        let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
+
+        let mut transport = create_transport(&control_addr, transport_type).await?;
+
+        client::run_from_fd(
+            fd,
+            &start_params,
+            transport,
+            loopback_relay,
+            no_encryption,
+            &public_filepath,
+            &private_filepath,
+        )
+        .await?;
+    }
 
     Ok(())
 }
