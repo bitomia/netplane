@@ -1,8 +1,9 @@
 import "@radix-ui/themes/styles.css";
 import { useEffect, useState } from "react";
-import { invoke, listen } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { useNavigate } from "react-router-dom";
+import { listen } from "@tauri-apps/api/event";
 
 import netplaneLogoLight from "../assets/netplane_light.svg";
 import netplaneLogoDark from "../assets/netplane_dark.svg";
@@ -18,6 +19,7 @@ export function Auth({ setIsLogged }) {
 
   useEffect(() => {
     const connecting_unlistener = listen('connecting', () => {
+      setErrorMsg(null);
       setDisableButton(true);
       setStartBtn("Starting...");
       console.log("Starting");

@@ -11,6 +11,7 @@ export function Success( { isLogged, setIsLogged } ) {
 
     useEffect(() => {
         const disconnecting_unlistener = listen('disconnecting', () => {
+            setErrorMsg(null);
             setDisableButton(true);
             setDisconnectMsg("Disconnecting...");
             console.log("Disconnecting");
