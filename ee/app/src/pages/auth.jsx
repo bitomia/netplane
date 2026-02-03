@@ -1,29 +1,50 @@
-import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import netplaneLogoLight from "../assets/netplane_light.svg";
-import netplaneLogoDark from "../assets/netplane_dark.svg";
 import "@radix-ui/themes/styles.css";
+import { useEffect, useState } from "react";
+import { invoke, listen } from "@tauri-apps/api/core";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { useNavigate } from "react-router-dom";
+
+import netplaneLogoLight from "../assets/netplane_light.svg";
+import netplaneLogoDark from "../assets/netplane_dark.svg";
 
 export function Auth({ setIsLogged }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
   const [transport, setTransport] = useState("");
+  const [startMsg, setStartBtn] = useState("Start now");
+  const [disableButton, setDisableButton] = useState(false);
   const navigate = useNavigate();
 
-  async function client() {
-    try {
-      const c = await invoke("client", { server, auth, transport });
+  useEffect(() => {
+    const connecting_unlistener = listen('connecting', () => {
+      setDisableButton(true);
+      setStartBtn("Starting...");
+      console.log("Starting");
+    }); 
 
+    const connected_unlistener = listen('connected', () => {
       setIsLogged(true);
       navigate("/success");
-    } catch (error) {
-      setErrorMsg(error);
+      console.log("Authed")
+    });
 
-      console.error("Error al crear client:", error);
-    }
+    const connect_error_unlistener = listen('connect_error', (error) => {
+      setErrorMsg(error.payload);
+      console.error("Couldn't create client: ", error);
+      setStartBtn("Start now");
+      setDisableButton(false);
+    });
+
+    return () => {
+      connecting_unlistener.then(cleanup => cleanup());
+      connected_unlistener.then(cleanup => cleanup());
+      connect_error_unlistener.then(cleanup => cleanup());
+    };
+  }, [navigate]);
+
+  async function client() {
+    await invoke("client", { server, auth, transport });
   }
 
   return (
@@ -133,6 +154,7 @@ export function Auth({ setIsLogged }) {
         </ToggleGroup.Root>
         <button
           type="submit"
+          disabled = {disableButton}
           className="
             w-1/3 mx-auto rounded-lg px-4 py-3 text-base font-medium
             bg-neutral-800 text-white shadow-md
@@ -141,7 +163,7 @@ export function Auth({ setIsLogged }) {
             dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white
             outline-none"
         >
-          Start now
+          {startMsg}
         </button>
       </form>
 
