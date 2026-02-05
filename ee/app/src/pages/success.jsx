@@ -1,14 +1,44 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "react-router-dom";
+import { listen } from "@tauri-apps/api/event";
 
 export function Success( { isLogged, setIsLogged } ) {
+    const [errorMsg, setErrorMsg] = useState(null);
+    const [disconnectMsg, setDisconnectMsg] = useState("Disconnect");
+    const [disableButton, setDisableButton] = useState(false);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        const disconnecting_unlistener = listen('disconnecting', () => {
+            setErrorMsg(null);
+            setDisableButton(true);
+            setDisconnectMsg("Disconnecting...");
+            console.log("Disconnecting");
+        });
+
+        const disconnected_unlistener = listen('disconnected', () => {
+            setIsLogged(false);
+            navigate("/");
+            console.log("Disconnected");
+        });
+
+        const disconnect_error_unlistener = listen('disconnect_error', (error) => {
+            setErrorMsg(error.payload);
+            console.error("Couldn't disconnect: ", error.payload);
+            setDisconnectMsg("Disconnect");
+            setDisableButton(false);
+        });
+
+        return () => {
+            disconnected_unlistener.then(cleanup => cleanup());
+            disconnect_error_unlistener.then(cleanup => cleanup());
+            disconnecting_unlistener.then(cleanup => cleanup());
+        };
+    }, [navigate]);
     
     async function stop_update() {
         await invoke("stop_update", {});
-        setIsLogged(false);
-        navigate("/");
     }
     
     if(!isLogged) {
@@ -23,6 +53,7 @@ export function Success( { isLogged, setIsLogged } ) {
         ">
             <button
             type="submit"
+            disabled = {disableButton}
             className="
                 w-1/3 rounded-lg px-4 py-8 text-base font-medium
                 bg-neutral-800 text-white shadow-md
@@ -32,8 +63,14 @@ export function Success( { isLogged, setIsLogged } ) {
                 outline-none"
             onClick={stop_update}
             >
-            Disconnect
+            {disconnectMsg}
             </button>
+            {/* Error Message */}
+            {errorMsg && (
+                <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">
+                {errorMsg}
+                </p>
+            )}
         </main>
     )
 }
