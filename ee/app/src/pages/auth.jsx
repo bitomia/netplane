@@ -1,47 +1,49 @@
 import "@radix-ui/themes/styles.css";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 
-import netplaneLogoLight from "../assets/netplane_light.svg";
-import netplaneLogoDark from "../assets/netplane_dark.svg";
+import Input from "../components/Input.jsx";
+import ErrorMessage from "../components/ErrorMessage.jsx";
+import Logo from "../components/Logo.jsx";
+import Title from "../components/Title.jsx";
+import ToggleTransport from "../components/ToggleTransport.jsx";
 
 export function Auth({ setIsLogged }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
   const [transport, setTransport] = useState("");
-  const [startMsg, setStartBtn] = useState("Start now");
+  const [startMsg, setStartMsg] = useState("Start now");
   const [disableButton, setDisableButton] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const connecting_unlistener = listen('connecting', () => {
+    const connectingUnlistener = listen('connecting', () => {
       setErrorMsg(null);
       setDisableButton(true);
-      setStartBtn("Starting...");
+      setStartMsg("Starting...");
       console.log("Starting");
     }); 
 
-    const connected_unlistener = listen('connected', () => {
+    const connectedUnlistener = listen('connected', () => {
       setIsLogged(true);
       navigate("/success");
       console.log("Authed")
     });
 
-    const connect_error_unlistener = listen('connect_error', (error) => {
+    const connectErrorUnlistener = listen('connect_error', (error) => {
       setErrorMsg(error.payload);
       console.error("Couldn't create client: ", error);
-      setStartBtn("Start now");
+      setStartMsg("Start now");
       setDisableButton(false);
     });
 
     return () => {
-      connecting_unlistener.then(cleanup => cleanup());
-      connected_unlistener.then(cleanup => cleanup());
-      connect_error_unlistener.then(cleanup => cleanup());
+      connectingUnlistener.then(cleanup => cleanup());
+      connectedUnlistener.then(cleanup => cleanup());
+      connectErrorUnlistener.then(cleanup => cleanup());
     };
   }, [navigate]);
 
@@ -56,28 +58,10 @@ export function Auth({ setIsLogged }) {
       px-4 sm:px-6 py-8 bg-neutral-100 dark:bg-neutral-900
       text-neutral-900 dark:text-neutral-100"
     >
-      {/* Logo Section */}
-      <div className="flex justify-center mb-6 sm:mb-8">
-        <img
-          src={netplaneLogoLight}
-          className="
-          logo-light h-20 sm:h-24 md:h-28 lg:h-32 p-4 transition-all
-          duration-700 hover:drop-shadow-[0_0_2em_rgba(36,200,219,0.8)]"
-          alt="Netplane"
-        />
-        <img
-          src={netplaneLogoDark}
-          className="
-          logo-dark h-20 sm:h-24 md:h-28 lg:h-32 p-4 transition-all
-          duration-700 hover:drop-shadow-[0_0_2em_rgba(36,200,219,0.8)]"
-          alt="Netplane"
-        />
-      </div>
-
-      {/* Title */}
-      <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold text-center mb-6 sm:mb-8">
+      <Logo />
+      <Title>
         Software Defined Network
-      </h1>
+      </Title>
 
       {/* Form Section */}
       <form
@@ -87,73 +71,20 @@ export function Auth({ setIsLogged }) {
           client();
         }}
       >
-        <input
+        <Input
           id="server-input"
+          value={server}
           onChange={(s) => setServer(s.currentTarget.value)}
           placeholder="Enter server name..."
-          className="
-          w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
-          bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
-          duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
         />
-        <input
+        <Input
           id="link-input"
+          value={auth}
           onChange={(a) => setAuth(a.currentTarget.value)}
           placeholder="Enter auth code..."
-          className="
-          w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
-          bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
-          duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
         />
-        <span className="text-center">Select transport mode</span>
-        <ToggleGroup.Root
-          type="single"
-          value={transport}
-          onValueChange={setTransport}
-          className="
-            h-9 place-items-center
-            w-2/3 mx-auto flex rounded-full
-            bg-white dark:bg-neutral-800
-            shadow-md p-1
-            focus-within:ring-2 focus-within:ring-blue-500
-            dark:focus-within:ring-white"
-        >
-          <ToggleGroup.Item
-            value="udp"
-            className="
-              items-center justify-center
-              flex-1 px-4 py-1 text-base font-medium
-              rounded-full transition-colors duration-200
-              text-neutral-900 dark:text-white
-              data-[state=on]:bg-blue-600
-              data-[state=on]:text-white
-              data-[state=on]:hover:bg-blue-500
-              hover:bg-neutral-100 dark:hover:bg-neutral-700
-              dark:data-[state=on]:bg-white
-              dark:data-[state=on]:text-black
-              dark:data-[state=on]:hover:bg-neutral-200"
-          >
-            UDP
-          </ToggleGroup.Item>
+        <ToggleTransport value={transport} onValueChange={setTransport} />
 
-          <ToggleGroup.Item
-            value="websocket"
-            className="
-              items-center justify-center
-              flex-1 px-4 py-1 text-base font-medium
-              rounded-full transition-colors duration-200
-              text-neutral-900 dark:text-white
-              data-[state=on]:bg-blue-600
-              data-[state=on]:text-white
-              data-[state=on]:hover:bg-blue-500
-              hover:bg-neutral-100 dark:hover:bg-neutral-700
-              dark:data-[state=on]:bg-white
-              dark:data-[state=on]:text-black
-              dark:data-[state=on]:hover:bg-neutral-200"
-          >
-            WebSocket
-          </ToggleGroup.Item>
-        </ToggleGroup.Root>
         <button
           type="submit"
           disabled = {disableButton}
@@ -169,12 +100,7 @@ export function Auth({ setIsLogged }) {
         </button>
       </form>
 
-      {/* Error Message */}
-      {errorMsg && (
-        <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">
-          {errorMsg}
-        </p>
-      )}
+      <ErrorMessage message={errorMsg} />
     </main>
   );
 }

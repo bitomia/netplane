@@ -3,6 +3,8 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import ErrorMessage from "../components/ErrorMessage";
+
 export function Success( { isLogged, setIsLogged } ) {
     const [errorMsg, setErrorMsg] = useState(null);
     const [disconnectMsg, setDisconnectMsg] = useState("Disconnect");
@@ -10,20 +12,20 @@ export function Success( { isLogged, setIsLogged } ) {
     const navigate = useNavigate();
 
     useEffect(() => {
-        const disconnecting_unlistener = listen('disconnecting', () => {
+        const disconnectingUnlistener = listen('disconnecting', () => {
             setErrorMsg(null);
             setDisableButton(true);
             setDisconnectMsg("Disconnecting...");
             console.log("Disconnecting");
         });
 
-        const disconnected_unlistener = listen('disconnected', () => {
+        const disconnectedUnlistener = listen('disconnected', () => {
             setIsLogged(false);
             navigate("/");
             console.log("Disconnected");
         });
 
-        const disconnect_error_unlistener = listen('disconnect_error', (error) => {
+        const disconnectErrorUnlistener = listen('disconnect_error', (error) => {
             setErrorMsg(error.payload);
             console.error("Couldn't disconnect: ", error.payload);
             setDisconnectMsg("Disconnect");
@@ -31,13 +33,13 @@ export function Success( { isLogged, setIsLogged } ) {
         });
 
         return () => {
-            disconnected_unlistener.then(cleanup => cleanup());
-            disconnect_error_unlistener.then(cleanup => cleanup());
-            disconnecting_unlistener.then(cleanup => cleanup());
+            disconnectingUnlistener.then(cleanup => cleanup());
+            disconnectedUnlistener.then(cleanup => cleanup());
+            disconnectErrorUnlistener.then(cleanup => cleanup());
         };
     }, [navigate]);
     
-    async function stop_update() {
+    async function stopUpdate() {
         await invoke("stop_update", {});
     }
     
@@ -61,16 +63,12 @@ export function Success( { isLogged, setIsLogged } ) {
                 hover:border-blue-600 active:border-blue-600 active:bg-neutral-200
                 dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white
                 outline-none"
-            onClick={stop_update}
+            onClick={stopUpdate}
             >
             {disconnectMsg}
             </button>
-            {/* Error Message */}
-            {errorMsg && (
-                <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">
-                {errorMsg}
-                </p>
-            )}
+            
+            <ErrorMessage message={errorMsg} />
         </main>
     )
 }
