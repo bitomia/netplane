@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 
 import Input from "../components/Input.jsx";
-import ErrorMessage from "../components/ErrorMessage.jsx";
+import ErrorAlert from "../components/ErrorMessage.jsx";
 import Logo from "../components/Logo.jsx";
 import Title from "../components/Title.jsx";
 import ToggleTransport from "../components/ToggleTransport.jsx";
@@ -100,7 +100,7 @@ export function Auth({ setIsLogged }) {
         </button>
       </form>
 
-      <ErrorMessage message={errorMsg} />
+      <ErrorAlert message={errorMsg} />
     </main>
   );
 }

@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import ErrorMessage from "../components/ErrorMessage";
+import ErrorAlert from "../components/ErrorMessage";
 
 export function Success( { isLogged, setIsLogged } ) {
     const [errorMsg, setErrorMsg] = useState(null);
@@ -68,7 +68,7 @@ export function Success( { isLogged, setIsLogged } ) {
             {disconnectMsg}
             </button>
             
-            <ErrorMessage message={errorMsg} />
+            <ErrorAlert message={errorMsg} />
         </main>
     )
 }

@@ -1,9 +1,14 @@
-function ErrorMessage ({ message }) {
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircleIcon } from "lucide-react"
+
+export default function ErrorAlert ({ message }) {
     return message &&
-        <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">
-          {message}
-        </p>
+        <Alert variant="destructive" className="max-w-md">
+            <AlertCircleIcon />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+            {message}
+            </AlertDescription>
+        </Alert>
     ;
 }
-
-export default ErrorMessage;
