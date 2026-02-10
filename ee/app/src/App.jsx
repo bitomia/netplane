@@ -1,8 +1,8 @@
 import "./App.css";
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { useState } from "react";
-import { Auth } from './pages/auth';
-import { Success } from './pages/success';
+import { Auth } from './pages/Auth';
+import { Success } from './pages/Success';
 
 function App() {
   const [isLogged, setIsLogged] = useState(false);

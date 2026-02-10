@@ -6,12 +6,16 @@ import "@radix-ui/themes/styles.css";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { useNavigate } from "react-router-dom";
 
+import { useTranslation } from 'react-i18next';
+
 export function Auth({ setIsLogged }) {
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
   const [transport, setTransport] = useState("");
   const navigate = useNavigate();
+
+  const { t, i18n } = useTranslation();
 
   async function client() {
     try {
@@ -53,7 +57,7 @@ export function Auth({ setIsLogged }) {
 
       {/* Title */}
       <h1 className="text-2xl sm:text-3xl md:text-4xl font-semibold text-center mb-6 sm:mb-8">
-        Software Defined Network
+        {t('title')}
       </h1>
 
       {/* Form Section */}
@@ -67,7 +71,7 @@ export function Auth({ setIsLogged }) {
         <input
           id="server-input"
           onChange={(s) => setServer(s.currentTarget.value)}
-          placeholder="Enter server name..."
+          placeholder={t('server_placeholder')}
           className="
           w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
           bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
@@ -76,13 +80,13 @@ export function Auth({ setIsLogged }) {
         <input
           id="link-input"
           onChange={(a) => setAuth(a.currentTarget.value)}
-          placeholder="Enter auth code..."
+          placeholder={t('link_placeholder')}
           className="
           w-full flex-1 rounded-lg border border-transparent px-4 py-3 text-base font-medium 
           bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-md transition-colors 
           duration-250 outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-white"
         />
-        <span className="text-center">Select transport mode</span>
+        <span className="text-center">{t('transport_menu')}</span>
         <ToggleGroup.Root
           type="single"
           value={transport}
@@ -141,7 +145,7 @@ export function Auth({ setIsLogged }) {
             dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white
             outline-none"
         >
-          Start now
+          {t('start')}
         </button>
       </form>
 

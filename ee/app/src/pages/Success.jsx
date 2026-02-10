@@ -2,8 +2,12 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 
+import { useTranslation } from 'react-i18next';
+
 export function Success( { isLogged, setIsLogged } ) {
     const navigate = useNavigate();
+
+    const {t, i18n} = useTranslation();
     
     async function stop_update() {
         await invoke("stop_update", {});
@@ -32,7 +36,7 @@ export function Success( { isLogged, setIsLogged } ) {
                 outline-none"
             onClick={stop_update}
             >
-            Disconnect
+            {t('disconnect')}
             </button>
         </main>
     )

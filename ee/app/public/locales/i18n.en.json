@@ -1,0 +1,10 @@
+{
+    "start": "Start Now",
+    "starting": "Starting...",
+    "disconnect": "Disconnect",
+    "disconnecting": "Disconnecting...",
+    "server_placeholder": "Enter server name...",
+    "link_placeholder": "Enter auth code...",
+    "transport_menu": "Select transport mode",
+    "title": "Software Defined Network"
+}
