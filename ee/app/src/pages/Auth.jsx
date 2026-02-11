@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 
 import ErrorAlert from "../components/ErrorAlert.jsx";
-import Input from "../components/Input.jsx";
+import LinkInput from "../components/LinkInput.jsx";
 import Logo from "../components/Logo.jsx";
 import Title from "../components/Title.jsx";
 import ToggleTransport from "../components/ToggleTransport.jsx";
@@ -71,19 +71,17 @@ export function Auth({ setIsLogged }) {
           client();
         }}
       >
-        <Input
+        <LinkInput
           id="server-input"
-          value={server}
           onChange={(s) => setServer(s.currentTarget.value)}
           placeholder="Enter server name..."
         />
-        <Input
+        <LinkInput
           id="link-input"
-          value={auth}
           onChange={(a) => setAuth(a.currentTarget.value)}
           placeholder="Enter auth code..."
         />
-        <ToggleTransport value={transport} onValueChange={setTransport} />
+        <ToggleTransport onValueChange={setTransport} />
 
         <button
           type="submit"
@@ -100,9 +98,7 @@ export function Auth({ setIsLogged }) {
         </button>
       </form>
 
-      <ErrorAlert>
-        {errorMsg}
-      </ErrorAlert>
+      {errorMsg && <ErrorAlert>{errorMsg}</ErrorAlert>}
     </main>
   );
 }

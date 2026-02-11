@@ -68,9 +68,7 @@ export function Success( { isLogged, setIsLogged } ) {
             {disconnectMsg}
             </button>
             
-            <ErrorAlert>
-              {errorMsg}
-            </ErrorAlert>
+            {errorMsg && <ErrorAlert>{errorMsg}</ErrorAlert>}
         </main>
     )
 }

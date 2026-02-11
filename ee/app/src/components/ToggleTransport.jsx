@@ -1,4 +1,5 @@
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
+import { Field, FieldLabel } from "@/components/ui/field"
 
 function ToggleTransportItem({ id, children }) {
     return (
@@ -22,17 +23,17 @@ function ToggleTransportItem({ id, children }) {
     );
 }
 
-export default function ToggleTransport({ value, onValueChange }) {
+export default function ToggleTransport({ onValueChange }) {
     return(
-        <>
-            <span className="text-center">Select transport mode</span>
+        <Field>
+            <FieldLabel htmlFor="transport-toggle" className="text-center block mb-2">Select transport mode</FieldLabel>
             <ToggleGroup.Root
+                id="transport-toggle" 
                 type="single"
-                value={value}
                 onValueChange={onValueChange}
                 className="
                 h-9 place-items-center
-                w-2/3 mx-auto flex rounded-full
+                max-w-90 mx-auto flex rounded-full
                 bg-white dark:bg-neutral-800
                 shadow-md p-1
                 focus-within:ring-2 focus-within:ring-blue-500
@@ -42,6 +43,6 @@ export default function ToggleTransport({ value, onValueChange }) {
                 <ToggleTransportItem id="websocket">WebSocket</ToggleTransportItem>
 
             </ToggleGroup.Root>
-        </>
+        </Field>
     );
 }
