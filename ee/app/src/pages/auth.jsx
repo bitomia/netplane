@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import netplaneLogoLight from "../assets/netplane_light.svg";
 import netplaneLogoDark from "../assets/netplane_dark.svg";
 import "@radix-ui/themes/styles.css";
 import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import { useNavigate } from "react-router-dom";
+import { info, error } from "@tauri-apps/plugin-log";
+import { requestVpnPermission } from "tauri-plugin-netplane-vpn-manager";
 
 export function Auth({ setIsLogged }) {
   const [errorMsg, setErrorMsg] = useState(null);
@@ -15,6 +17,7 @@ export function Auth({ setIsLogged }) {
 
   async function client() {
     try {
+      await requestVpnPermission();
       const c = await invoke("client", { server, auth, transport });
 
       setIsLogged(true);
@@ -141,10 +144,9 @@ export function Auth({ setIsLogged }) {
             dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white
             outline-none"
         >
-          Start now
+          Start
         </button>
       </form>
-
       {/* Error Message */}
       {errorMsg && (
         <p className="mt-6 text-base sm:text-lg text-center px-4 max-w-md text-red-600">

@@ -1,0 +1,9 @@
+[default]
+description = "Default permissions for the plugin"
+permissions = [
+  "allow-ping",
+  "allow-request-vpn-permission",
+  "allow-start-vpn",
+  "allow-stop-vpn",
+  "allow-get-tunnel-fd",
+]

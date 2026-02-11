@@ -6,9 +6,12 @@ use netplane_client::client;
 
 #[cfg(target_os = "android")]
 use netplane_client::{client::create_transport, client::StartParams, fd::PlatformFd};
+#[cfg(target_os = "android")]
+use tauri_plugin_netplane_vpn_manager::NetplaneVpnManagerExt;
 
 use std::{path::PathBuf, sync::Mutex};
 use tauri::Manager;
+use tauri_plugin_log::{Target, TargetKind};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(not(target_os = "android"))]
@@ -124,8 +127,11 @@ async fn client(
     }
     #[cfg(target_os = "android")]
     {
-        // TODO placeholders params
-        let fd = PlatformFd::Unix(0);
+        let tunnel_fd = app
+            .netplane_vpn_manager()
+            .get_tunnel_fd()
+            .map_err(|e| anyhow!("Failed to get tunnel fd: {}", e))?;
+        let fd = PlatformFd::Unix(tunnel_fd.fd);
         let start_params = StartParams {
             netmask: "255.255.255.0".to_string(),
             destination: "192.168.1.37".to_string(),
@@ -160,17 +166,22 @@ async fn stop_update(token_state: tauri::State<'_, AppState>) -> tauri::Result<(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    client::init_logger();
-
-    info!("Netplane app starting");
-
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([Target::new(TargetKind::Stdout)])
+                .build(),
+        )
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_netplane_vpn_manager::init())
         .manage(AppState {
             disconnect_token: Mutex::new(CancellationToken::new()),
         })
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            client::init_logger();
+            info!("Netplane app starting");
+
             #[cfg(not(target_os = "android"))]
             {
                 let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;

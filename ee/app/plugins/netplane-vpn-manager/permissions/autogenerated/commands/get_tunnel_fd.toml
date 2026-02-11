@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-get-tunnel-fd"
+description = "Enables the get_tunnel_fd command without any pre-configured scope."
+commands.allow = ["get_tunnel_fd"]
+
+[[permission]]
+identifier = "deny-get-tunnel-fd"
+description = "Denies the get_tunnel_fd command without any pre-configured scope."
+commands.deny = ["get_tunnel_fd"]
