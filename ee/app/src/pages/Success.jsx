@@ -1,18 +1,46 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "react-router-dom";
+import { listen } from "@tauri-apps/api/event";
 
-import { useTranslation } from 'react-i18next';
+import ErrorAlert from "../components/ErrorAlert";
 
 export function Success( { isLogged, setIsLogged } ) {
+    const [errorMsg, setErrorMsg] = useState(null);
+    const [disconnectMsg, setDisconnectMsg] = useState("Disconnect");
+    const [disableButton, setDisableButton] = useState(false);
     const navigate = useNavigate();
 
-    const {t, i18n} = useTranslation();
+    useEffect(() => {
+        const disconnectingUnlistener = listen('disconnecting', () => {
+            setErrorMsg(null);
+            setDisableButton(true);
+            setDisconnectMsg("Disconnecting...");
+            console.log("Disconnecting");
+        });
+
+        const disconnectedUnlistener = listen('disconnected', () => {
+            setIsLogged(false);
+            navigate("/");
+            console.log("Disconnected");
+        });
+
+        const disconnectErrorUnlistener = listen('disconnect_error', (error) => {
+            setErrorMsg(error.payload);
+            console.error("Couldn't disconnect: ", error.payload);
+            setDisconnectMsg("Disconnect");
+            setDisableButton(false);
+        });
+
+        return () => {
+            disconnectingUnlistener.then(cleanup => cleanup());
+            disconnectedUnlistener.then(cleanup => cleanup());
+            disconnectErrorUnlistener.then(cleanup => cleanup());
+        };
+    }, [navigate]);
     
-    async function stop_update() {
+    async function stopUpdate() {
         await invoke("stop_update", {});
-        setIsLogged(false);
-        navigate("/");
     }
     
     if(!isLogged) {
@@ -27,6 +55,7 @@ export function Success( { isLogged, setIsLogged } ) {
         ">
             <button
             type="submit"
+            disabled = {disableButton}
             className="
                 w-1/3 rounded-lg px-4 py-8 text-base font-medium
                 bg-neutral-800 text-white shadow-md
@@ -34,10 +63,12 @@ export function Success( { isLogged, setIsLogged } ) {
                 hover:border-blue-600 active:border-blue-600 active:bg-neutral-200
                 dark:active:bg-neutral-700 dark:hover:border-white dark:active:border-white
                 outline-none"
-            onClick={stop_update}
+            onClick={stopUpdate}
             >
-            {t('disconnect')}
+            {disconnectMsg}
             </button>
+            
+            {errorMsg && <ErrorAlert>{errorMsg}</ErrorAlert>}
         </main>
     )
 }
