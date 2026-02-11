@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use dotenv::dotenv;
 use log::info;
 
@@ -9,16 +8,21 @@ use netplane_client::{client::create_transport, client::StartParams, fd::Platfor
 #[cfg(target_os = "android")]
 use tauri_plugin_netplane_vpn_manager::NetplaneVpnManagerExt;
 
-use std::{path::PathBuf, sync::Mutex};
-use tauri::Manager;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri_plugin_log::{Target, TargetKind};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(not(target_os = "android"))]
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    Emitter, Manager,
 };
+
+#[cfg(target_os = "android")]
+use tauri::Manager;
 
 struct AppState {
     disconnect_token: Mutex<CancellationToken>,
@@ -26,14 +30,14 @@ struct AppState {
 
 #[tauri::command]
 async fn client(
-    app: tauri::AppHandle,
+    app_handle: tauri::AppHandle,
     app_state: tauri::State<'_, AppState>,
     server: &str,
     auth: &str,
     transport: &str,
 ) -> tauri::Result<()> {
     let key_directory = if cfg!(target_os = "android") {
-        app.path().app_data_dir()?
+        app_handle.path().app_data_dir()?
     } else {
         PathBuf::new()
     };
@@ -56,17 +60,29 @@ async fn client(
         .into_string()
         .expect("private.key path should not be empty");
 
+    app_handle
+        .emit("connecting", ())
+        .expect("start connecting emit error");
+
     dotenv().ok();
 
     if server.is_empty() {
-        return Err(anyhow!("ERROR: No hay servidor").into());
+        app_handle
+            .emit("connect_error", "No server".to_string())
+            .expect("no server emit error");
+        log::error!("no server emit error");
+        return Ok(());
     }
 
     if let Err(err) =
         netplane_common::crypto::try_generate_crypto_keys(&public_filepath, &private_filepath)
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
-            return Err(err.into());
+            app_handle
+                .emit("connect_error", err.to_string())
+                .expect("alreadyExists crypto_keys emit error");
+            log::error!("alreadyExists crypto_keys emit error");
+            return Ok(());
         }
     }
 
@@ -85,21 +101,34 @@ async fn client(
     if !auth.is_empty() {
         let link_code = auth;
 
-        client::auth_client(
+        if let Err(err) = client::auth_client(
             &authkey_path,
             &public_filepath,
             &private_filepath,
             &host,
-            link_code,
+            &link_code,
             auth_port,
         )
-        .await?;
+        .await
+        {
+            app_handle
+                .emit("connect_error", err.to_string())
+                .expect("auth emit error");
+            log::error!("auth emit error");
+            return Ok(());
+        }
     }
 
     let cloned_token = {
         let mut token = match app_state.disconnect_token.lock() {
             Ok(t) => t,
-            Err(e) => return Err(anyhow!("{}", e).into()),
+            Err(err) => {
+                app_handle
+                    .emit("connect_error", err.to_string())
+                    .expect("cloned_token emit error");
+                log::error!("cloned_token emit error");
+                return Ok(());
+            }
         };
 
         if (*token).is_cancelled() {
@@ -111,7 +140,7 @@ async fn client(
 
     #[cfg(not(target_os = "android"))]
     {
-        client::run(
+        if let Err(err) = client::run(
             tun_dev,
             host,
             port,
@@ -123,11 +152,18 @@ async fn client(
             &private_filepath,
             Some(cloned_token),
         )
-        .await?;
+            .await
+        {
+            app_handle
+                .emit("connect_error", err.to_string())
+                .expect("run emit error");
+            log::error!("run emit error");
+            return Ok(());
+        }
     }
     #[cfg(target_os = "android")]
     {
-        let tunnel_fd = app
+        let tunnel_fd = app_handle
             .netplane_vpn_manager()
             .get_tunnel_fd()
             .map_err(|e| anyhow!("Failed to get tunnel fd: {}", e))?;
@@ -154,72 +190,245 @@ async fn client(
         .await?;
     }
 
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let connected_icon = match Image::from_path(Path::new("icons/connected/connected.png")) {
+            Ok(image) => image,
+            Err(err) => {
+                app_handle
+                    .emit("connect_error", err.to_string())
+                    .expect("connected_icon emit error");
+                log::error!("connected_icon emit error");
+                return Ok(());
+            }
+        };
+
+        if let Err(err) = tray.set_icon(Some(connected_icon)) {
+            app_handle
+                .emit("connect_error", err.to_string())
+                .expect("set_icon connect emit error");
+            log::error!("set_icon connect emit error");
+            return Ok(());
+        };
+
+        let show_item = match MenuItem::with_id(&app_handle, "show", "Show", true, None::<&str>) {
+            Ok(menu_item) => menu_item,
+            Err(err) => {
+                app_handle
+                    .emit("connect_error", err.to_string())
+                    .expect("show_item connect emit error");
+                log::error!("show_item connect emit error");
+                return Ok(());
+            }
+        };
+
+        let quit_item = match MenuItem::with_id(&app_handle, "quit", "Quit", true, None::<&str>) {
+            Ok(menu_item) => menu_item,
+            Err(err) => {
+                app_handle
+                    .emit("connect_error", err.to_string())
+                    .expect("quit_item connect emit error");
+                log::error!("quit_item connect emit error");
+                return Ok(());
+            }
+        };
+
+        let disconnect_item =
+            match MenuItem::with_id(&app_handle, "disconnect", "Disconnect", true, None::<&str>) {
+                Ok(menu_item) => menu_item,
+                Err(err) => {
+                    app_handle
+                        .emit("connect_error", err.to_string())
+                        .expect("disconnect_item connect emit error");
+                    log::error!("disconnect_item connect emit error");
+                    return Ok(());
+                }
+            };
+
+        let menu = match Menu::with_items(&app_handle, &[&show_item, &quit_item, &disconnect_item])
+        {
+            Ok(menu) => menu,
+            Err(err) => {
+                app_handle
+                    .emit("connect_error", err.to_string())
+                    .expect("menu connect emit error");
+                log::error!("menu connect emit error");
+                return Ok(());
+            }
+        };
+
+        if let Err(err) = tray.set_menu(Some(menu)) {
+            app_handle
+                .emit("disconnect_error", err.to_string())
+                .expect("set_menu connect emit error");
+            log::error!("set_menu connect emit error");
+            return Ok(());
+        }
+    }
+
+    info!("Connecting to dashboard");
+    app_handle
+        .emit("connected", ())
+        .expect("finish connecting emit error");
+
     Ok(())
 }
 
 #[tauri::command]
-async fn stop_update(token_state: tauri::State<'_, AppState>) -> tauri::Result<()> {
-    token_state.disconnect_token.lock().unwrap().cancel();
+async fn stop_update(app_handle: tauri::AppHandle) {
+    app_handle
+        .emit("disconnecting", ())
+        .expect("start disconnecting emit error");
+    disconnect(app_handle).await
+}
 
-    Ok(())
+async fn disconnect(app_handle: tauri::AppHandle) {
+    let app_state = app_handle.state::<AppState>();
+
+    match app_state.disconnect_token.lock() {
+        Ok(lock) => lock.cancel(),
+        Err(err) => {
+            app_handle
+                .emit("disconnect_error", err.to_string())
+                .expect("disconnect_token emit error");
+            log::error!("disconnect_token emit error");
+            return;
+        }
+    };
+
+    if let Some(tray) = app_handle.tray_by_id("main-tray") {
+        let disconnected_icon =
+            match Image::from_path(Path::new("icons/disconnected/disconnected.ico")) {
+                Ok(image) => image,
+                Err(err) => {
+                    app_handle
+                        .emit("disconnect_error", err.to_string())
+                        .expect("disconnected_icon emit error");
+                    log::error!("disconnected_icon emit error");
+                    return;
+                }
+            };
+
+        if let Err(err) = tray.set_icon(Some(disconnected_icon)) {
+            app_handle
+                .emit("disconnect_error", err.to_string())
+                .expect("set_icon disconnect emit error");
+            log::error!("set_icon disconnect emit error");
+            return;
+        }
+
+        let show_item = match MenuItem::with_id(&app_handle, "show", "Show", true, None::<&str>) {
+            Ok(menu_item) => menu_item,
+            Err(err) => {
+                app_handle
+                    .emit("disconnect_error", err.to_string())
+                    .expect("show_item disconnect emit error");
+                log::error!("show_item disconnect emit error");
+                return;
+            }
+        };
+
+        let quit_item = match MenuItem::with_id(&app_handle, "quit", "Quit", true, None::<&str>) {
+            Ok(menu_item) => menu_item,
+            Err(err) => {
+                app_handle
+                    .emit("disconnect_error", err.to_string())
+                    .expect("quit_item disconnect emit error");
+                log::error!("quit_item disconnect emit error");
+                return;
+            }
+        };
+
+        let menu = match Menu::with_items(&app_handle, &[&show_item, &quit_item]) {
+            Ok(menu) => menu,
+            Err(err) => {
+                app_handle
+                    .emit("disconnect_error", err.to_string())
+                    .expect("menu disconnect emit error");
+                log::error!("menu disconnect emit error");
+                return;
+            }
+        };
+
+        if let Err(err) = tray.set_menu(Some(menu)) {
+            app_handle
+                .emit("disconnect_error", err.to_string())
+                .expect("set_menu disconnect emit error");
+            log::error!("set_menu disconnect emit error");
+            return;
+        }
+    }
+
+    info!("Disconnecting from dashboard");
+    app_handle
+        .emit("disconnected", ())
+        .expect("finish disconnecting emit error");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([Target::new(TargetKind::Stdout)])
                 .build(),
         )
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_netplane_vpn_manager::init())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let builder = builder.plugin(tauri_plugin_netplane_vpn_manager::init());
+
+    builder
         .manage(AppState {
             disconnect_token: Mutex::new(CancellationToken::new()),
         })
         .setup(|app| {
-            client::init_logger();
-            info!("Netplane app starting");
 
-            #[cfg(not(target_os = "android"))]
-            {
-                let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-                let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&show, &quit])?;
+            let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-                TrayIconBuilder::with_id("main-tray")
-                    .icon(app.default_window_icon().unwrap().clone())
-                    .menu(&menu)
-                    .show_menu_on_left_click(false)
-                    .on_menu_event(|app, event| match event.id.as_ref() {
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            let disconnected_icon =
+                Image::from_path(Path::new("icons/disconnected/disconnected.ico"))?;
+
+            TrayIconBuilder::with_id("main-tray")
+                .icon(disconnected_icon)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        "quit" => {
-                            app.exit(0);
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    "disconnect" => {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            disconnect(app_handle).await;
+                        });
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        _ => {}
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let tauri::tray::TrayIconEvent::Click {
-                            button: tauri::tray::MouseButton::Left,
-                            button_state: tauri::tray::MouseButtonState::Up,
-                            ..
-                        } = event
-                        {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    })
-                    .build(app)?;
-            }
+                    }
+                })
+                .build(app)?;
 
             Ok(())
         })
