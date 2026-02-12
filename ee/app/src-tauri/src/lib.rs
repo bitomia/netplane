@@ -4,6 +4,8 @@ use log::info;
 use netplane_client::client;
 
 #[cfg(target_os = "android")]
+use anyhow::anyhow;
+#[cfg(target_os = "android")]
 use netplane_client::{client::create_transport, client::StartParams, fd::PlatformFd};
 #[cfg(target_os = "android")]
 use tauri_plugin_netplane_vpn_manager::NetplaneVpnManagerExt;
@@ -22,7 +24,7 @@ use tauri::{
 };
 
 #[cfg(target_os = "android")]
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 struct AppState {
     disconnect_token: Mutex<CancellationToken>,
@@ -190,6 +192,7 @@ async fn client(
         .await?;
     }
 
+    #[cfg(not(target_os = "android"))]
     if let Some(tray) = app_handle.tray_by_id("main-tray") {
         let connected_icon = match Image::from_path(Path::new("icons/connected/connected.png")) {
             Ok(image) => image,
@@ -295,6 +298,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
         }
     };
 
+    #[cfg(not(target_os = "android"))]
     if let Some(tray) = app_handle.tray_by_id("main-tray") {
         let disconnected_icon =
             match Image::from_path(Path::new("icons/disconnected/disconnected.ico")) {
@@ -383,52 +387,54 @@ pub fn run() {
             disconnect_token: Mutex::new(CancellationToken::new()),
         })
         .setup(|app| {
+            #[cfg(not(target_os = "android"))]
+            {
+                let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
-            let show_item = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+                let disconnected_icon =
+                    Image::from_path(Path::new("icons/disconnected/disconnected.ico"))?;
 
-            let disconnected_icon =
-                Image::from_path(Path::new("icons/disconnected/disconnected.ico"))?;
-
-            TrayIconBuilder::with_id("main-tray")
-                .icon(disconnected_icon)
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                TrayIconBuilder::with_id("main-tray")
+                    .icon(disconnected_icon)
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    "disconnect" => {
-                        let app_handle = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            disconnect(app_handle).await;
-                        });
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                        "quit" => {
+                            app.exit(0);
                         }
-                    }
-                })
-                .build(app)?;
+                        "disconnect" => {
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                disconnect(app_handle).await;
+                            });
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    })
+                    .build(app)?;
+            }
 
             Ok(())
         })
