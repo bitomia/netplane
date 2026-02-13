@@ -1,17 +1,19 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import Backend from "i18next-http-backend";
+
 import LanguageDetector from 'i18next-browser-languagedetector';
+import enTranslations from './locales/i18n.en.json';
+import esTranslations from './locales/i18n.es.json';
 
 i18n
-    .use(Backend)
     .use(LanguageDetector)
     .use(initReactI18next)
     .init({
         debug: true,
         fallbackLng: "en",
-        backend: {
-            loadPath: "/locales/i18n.{{lng}}.json"
+        resources: {
+            en: enTranslations,
+            es: esTranslations
         }
     });
 

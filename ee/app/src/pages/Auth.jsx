@@ -10,20 +10,27 @@ import Logo from "../components/Logo.jsx";
 import Title from "../components/Title.jsx";
 import ToggleTransport from "../components/ToggleTransport.jsx";
 
+import { useTranslation } from 'react-i18next';
+
 export function Auth({ setIsLogged }) {
+  const { t } = useTranslation(['linkPage', 'languages']);
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
   const [transport, setTransport] = useState("");
-  const [startMsg, setStartMsg] = useState("Start now");
+  const [startMsg, setStartMsg] = useState(t('linkPage:start'));
   const [disableButton, setDisableButton] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    const start = t('linkPage:start');
+    const starting = t('linkPage:starting');
+    let errorTranslation = "";
+
     const connectingUnlistener = listen('connecting', () => {
       setErrorMsg(null);
       setDisableButton(true);
-      setStartMsg("Starting...");
+      setStartMsg(starting);
       console.log("Starting");
     }); 
 
@@ -34,9 +41,10 @@ export function Auth({ setIsLogged }) {
     });
 
     const connectErrorUnlistener = listen('connect_error', (error) => {
-      setErrorMsg(error.payload);
-      console.error("Couldn't create client: ", error);
-      setStartMsg("Start now");
+      errorTranslation = "native:" + error.payload;
+      setErrorMsg(t(errorTranslation));
+      console.error("Couldn't link client: ", errorTranslation);
+      setStartMsg(start);
       setDisableButton(false);
     });
 
@@ -60,7 +68,7 @@ export function Auth({ setIsLogged }) {
     >
       <Logo />
       <Title>
-        Software Defined Network
+        {t('linkPage:title')}
       </Title>
 
       {/* Form Section */}
@@ -74,14 +82,14 @@ export function Auth({ setIsLogged }) {
         <LinkInput
           id="server-input"
           onChange={(s) => setServer(s.currentTarget.value)}
-          placeholder="Enter server name..."
+          placeholder={t('linkPage:serverPlaceholder')}
         />
         <LinkInput
           id="link-input"
           onChange={(a) => setAuth(a.currentTarget.value)}
-          placeholder="Enter auth code..."
+          placeholder={t('linkPage:linkPlaceholder')}
         />
-        <ToggleTransport onValueChange={setTransport} />
+        <ToggleTransport label={t('linkPage:transportMenu')} onValueChange={setTransport} />
 
         <button
           type="submit"

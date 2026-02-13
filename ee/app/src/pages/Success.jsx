@@ -5,17 +5,23 @@ import { listen } from "@tauri-apps/api/event";
 
 import ErrorAlert from "../components/ErrorAlert";
 
+import { useTranslation } from 'react-i18next';
+
 export function Success( { isLogged, setIsLogged } ) {
+    const { t } = useTranslation();
     const [errorMsg, setErrorMsg] = useState(null);
-    const [disconnectMsg, setDisconnectMsg] = useState("Disconnect");
+    const [disconnectMsg, setDisconnectMsg] = useState(t('successPage:disconnect'));
     const [disableButton, setDisableButton] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
+        const disconnect = t('successPage:disconnect');
+        const disconnecting = t('successPage:disconnecting');
+
         const disconnectingUnlistener = listen('disconnecting', () => {
             setErrorMsg(null);
             setDisableButton(true);
-            setDisconnectMsg("Disconnecting...");
+            setDisconnectMsg(disconnecting);
             console.log("Disconnecting");
         });
 
@@ -28,7 +34,7 @@ export function Success( { isLogged, setIsLogged } ) {
         const disconnectErrorUnlistener = listen('disconnect_error', (error) => {
             setErrorMsg(error.payload);
             console.error("Couldn't disconnect: ", error.payload);
-            setDisconnectMsg("Disconnect");
+            setDisconnectMsg(disconnect);
             setDisableButton(false);
         });
 
