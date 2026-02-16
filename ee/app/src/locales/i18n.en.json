@@ -1,0 +1,27 @@
+{
+    "linkPage": {
+        "start": "Start Now",
+        "starting": "Starting...",
+        "serverPlaceholder": "Enter server name...",
+        "linkPlaceholder": "Enter auth code...",
+        "transportMenu": "Select transport mode",
+        "title": "Software Defined Network"
+    },
+
+    "successPage": {
+        "disconnect": "Disconnect",
+        "disconnecting": "Disconnecting..."
+    },
+
+    "native": {
+        "noServer": "No server",
+        "authKey": "Auth key not accessible",
+        "authCode": "Link code not valid",
+        "genericError": "Something wrong happened. Contact support"
+    },
+    
+    "languages": {
+        "en": "English",
+        "es": "Spanish"
+    }
+}

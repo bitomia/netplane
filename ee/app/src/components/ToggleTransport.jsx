@@ -23,10 +23,10 @@ function ToggleTransportItem({ id, children }) {
     );
 }
 
-export default function ToggleTransport({ onValueChange }) {
+export default function ToggleTransport({ label, onValueChange }) {
     return(
         <Field>
-            <FieldLabel htmlFor="transport-toggle" className="text-center block mb-2">Select transport mode</FieldLabel>
+            <FieldLabel htmlFor="transport-toggle" className="text-center block mb-2">{label}</FieldLabel>
             <ToggleGroup.Root
                 id="transport-toggle" 
                 type="single"
