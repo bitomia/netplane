@@ -6,7 +6,6 @@
         "linkPlaceholder": "Enter auth code...",
         "transportMenu": "Select transport mode",
         "title": "Software Defined Network"
-
     },
 
     "successPage": {
@@ -18,7 +17,7 @@
         "noServer": "No server",
         "authKey": "Auth key not accessible",
         "authCode": "Link code not valid",
-        "genericLinkError": "Something wrong happened. Contact support"
+        "genericError": "Something wrong happened. Contact support"
     },
     
     "languages": {

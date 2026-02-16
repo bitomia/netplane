@@ -1,4 +1,5 @@
 use dotenv::dotenv;
+use error::AppError;
 use log::info;
 use netplane_client::client;
 use std::path::Path;
@@ -10,8 +11,6 @@ use tauri::{
     Emitter, Manager,
 };
 use tokio_util::sync::CancellationToken;
-
-use crate::error::AppErrors;
 
 mod error;
 
@@ -32,7 +31,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
     if server.is_empty() {
         log::error!("No server");
         app_handle
-            .emit("connect_error", AppErrors::NoServer.to_string())
+            .emit("connect_error", AppError::NoServer.to_string())
             .expect("no server emit error");
         return;
     }
@@ -42,7 +41,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
         if err.kind() != std::io::ErrorKind::AlreadyExists {
             log::error!("crypto_keys error: {:?}", err);
             app_handle
-                .emit("connect_error", "genericLinkError".to_string())
+                .emit("connect_error", AppError::GenericError.to_string())
                 .expect("crypto_keys error emit error");
             return;
         }
@@ -78,13 +77,13 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
                 "Auth failed: \"Couldn't open file\"" => {
                     log::error!("Could not open auth.key");
                     app_handle
-                        .emit("connect_error", AppErrors::AuthKey.to_string())
+                        .emit("connect_error", AppError::AuthKey.to_string())
                         .expect("auth emit error");
                 }
                 "Link failed" => {
                     log::error!("Invalid link code");
                     app_handle
-                        .emit("connect_error", AppErrors::AuthCode.to_string())
+                        .emit("connect_error", AppError::AuthCode.to_string())
                         .expect("auth emit error");
                 }
                 _ => {}
@@ -99,7 +98,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
             Err(err) => {
                 log::error!("Token could not be adquired: {:?}", err);
                 app_handle
-                    .emit("connect_error", "genericLinkError".to_string())
+                    .emit("connect_error", AppError::GenericError.to_string())
                     .expect("cloned_token emit error");
                 return;
             }
@@ -125,7 +124,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
     {
         log::error!("Error when executing run: {:?}", err);
         app_handle
-            .emit("connect_error", "genericLinkError".to_string())
+            .emit("connect_error", AppError::GenericError.to_string())
             .expect("run emit error");
         return;
     }
@@ -136,7 +135,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
             Err(err) => {
                 log::error!("connected.png not found: {:?}", err);
                 app_handle
-                    .emit("connect_error", "genericLinkError".to_string())
+                    .emit("connect_error", AppError::GenericError.to_string())
                     .expect("connected_icon emit error");
                 return;
             }
@@ -145,7 +144,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
         if let Err(err) = tray.set_icon(Some(connected_icon)) {
             log::error!("Could not set icon: {:?}", err);
             app_handle
-                .emit("connect_error", "genericLinkError".to_string())
+                .emit("connect_error", AppError::GenericError.to_string())
                 .expect("set_icon connect emit error");
             return;
         };
@@ -155,7 +154,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
             Err(err) => {
                 log::error!("Could not create show item: {:?}", err);
                 app_handle
-                    .emit("connect_error", "genericLinkError".to_string())
+                    .emit("connect_error", AppError::GenericError.to_string())
                     .expect("show_item connect emit error");
                 return;
             }
@@ -166,7 +165,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
             Err(err) => {
                 log::error!("Could not create quit item: {:?}", err);
                 app_handle
-                    .emit("connect_error", "genericLinkError".to_string())
+                    .emit("connect_error", AppError::GenericError.to_string())
                     .expect("quit_item connect emit error");
                 return;
             }
@@ -178,7 +177,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
                 Err(err) => {
                     log::error!("Could not create disconnect item: {:?}", err);
                     app_handle
-                        .emit("connect_error", "genericLinkError".to_string())
+                        .emit("connect_error", AppError::GenericError.to_string())
                         .expect("disconnect_item connect emit error");
                     return;
                 }
@@ -190,7 +189,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
             Err(err) => {
                 log::error!("Could not create connect menu: {:?}", err);
                 app_handle
-                    .emit("connect_error", "genericLinkError".to_string())
+                    .emit("connect_error", AppError::GenericError.to_string())
                     .expect("menu connect emit error");
                 return;
             }
@@ -199,7 +198,7 @@ async fn client(app_handle: tauri::AppHandle, server: String, auth: String, tran
         if let Err(err) = tray.set_menu(Some(menu)) {
             log::error!("Could not set connect menu: {:?}", err);
             app_handle
-                .emit("disconnect_error", "genericLinkError".to_string())
+                .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("set_menu connect emit error");
             return;
         }
@@ -227,7 +226,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
         Err(err) => {
             log::error!("Token could not be adquired: {:?}", err);
             app_handle
-                .emit("disconnect_error", "genericLinkError".to_string())
+                .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("disconnect_token emit error");
             return;
         }
@@ -240,7 +239,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
                 Err(err) => {
                     log::error!("disconnected.png not found: {:?}", err);
                     app_handle
-                        .emit("disconnect_error", "genericLinkError".to_string())
+                        .emit("disconnect_error", AppError::GenericError.to_string())
                         .expect("disconnected_icon emit error");
                     return;
                 }
@@ -249,7 +248,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
         if let Err(err) = tray.set_icon(Some(disconnected_icon)) {
             log::error!("Could not set icon: {:?}", err);
             app_handle
-                .emit("disconnect_error", "genericLinkError".to_string())
+                .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("set_icon disconnect emit error");
             return;
         }
@@ -259,7 +258,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
             Err(err) => {
                 log::error!("Could not create show item: {:?}", err);
                 app_handle
-                    .emit("disconnect_error", "genericLinkError".to_string())
+                    .emit("disconnect_error", AppError::GenericError.to_string())
                     .expect("show_item disconnect emit error");
                 return;
             }
@@ -270,7 +269,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
             Err(err) => {
                 log::error!("Could not create quit item: {:?}", err);
                 app_handle
-                    .emit("disconnect_error", "genericLinkError".to_string())
+                    .emit("disconnect_error", AppError::GenericError.to_string())
                     .expect("quit_item disconnect emit error");
                 return;
             }
@@ -281,7 +280,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
             Err(err) => {
                 log::error!("Could not create disconnect menu: {:?}", err);
                 app_handle
-                    .emit("disconnect_error", "genericLinkError".to_string())
+                    .emit("disconnect_error", AppError::GenericError.to_string())
                     .expect("menu disconnect emit error");
                 return;
             }
@@ -290,7 +289,7 @@ async fn disconnect(app_handle: tauri::AppHandle) {
         if let Err(err) = tray.set_menu(Some(menu)) {
             log::error!("Could not set disconnect menu: {:?}", err);
             app_handle
-                .emit("disconnect_error", "genericLinkError".to_string())
+                .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("set_menu disconnect emit error");
             return;
         }

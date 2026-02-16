@@ -3,14 +3,13 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from 'react-i18next';
 
 import ErrorAlert from "../components/ErrorAlert.jsx";
 import LinkInput from "../components/LinkInput.jsx";
 import Logo from "../components/Logo.jsx";
 import Title from "../components/Title.jsx";
 import ToggleTransport from "../components/ToggleTransport.jsx";
-
-import { useTranslation } from 'react-i18next';
 
 export function Auth({ setIsLogged }) {
   const { t } = useTranslation(['linkPage', 'languages']);
