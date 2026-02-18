@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "app",
+  "productName": "Netplane",
   "version": "0.1.0",
-  "identifier": "com.bitomia.netplane-app",
+  "identifier": "com.bitomia.netplane",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
