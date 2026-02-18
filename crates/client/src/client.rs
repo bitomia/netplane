@@ -542,7 +542,7 @@ pub async fn auth_client(
             if let Some(io_err) = err.downcast_ref::<io::Error>() {
                 match io_err.kind() {
                     io::ErrorKind::NotFound => (),
-                    _ => return Err(anyhow!(format!("Auth failed: \"Couldn't open file\""))),
+                    _ => return Err(anyhow!("Auth failed: \"Couldn't open file\"")),
                 }
             }
         }
@@ -560,7 +560,7 @@ pub async fn auth_client(
             std::fs::write(authkey_filepath, auth_key)?;
             Ok(())
         }
-        _ => Err(anyhow!(format!("Link failed"))),
+        _ => Err(anyhow!("Link failed")),
     }
 }
 
