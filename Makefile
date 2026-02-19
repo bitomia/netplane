@@ -11,7 +11,7 @@ client:
 	cargo build -p netplane_client
 
 .PHONY: server
-server: db-check
+server: db-prepare
 	cargo build -p netplane_server
 
 .PHONY: android-debug
@@ -38,10 +38,6 @@ db-prepare:
 	sqlx database create -D $(DEFAULT_NETPLANE_DB)
 	sqlx migrate run --source ./crates/server/src/migrations -D $(DEFAULT_NETPLANE_DB)
 	cargo sqlx prepare --workspace -D $(DEFAULT_NETPLANE_DB) -- -p netplane_server
-
-.PHONY: db-check
-db-check:
-	cargo sqlx prepare --check --workspace -D $(DEFAULT_NETPLANE_DB) -- -p netplane_server
 
 .PHONY: webapp
 webapp:

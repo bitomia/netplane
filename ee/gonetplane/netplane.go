@@ -112,7 +112,7 @@ type HandshakeResult struct {
 }
 
 // ClientHandshake performs a handshake with the server
-func ClientHandshake(authKeyPath string, transport *Transport) (*HandshakeResult, error) {
+func ClientHandshake(authKeyPath, publicKeyPath, privateKeyPath string, transport *Transport) (*HandshakeResult, error) {
 	if transport == nil || transport.ptr == nil {
 		return nil, errors.New("transport is nil")
 	}
@@ -120,8 +120,14 @@ func ClientHandshake(authKeyPath string, transport *Transport) (*HandshakeResult
 	cAuthKeyPath := C.CString(authKeyPath)
 	defer C.free(unsafe.Pointer(cAuthKeyPath))
 
+	cPublicKeyPath := C.CString(publicKeyPath)
+	defer C.free(unsafe.Pointer(cPublicKeyPath))
+
+	cPrivateKeyPath := C.CString(privateKeyPath)
+	defer C.free(unsafe.Pointer(cPrivateKeyPath))
+
 	var cResult C.struct_NetplaneHandshakeResult
-	result := C.netplane_client_handshake(cAuthKeyPath, transport.ptr, &cResult)
+	result := C.netplane_client_handshake(cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, transport.ptr, &cResult)
 
 	if result != 0 {
 		return nil, fmt.Errorf("handshake failed with code: %d", result)
@@ -146,7 +152,7 @@ func (h *HandshakeResult) Free() {
 }
 
 // ClientRun runs the client with the given TUN file descriptor
-func ClientRun(tunFd int, transport *Transport, handshake *HandshakeResult) error {
+func ClientRun(tunFd int, transport *Transport, handshake *HandshakeResult, publicKeyPath, privateKeyPath string) error {
 	if transport == nil || transport.ptr == nil {
 		return errors.New("transport is nil")
 	}
@@ -155,7 +161,13 @@ func ClientRun(tunFd int, transport *Transport, handshake *HandshakeResult) erro
 		return errors.New("handshake is nil")
 	}
 
-	result := C.netplane_client_run(C.int(tunFd), transport.ptr, handshake.cResult, false, false)
+	cPublicKeyPath := C.CString(publicKeyPath)
+	defer C.free(unsafe.Pointer(cPublicKeyPath))
+
+	cPrivateKeyPath := C.CString(privateKeyPath)
+	defer C.free(unsafe.Pointer(cPrivateKeyPath))
+
+	result := C.netplane_client_run(C.int(tunFd), transport.ptr, handshake.cResult, false, false, cPublicKeyPath, cPrivateKeyPath)
 
 	if result != 0 {
 		return fmt.Errorf("client run failed with code: %d", result)
@@ -175,7 +187,7 @@ type CancelToken struct {
 }
 
 // Run runs the netplane client with the given parameters and returns a CancelToken
-func Run(tunDev, host string, port uint16, transportType string) (*CancelToken, error) {
+func Run(tunDev, host string, port uint16, transportType, authKeyPath, publicKeyPath, privateKeyPath string) (*CancelToken, error) {
 	cTunDev := C.CString(tunDev)
 	defer C.free(unsafe.Pointer(cTunDev))
 
@@ -188,8 +200,17 @@ func Run(tunDev, host string, port uint16, transportType string) (*CancelToken, 
 		defer C.free(unsafe.Pointer(cTransportType))
 	}
 
+	cAuthKeyPath := C.CString(authKeyPath)
+	defer C.free(unsafe.Pointer(cAuthKeyPath))
+
+	cPublicKeyPath := C.CString(publicKeyPath)
+	defer C.free(unsafe.Pointer(cPublicKeyPath))
+
+	cPrivateKeyPath := C.CString(privateKeyPath)
+	defer C.free(unsafe.Pointer(cPrivateKeyPath))
+
 	var tokenPtr unsafe.Pointer
-	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false, &tokenPtr)
+	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false, cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
 
 	if result != 0 {
 		return nil, fmt.Errorf("run failed with code: %d", result)
