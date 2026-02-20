@@ -61,6 +61,7 @@ pub struct ServerStatsResponse {
     pub transport_mode: String,
     pub in_bytes: usize,
     pub out_bytes: usize,
+    pub version: String,
 }
 
 type WebResult<T> = (StatusCode, Result<Json<T>, Json<ServerError>>);
@@ -333,5 +334,6 @@ pub async fn get_server_stats(
             .server_stats
             .out_bytes
             .load(std::sync::atomic::Ordering::Relaxed),
+        version: netplane_common::git_rev_main!(),
     })
 }

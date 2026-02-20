@@ -4,8 +4,10 @@ import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
@@ -87,11 +89,11 @@ export function UpdateClientDialog({ open, setOpen }) {
             authLink={open?.auth_link_id}
             closeForm={closeDialog}
           />
-          <DrawerFooter className="px-0">
-            <DrawerClose asChild>
+          <DialogFooter className="px-0">
+            <DialogClose asChild>
               <Button onClick={closeDialog}>Close</Button>
-            </DrawerClose>
-          </DrawerFooter>
+            </DialogClose>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     );

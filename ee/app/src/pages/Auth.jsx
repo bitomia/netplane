@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
-import { useTranslation } from 'react-i18next';
+import { useTranslation } from "react-i18next";
 
 import ErrorAlert from "../components/ErrorAlert.jsx";
 import LinkInput from "../components/LinkInput.jsx";
@@ -12,34 +12,34 @@ import Title from "../components/Title.jsx";
 import ToggleTransport from "../components/ToggleTransport.jsx";
 
 export function Auth({ setIsLogged }) {
-  const { t } = useTranslation(['linkPage', 'languages']);
+  const { t } = useTranslation(["linkPage", "languages"]);
   const [errorMsg, setErrorMsg] = useState(null);
   const [server, setServer] = useState("");
   const [auth, setAuth] = useState("");
   const [transport, setTransport] = useState("");
-  const [startMsg, setStartMsg] = useState(t('linkPage:start'));
+  const [startMsg, setStartMsg] = useState(t("linkPage:start"));
   const [disableButton, setDisableButton] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const start = t('linkPage:start');
-    const starting = t('linkPage:starting');
+    const start = t("linkPage:start");
+    const starting = t("linkPage:starting");
     let errorTranslation = "";
 
-    const connectingUnlistener = listen('connecting', () => {
+    const connectingUnlistener = listen("connecting", () => {
       setErrorMsg(null);
       setDisableButton(true);
       setStartMsg(starting);
       console.log("Starting");
-    }); 
-
-    const connectedUnlistener = listen('connected', () => {
-      setIsLogged(true);
-      navigate("/success");
-      console.log("Authed")
     });
 
-    const connectErrorUnlistener = listen('connect_error', (error) => {
+    const connectedUnlistener = listen("connected", () => {
+      setIsLogged(true);
+      navigate("/success");
+      console.log("Authed");
+    });
+
+    const connectErrorUnlistener = listen("connect_error", (error) => {
       errorTranslation = "native:" + error.payload;
       setErrorMsg(t(errorTranslation));
       console.error("Couldn't link client: ", errorTranslation);
@@ -48,9 +48,9 @@ export function Auth({ setIsLogged }) {
     });
 
     return () => {
-      connectingUnlistener.then(cleanup => cleanup());
-      connectedUnlistener.then(cleanup => cleanup());
-      connectErrorUnlistener.then(cleanup => cleanup());
+      connectingUnlistener.then((cleanup) => cleanup());
+      connectedUnlistener.then((cleanup) => cleanup());
+      connectErrorUnlistener.then((cleanup) => cleanup());
     };
   }, [navigate]);
 
@@ -66,9 +66,7 @@ export function Auth({ setIsLogged }) {
       text-neutral-900 dark:text-neutral-100"
     >
       <Logo />
-      <Title>
-        {t('linkPage:title')}
-      </Title>
+      <Title>{t("linkPage:title")}</Title>
 
       {/* Form Section */}
       <form
@@ -81,18 +79,21 @@ export function Auth({ setIsLogged }) {
         <LinkInput
           id="server-input"
           onChange={(s) => setServer(s.currentTarget.value)}
-          placeholder={t('linkPage:serverPlaceholder')}
+          placeholder={t("linkPage:serverPlaceholder")}
         />
         <LinkInput
           id="link-input"
           onChange={(a) => setAuth(a.currentTarget.value)}
-          placeholder={t('linkPage:linkPlaceholder')}
+          placeholder={t("linkPage:linkPlaceholder")}
         />
-        <ToggleTransport label={t('linkPage:transportMenu')} onValueChange={setTransport} />
+        <ToggleTransport
+          label={t("linkPage:transportMenu")}
+          onValueChange={setTransport}
+        />
 
         <button
           type="submit"
-          disabled = {disableButton}
+          disabled={disableButton}
           className="
             w-1/3 mx-auto rounded-lg px-4 py-3 text-base font-medium
             bg-neutral-800 text-white shadow-md

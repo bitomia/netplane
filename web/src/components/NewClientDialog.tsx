@@ -29,11 +29,13 @@ function NewClientForm({
   className,
   closeForm,
 }: React.ComponentProps<"form"> & { closeForm: () => void }) {
-  const [createClient, { status, isLoading }] = useCreateClientMutation();
+  const [createClient, { isLoading }] = useCreateClientMutation();
+  const [error, setError] = useState<string | null>(null);
 
   const onCreateClient = useCallback(
-    (e: FormEvent<HTMLFormElement>) => {
+    async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
+      setError(null);
       const formData = new FormData(e.currentTarget);
       const { sdn_client_ip, netmask } = Object.fromEntries(
         formData.entries(),
@@ -41,10 +43,14 @@ function NewClientForm({
         sdn_client_ip: string;
         netmask: string;
       };
-      createClient({ sdn_client_ip, netmask: "255.255.255.0" });
-      closeForm();
+      try {
+        await createClient({ sdn_client_ip, netmask: "255.255.255.0" }).unwrap();
+        closeForm();
+      } catch {
+        setError("A client with this IP address already exists.");
+      }
     },
-    [createClient],
+    [createClient, closeForm],
   );
 
   return (
@@ -62,7 +68,10 @@ function NewClientForm({
           required
         />
       </div>
-      <Button type="submit">Create client</Button>
+      {error && (
+        <p className="text-sm text-destructive">{error}</p>
+      )}
+      <Button type="submit" disabled={isLoading}>Create client</Button>
     </form>
   );
 }

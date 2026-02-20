@@ -13,6 +13,7 @@ export interface ServerStats {
   transport_mode: string;
   in_bytes: number;
   out_bytes: number;
+  version: string;
 }
 
 export interface Client {

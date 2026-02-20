@@ -34,6 +34,12 @@ struct AppState {
 }
 
 #[tauri::command]
+fn get_version() -> String {
+    let rev = include_str!("../../../../.git/refs/heads/main");
+    rev.chars().take(8).collect()
+}
+
+#[tauri::command]
 async fn client(
     app_handle: tauri::AppHandle,
     app_state: tauri::State<'_, AppState>,
@@ -503,7 +509,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![client, stop_update])
+        .invoke_handler(tauri::generate_handler![client, stop_update, get_version])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
