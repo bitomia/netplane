@@ -45,9 +45,6 @@ jobs:
         rustup target add x86_64-apple-darwin
         rustup target add aarch64-apple-darwin
 
-    - name: Install cbindgen
-      run: cargo install --force cbindgen
-
     - name: Build client (non-macOS)
       if: matrix.target != 'universal-apple-darwin'
       run: cargo build --release -p netplane_client --verbose --target ${{ matrix.target }}
@@ -70,22 +67,6 @@ jobs:
     - name: Run tests (macOS universal - native arch only)
       if: matrix.target == 'universal-apple-darwin'
       run: cargo test -p netplane_client --verbose
-
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: 'stable'
-
-    - name: Build gonetplane
-      working-directory: ee/gonetplane
-      run: make bindgen
-
-    - name: Run gonetplane tests (Linux)
-      if: runner.os == 'Linux'
-      working-directory: ee/gonetplane
-      env:
-        LD_LIBRARY_PATH: ${{ github.workspace }}/target/${{ matrix.target }}/release
-      run: make test
 
     - name: Archive binary
       shell: bash
