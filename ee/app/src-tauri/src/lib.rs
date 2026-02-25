@@ -1,7 +1,6 @@
 use dotenv::dotenv;
 use error::AppError;
 use log::info;
-
 use netplane_client::client;
 
 #[cfg(target_os = "android")]
@@ -20,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
+    path::BaseDirectory,
     tray::TrayIconBuilder,
     Emitter, Manager,
 };
@@ -217,8 +217,7 @@ async fn client(
         } else {
             !0u32 << (32 - prefix_length)
         };
-        let network_ip =
-            std::net::Ipv4Addr::from(u32::from(vpn_ip) & mask);
+        let network_ip = std::net::Ipv4Addr::from(u32::from(vpn_ip) & mask);
 
         let vpn_response = app_handle
             .netplane_vpn_manager()
@@ -464,9 +463,11 @@ pub fn run() {
                 let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
 
                 let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
-
-                let disconnected_icon =
-                    Image::from_path(Path::new("icons/disconnected/disconnected.ico"))?;
+                let disconnected_icon_path = app.path().resolve(
+                    "icons/disconnected/disconnected.ico",
+                    BaseDirectory::Resource,
+                )?;
+                let disconnected_icon = Image::from_path(disconnected_icon_path)?;
 
                 TrayIconBuilder::with_id("main-tray")
                     .icon(disconnected_icon)
@@ -508,6 +509,13 @@ pub fn run() {
             }
 
             Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                window.hide().unwrap();
+                api.prevent_close();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![client, stop_update, get_version])
         .run(tauri::generate_context!())
