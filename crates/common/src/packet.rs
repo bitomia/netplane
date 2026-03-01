@@ -48,3 +48,15 @@ pub fn parse_ipv4_header(packet: &[u8]) -> Option<IpHeader> {
 pub fn validate_packet(buf: &[u8]) -> bool {
     parse_ipv4_header(buf).is_some()
 }
+
+pub fn is_multicast(ip: &std::net::Ipv4Addr) -> bool {
+    ip.octets()[0] >= 224 && ip.octets()[0] <= 239
+}
+
+pub fn is_broadcast(ip: &std::net::Ipv4Addr) -> bool {
+    *ip == std::net::Ipv4Addr::BROADCAST
+}
+
+pub fn is_multicast_or_broadcast(ip: &std::net::Ipv4Addr) -> bool {
+    is_multicast(ip) || is_broadcast(ip)
+}

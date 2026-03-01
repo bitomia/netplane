@@ -163,6 +163,8 @@ pub trait PeersRouting {
     async fn find_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<SocketAddr>;
     /// Get list of all connected peers as PeerInfo for broadcasting
     async fn get_peer_list(&self) -> Vec<PeerInfo>;
+    /// Find all HandshakeDone peer addresses except the sender
+    async fn find_all_addrs_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<SocketAddr>;
 }
 
 impl PeersRouting for Peers<SocketAddr> {
@@ -189,6 +191,17 @@ impl PeersRouting for Peers<SocketAddr> {
             })
             .collect()
     }
+
+    async fn find_all_addrs_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<SocketAddr> {
+        let peers = self.lock().await;
+        peers
+            .iter()
+            .filter(|(_, peer)| {
+                peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() != *src_sdn_ip
+            })
+            .map(|(addr, _)| *addr)
+            .collect()
+    }
 }
 
 /// Trait for WebSocket peer routing operations
@@ -199,6 +212,8 @@ pub trait TcpPeersRouting {
     async fn get_peer_list(&self) -> Vec<PeerInfo>;
     /// Get all TX channels for connected peers (for broadcasting)
     async fn get_all_tx(&self) -> Vec<Tx>;
+    /// Get all TX channels except the sender (for multicast/broadcast fan-out)
+    async fn get_all_tx_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<Tx>;
 }
 
 impl TcpPeersRouting for Peers<i32> {
@@ -233,6 +248,21 @@ impl TcpPeersRouting for Peers<i32> {
         peers
             .values()
             .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
+            .filter_map(|peer| {
+                peer.as_any()
+                    .downcast_ref::<TcpPeer>()
+                    .map(|tcp_peer| tcp_peer.tx.clone())
+            })
+            .collect()
+    }
+
+    async fn get_all_tx_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<Tx> {
+        let peers = self.lock().await;
+        peers
+            .values()
+            .filter(|peer| {
+                peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() != *src_sdn_ip
+            })
             .filter_map(|peer| {
                 peer.as_any()
                     .downcast_ref::<TcpPeer>()

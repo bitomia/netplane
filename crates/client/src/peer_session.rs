@@ -237,6 +237,15 @@ impl PeerSessionManager {
         session.decrypt(data).await
     }
 
+    /// Returns IPs of all peers with established Noise sessions (excluding self)
+    pub fn get_all_session_peers(&self) -> Vec<Ipv4Addr> {
+        self.sessions
+            .keys()
+            .filter(|ip| **ip != self.own_sdn_ip)
+            .copied()
+            .collect()
+    }
+
     /// Queue a packet for later sending (while waiting for handshake)
     pub fn queue_packet(&mut self, dst: &Ipv4Addr, packet: Vec<u8>) {
         self.pending_packets

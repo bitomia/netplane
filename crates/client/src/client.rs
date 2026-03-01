@@ -10,7 +10,7 @@ use tokio::time::{Duration, interval};
 use tokio_util::sync::CancellationToken;
 
 use netplane_common::crypto::{load_auth_key, try_load_crypto_keys};
-use netplane_common::packet::{parse_ipv4_header, validate_packet};
+use netplane_common::packet::{is_multicast_or_broadcast, parse_ipv4_header, validate_packet};
 use netplane_common::transport::{AnyTransport, Transport, UdpTransport, WebSocketTransport};
 use netplane_common::{
     HandshakeError, HandshakeRep, HandshakeReq, MessageType, PeerEventType, RelayPacket,
@@ -459,6 +459,47 @@ async fn handle_outgoing_packet(
     // Handle loopback - direct path unless --loopback-relay is enabled
     if dst_ip == *own_sdn_ip && !loopback_relay {
         send_tun(dev, packet, packet.len()).await;
+        return;
+    }
+
+    // Handle multicast/broadcast
+    if is_multicast_or_broadcast(&dst_ip) {
+        if no_encryption {
+            // No-encryption mode: send single RelayPacket with multicast dst,
+            // server will fan out to all peers
+            let relay = RelayPacket::new(
+                &own_sdn_ip.to_string(),
+                &dst_ip.to_string(),
+                packet.to_vec(),
+            );
+            if let Ok(data) = relay.serialize() {
+                if let Err(e) = transport.send(&data, None).await {
+                    error!("Failed to send multicast relay packet: {}", e);
+                }
+            }
+        } else {
+            // Encryption mode: encrypt separately for each peer with an established session
+            let peers = peer_manager.get_all_session_peers();
+            for peer_ip in peers {
+                match peer_manager.encrypt_for(&peer_ip, packet).await {
+                    Ok(encrypted) => {
+                        let relay = RelayPacket::new(
+                            &own_sdn_ip.to_string(),
+                            &peer_ip.to_string(),
+                            encrypted,
+                        );
+                        if let Ok(data) = relay.serialize() {
+                            if let Err(e) = transport.send(&data, None).await {
+                                error!("Failed to send multicast relay to {}: {}", peer_ip, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to encrypt multicast for {}: {}", peer_ip, e);
+                    }
+                }
+            }
+        }
         return;
     }
 
