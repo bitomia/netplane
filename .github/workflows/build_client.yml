@@ -79,19 +79,9 @@ jobs:
           tar -czvf dist/${{ matrix.archive }} -C $(dirname $BIN_PATH) $(basename $BIN_PATH)
         fi
 
-    - name: Upload netplane client artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: netplane-${{ matrix.suffix }}
-        path: dist/${{ matrix.archive }}
-
-    - name: Upload artifact to GitHub Release
+    - name: Upload GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: latest
-        name: Latest Release
-        draft: true
-        overwrite: true
         files: dist/${{ matrix.archive }}
       env:
         GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}
