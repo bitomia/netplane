@@ -2,9 +2,9 @@ use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use log::{debug, info};
 use std::collections::HashMap;
-
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use std::time::Instant;
 
 use netplane_common::PeerInfo;
 use netplane_common::noise_session::{
@@ -13,7 +13,8 @@ use netplane_common::noise_session::{
 use netplane_common::{P2PHandshakeInit, P2PHandshakeResp};
 
 /// Manages P2P noise sessions with other peers
-pub struct PeerSessionManager {
+/// and client state
+pub struct ClientManager {
     /// Our own SDN IP
     own_sdn_ip: Ipv4Addr,
     /// Our private key bytes
@@ -31,9 +32,11 @@ pub struct PeerSessionManager {
     pending_initiator: HashMap<Ipv4Addr, snow::HandshakeState>,
     /// Queued packets waiting for handshake completion (SDN IP -> packets)
     pending_packets: HashMap<Ipv4Addr, Vec<Vec<u8>>>,
+
+    heartbeat_time: Option<Instant>,
 }
 
-impl PeerSessionManager {
+impl ClientManager {
     pub fn new(own_sdn_ip: Ipv4Addr, private_key: Vec<u8>, public_key: String) -> Self {
         // Add ourselves to known_peers for loopback support
         let mut known_peers = HashMap::new();
@@ -51,6 +54,7 @@ impl PeerSessionManager {
             loopback_session: None,
             pending_initiator: HashMap::new(),
             pending_packets: HashMap::new(),
+            heartbeat_time: None,
         }
     }
 
@@ -258,5 +262,13 @@ impl PeerSessionManager {
     /// Get and clear pending packets for a peer
     pub fn take_pending_packets(&mut self, dst: &Ipv4Addr) -> Vec<Vec<u8>> {
         self.pending_packets.remove(dst).unwrap_or_default()
+    }
+
+    pub fn record_heartbeat(&mut self) {
+        self.heartbeat_time = Some(Instant::now());
+    }
+
+    pub fn get_last_heartbeat(&self) -> Option<Instant> {
+        self.heartbeat_time
     }
 }
