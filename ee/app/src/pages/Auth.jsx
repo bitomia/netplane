@@ -1,9 +1,9 @@
 import "@radix-ui/themes/styles.css";
-import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import ErrorAlert from "../components/ErrorAlert.jsx";
 import LinkInput from "../components/LinkInput.jsx";
@@ -40,7 +40,7 @@ export function Auth({ setIsLogged }) {
     });
 
     const connectErrorUnlistener = listen("connect_error", (error) => {
-      errorTranslation = "native:" + error.payload;
+      errorTranslation = `native:${error.payload}`;
       setErrorMsg(t(errorTranslation));
       console.error("Couldn't link client: ", errorTranslation);
       setStartMsg(start);
@@ -52,7 +52,7 @@ export function Auth({ setIsLogged }) {
       connectedUnlistener.then((cleanup) => cleanup());
       connectErrorUnlistener.then((cleanup) => cleanup());
     };
-  }, [navigate]);
+  }, [navigate, setIsLogged, t]);
 
   async function client() {
     await invoke("client", { server, auth, transport });

@@ -1,9 +1,9 @@
 import "./App.css";
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Auth } from './pages/Auth';
-import { Success } from './pages/Success';
+import { useEffect, useState } from "react";
+import { Route, HashRouter as Router, Routes } from "react-router-dom";
+import { Auth } from "./pages/Auth";
+import { Success } from "./pages/Success";
 
 function App() {
   const [isLogged, setIsLogged] = useState(false);
@@ -16,8 +16,11 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Auth setIsLogged={setIsLogged}/>}/>
-        <Route path="/success" element={<Success isLogged={isLogged} setIsLogged={setIsLogged}/>}/>
+        <Route path="/" element={<Auth setIsLogged={setIsLogged} />} />
+        <Route
+          path="/success"
+          element={<Success isLogged={isLogged} setIsLogged={setIsLogged} />}
+        />
       </Routes>
       {version && (
         <span className="fixed bottom-2 right-3 text-xs text-neutral-400 dark:text-neutral-600">
@@ -25,7 +28,7 @@ function App() {
         </span>
       )}
     </Router>
-  )
+  );
 }
 
 export default App;

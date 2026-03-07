@@ -1,5 +1,5 @@
-import netplaneLogoLight from "../assets/netplane_light.svg";
 import netplaneLogoDark from "../assets/netplane_dark.svg";
+import netplaneLogoLight from "../assets/netplane_light.svg";
 
 export default function Logo() {
   return (
