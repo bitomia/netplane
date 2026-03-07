@@ -5,3 +5,4 @@ netplane.db
 *.key
 web/.env*
 .env*
+**/\#*#

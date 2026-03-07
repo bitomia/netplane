@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
   },
   "dependencies": {
     "@radix-ui/themes": "^3.2.1",
@@ -30,6 +33,7 @@
     "tauri-plugin-netplane-vpn-manager": "file:./plugins/netplane-vpn-manager"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.6",
     "@tailwindcss/postcss": "^4.1.17",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.2.2",
