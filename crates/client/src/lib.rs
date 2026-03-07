@@ -11,9 +11,9 @@ use netplane_common::crypto::load_auth_key;
 use netplane_common::transport::AnyTransport;
 
 pub mod client;
+pub mod client_manager;
 pub mod fd;
 mod http_client;
-mod peer_session;
 mod tundev;
 
 use crate::fd::PlatformFd;

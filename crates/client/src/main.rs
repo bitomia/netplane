@@ -5,9 +5,9 @@ use log::info;
 use std::env;
 
 pub mod client;
+pub mod client_manager;
 mod fd;
 mod http_client;
-mod peer_session;
 mod tundev;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

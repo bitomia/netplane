@@ -17,9 +17,9 @@ use netplane_common::{
     UDPHeartbeat, get_message_type,
 };
 
+use crate::client_manager::ClientManager;
 use crate::fd::PlatformFd;
 use crate::http_client;
-use crate::peer_session::PeerSessionManager;
 use crate::tundev;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,7 +159,7 @@ pub async fn run(
             std::process::exit(1)
         }
     };
-    let (own_sdn_ip, peer_manager) =
+    let (own_sdn_ip, client_manager) =
         create_p2p_session(&start_params, public_filepath, private_filepath)?;
 
     let dev = tundev::TunDev::new(
@@ -172,7 +172,7 @@ pub async fn run(
     Ok(update_loop(
         dev,
         transport,
-        peer_manager,
+        client_manager,
         own_sdn_ip,
         loopback_relay,
         no_encryption,
@@ -191,7 +191,7 @@ pub async fn run_from_fd(
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client with fd");
 
-    let (own_sdn_ip, peer_manager) =
+    let (own_sdn_ip, client_manager) =
         create_p2p_session(start_params, public_filepath, private_filepath)?;
 
     let dev = tundev::TunDev::new_from_fd(
@@ -204,7 +204,7 @@ pub async fn run_from_fd(
     Ok(update_loop(
         dev,
         transport,
-        peer_manager,
+        client_manager,
         own_sdn_ip,
         loopback_relay,
         no_encryption,
@@ -216,19 +216,19 @@ fn create_p2p_session(
     start_params: &StartParams,
     public_filepath: &str,
     private_filepath: &str,
-) -> Result<(Ipv4Addr, PeerSessionManager), anyhow::Error> {
+) -> Result<(Ipv4Addr, ClientManager), anyhow::Error> {
     let (client_pub, client_priv) = try_load_crypto_keys(public_filepath, private_filepath)?;
     let client_priv_bytes = general_purpose::URL_SAFE_NO_PAD.decode(&client_priv)?;
     let own_sdn_ip = Ipv4Addr::from_str(&start_params.ip_addr)?;
-    let peer_manager = PeerSessionManager::new(own_sdn_ip, client_priv_bytes, client_pub);
+    let client_manager = ClientManager::new(own_sdn_ip, client_priv_bytes, client_pub);
 
-    Ok((own_sdn_ip, peer_manager))
+    Ok((own_sdn_ip, client_manager))
 }
 
 fn update_loop(
     mut dev: tundev::TunDev,
     mut transport: Box<AnyTransport>,
-    mut peer_manager: PeerSessionManager,
+    mut client_manager: ClientManager,
     own_sdn_ip: Ipv4Addr,
     loopback_relay: bool,
     no_encryption: bool,
@@ -248,7 +248,7 @@ fn update_loop(
                                 &socket_buf[..amt],
                                 &mut transport,
                                 &mut dev,
-                                &mut peer_manager,
+                                &mut client_manager,
                                 &own_sdn_ip,
                                 no_encryption,
                             ).await;
@@ -265,7 +265,7 @@ fn update_loop(
                                 &tun_buf[..amt],
                                 &mut transport,
                                 &mut dev,
-                                &mut peer_manager,
+                                &mut client_manager,
                                 &own_sdn_ip,
                                 loopback_relay,
                                 no_encryption,
@@ -305,7 +305,7 @@ async fn handle_relay_server_message(
     data: &[u8],
     transport: &mut AnyTransport,
     dev: &mut tundev::TunDev,
-    peer_manager: &mut PeerSessionManager,
+    client_manager: &mut ClientManager,
     own_sdn_ip: &Ipv4Addr,
     no_encryption: bool,
 ) {
@@ -313,26 +313,26 @@ async fn handle_relay_server_message(
         MessageType::PeerList(list) => {
             info!("Received peer list with {} peers", list.peers.len());
             for peer in list.peers {
-                peer_manager.add_peer(peer);
+                client_manager.add_peer(peer);
             }
         }
 
         MessageType::PeerAnnounce(announce) => match announce.event_type {
             PeerEventType::Connected => {
                 info!("Peer connected: {}", announce.peer.sdn_ip);
-                peer_manager.add_peer(announce.peer);
+                client_manager.add_peer(announce.peer);
             }
             PeerEventType::Disconnected => {
                 info!("Peer disconnected: {}", announce.peer.sdn_ip);
                 if let Ok(ip) = Ipv4Addr::from_str(&announce.peer.sdn_ip) {
-                    peer_manager.remove_peer(&ip);
+                    client_manager.remove_peer(&ip);
                 }
             }
         },
 
         MessageType::P2PHandshakeInit(init) => {
             debug!("Received P2P handshake init from {}", init.initiator_sdn_ip);
-            match peer_manager.handle_handshake_init(&init) {
+            match client_manager.handle_handshake_init(&init) {
                 Ok(resp) => {
                     if let Ok(data) = resp.serialize() {
                         if let Err(e) = transport.send(&data, None).await {
@@ -351,16 +351,16 @@ async fn handle_relay_server_message(
                 "Received P2P handshake response from {}",
                 resp.responder_sdn_ip
             );
-            match peer_manager.handle_handshake_resp(&resp) {
+            match client_manager.handle_handshake_resp(&resp) {
                 Ok(()) => {
                     // Flush any queued packets
                     if let Ok(responder_ip) = Ipv4Addr::from_str(&resp.responder_sdn_ip) {
-                        let pending = peer_manager.take_pending_packets(&responder_ip);
+                        let pending = client_manager.take_pending_packets(&responder_ip);
                         for packet in pending {
                             if let Some(header) = parse_ipv4_header(&packet) {
                                 if let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip) {
                                     if let Ok(encrypted) =
-                                        peer_manager.encrypt_for(&dst_ip, &packet).await
+                                        client_manager.encrypt_for(&dst_ip, &packet).await
                                     {
                                         let relay = RelayPacket::new(
                                             &own_sdn_ip.to_string(),
@@ -397,7 +397,7 @@ async fn handle_relay_server_message(
             } else {
                 // E2E encrypted packet from another peer
                 if let Ok(src_ip) = Ipv4Addr::from_str(&relay.src_sdn_ip) {
-                    match peer_manager
+                    match client_manager
                         .decrypt_from(&src_ip, &relay.encrypted_payload)
                         .await
                     {
@@ -435,7 +435,7 @@ async fn handle_outgoing_packet(
     packet: &[u8],
     transport: &mut AnyTransport,
     dev: &mut tundev::TunDev,
-    peer_manager: &mut PeerSessionManager,
+    client_manager: &mut ClientManager,
     own_sdn_ip: &Ipv4Addr,
     loopback_relay: bool,
     no_encryption: bool,
@@ -479,9 +479,9 @@ async fn handle_outgoing_packet(
             }
         } else {
             // Encryption mode: encrypt separately for each peer with an established session
-            let peers = peer_manager.get_all_session_peers();
+            let peers = client_manager.get_all_session_peers();
             for peer_ip in peers {
-                match peer_manager.encrypt_for(&peer_ip, packet).await {
+                match client_manager.encrypt_for(&peer_ip, packet).await {
                     Ok(encrypted) => {
                         let relay = RelayPacket::new(
                             &own_sdn_ip.to_string(),
@@ -519,9 +519,9 @@ async fn handle_outgoing_packet(
     }
 
     // Check if we have a session with this peer
-    if peer_manager.has_session(&dst_ip) {
+    if client_manager.has_session(&dst_ip) {
         // Encrypt and send
-        match peer_manager.encrypt_for(&dst_ip, packet).await {
+        match client_manager.encrypt_for(&dst_ip, packet).await {
             Ok(encrypted) => {
                 let relay =
                     RelayPacket::new(&own_sdn_ip.to_string(), &dst_ip.to_string(), encrypted);
@@ -535,12 +535,12 @@ async fn handle_outgoing_packet(
                 error!("Failed to encrypt packet for {}: {}", dst_ip, e);
             }
         }
-    } else if peer_manager.knows_peer(&dst_ip) {
+    } else if client_manager.knows_peer(&dst_ip) {
         // Queue packet and initiate handshake if not already in progress
-        peer_manager.queue_packet(&dst_ip, packet.to_vec());
+        client_manager.queue_packet(&dst_ip, packet.to_vec());
 
-        if !peer_manager.handshake_in_progress(&dst_ip) {
-            match peer_manager.initiate_handshake(&dst_ip) {
+        if !client_manager.handshake_in_progress(&dst_ip) {
+            match client_manager.initiate_handshake(&dst_ip) {
                 Ok(init) => {
                     if let Ok(data) = init.serialize() {
                         if let Err(e) = transport.send(&data, None).await {
