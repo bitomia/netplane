@@ -55,7 +55,7 @@ export function Auth({ setIsLogged }) {
   }, [navigate, setIsLogged, t]);
 
   async function client() {
-    await invoke("client", { server, auth, transport });
+    await invoke("start_client", { server, auth, transport });
   }
 
   return (

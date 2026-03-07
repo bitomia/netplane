@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
 use env_logger::Env;
 use log::{debug, error, info, warn};
+use serde::Serialize;
 use std::env;
 use std::io;
 use std::net::Ipv4Addr;
@@ -38,6 +39,9 @@ pub struct StartParams {
     pub destination: String,
     pub ip_addr: String,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ClientState {}
 
 /// Handshake with the relay server
 pub async fn handshake(
@@ -132,6 +136,7 @@ pub async fn run(
     public_filepath: &str,
     private_filepath: &str,
     option_token: Option<CancellationToken>,
+    state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client");
 
@@ -177,6 +182,7 @@ pub async fn run(
         loopback_relay,
         no_encryption,
         option_token,
+        state_tx,
     ))
 }
 
@@ -188,6 +194,7 @@ pub async fn run_from_fd(
     no_encryption: bool,
     public_filepath: &str,
     private_filepath: &str,
+    state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client with fd");
 
@@ -209,6 +216,7 @@ pub async fn run_from_fd(
         loopback_relay,
         no_encryption,
         None,
+        state_tx,
     ))
 }
 
@@ -233,6 +241,7 @@ fn update_loop(
     loopback_relay: bool,
     no_encryption: bool,
     option_token: Option<CancellationToken>,
+    state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut heartbeat_interval = interval(Duration::from_secs(5));
@@ -251,6 +260,7 @@ fn update_loop(
                                 &mut client_manager,
                                 &own_sdn_ip,
                                 no_encryption,
+                                &state_tx,
                             ).await;
                         },
                         Err(err) => error!("Receive error: {}", err)
@@ -308,6 +318,7 @@ async fn handle_relay_server_message(
     client_manager: &mut ClientManager,
     own_sdn_ip: &Ipv4Addr,
     no_encryption: bool,
+    state_tx: &Option<tokio::sync::watch::Sender<ClientState>>,
 ) {
     match get_message_type(data) {
         MessageType::PeerList(list) => {
@@ -418,6 +429,9 @@ async fn handle_relay_server_message(
 
         MessageType::Heartbeat(_) => {
             debug!("Heartbeat acknowledgment received");
+            if let Some(tx) = state_tx {
+                let _ = tx.send(ClientState {});
+            }
         }
 
         _ => {

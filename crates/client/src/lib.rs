@@ -450,7 +450,7 @@ pub extern "C" fn netplane_client_run(
         let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
 
         tokio::select! {
-            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, public_filepath, private_filepath) => {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, public_filepath, private_filepath, None) => {
                     reset_cancel_token();
                 match retval {
                     Ok(_) => 0,
@@ -580,6 +580,7 @@ pub extern "C" fn netplane_run(
             public_filepath,
             private_filepath,
             Some(cancel_token),
+            None,
         )
         .await
         {

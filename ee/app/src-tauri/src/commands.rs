@@ -10,7 +10,6 @@ use netplane_client::{client::create_transport, client::StartParams, fd::Platfor
 use tauri_plugin_netplane_vpn_manager::NetplaneVpnManagerExt;
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use tauri_plugin_log::{Target, TargetKind};
 use tokio_util::sync::CancellationToken;
 
@@ -18,8 +17,6 @@ use tokio_util::sync::CancellationToken;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
-    path::BaseDirectory,
-    tray::TrayIconBuilder,
     Emitter, Manager,
 };
 
@@ -156,6 +153,12 @@ pub async fn start_client(
         (*token).clone()
     };
 
+    let state_tx = app_state
+        .state_tx
+        .lock()
+        .expect("state_tx lock poisoned")
+        .clone();
+
     #[cfg(not(target_os = "android"))]
     {
         if let Err(err) = client::run(
@@ -169,6 +172,7 @@ pub async fn start_client(
             &public_filepath,
             &private_filepath,
             Some(cloned_token),
+            state_tx,
         )
         .await
         {
@@ -245,6 +249,7 @@ pub async fn start_client(
             no_encryption,
             &public_filepath,
             &private_filepath,
+            state_tx,
         )
         .await?;
     }

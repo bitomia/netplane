@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate } from "react-router-dom";
 
@@ -13,6 +13,8 @@ export function Success({ isLogged, setIsLogged }) {
     t("successPage:disconnect"),
   );
   const [disableButton, setDisableButton] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState("offline");
+  const timeoutRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -33,6 +35,14 @@ export function Success({ isLogged, setIsLogged }) {
       console.log("Disconnected");
     });
 
+    const stateUpdatedUnlistener = listen("state-updated", () => {
+      setConnectionStatus("online");
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        setConnectionStatus("offline");
+      }, 5000);
+    });
+
     const disconnectErrorUnlistener = listen("disconnect_error", (error) => {
       errorTranslation = `native:${error.payload}`;
       setErrorMsg(t(errorTranslation));
@@ -44,7 +54,9 @@ export function Success({ isLogged, setIsLogged }) {
     return () => {
       disconnectingUnlistener.then((cleanup) => cleanup());
       disconnectedUnlistener.then((cleanup) => cleanup());
+      stateUpdatedUnlistener.then((cleanup) => cleanup());
       disconnectErrorUnlistener.then((cleanup) => cleanup());
+      clearTimeout(timeoutRef.current);
     };
   }, [navigate, setIsLogged, t]);
 
@@ -78,6 +90,18 @@ export function Success({ isLogged, setIsLogged }) {
       >
         {disconnectMsg}
       </button>
+
+      <p
+        className={`mt-6 text-sm font-medium ${
+          connectionStatus === "online"
+            ? "text-green-600 dark:text-green-400"
+            : "text-red-600 dark:text-red-400"
+        }`}
+      >
+        {connectionStatus === "online"
+          ? t("successPage:online")
+          : t("successPage:offline")}
+      </p>
 
       {errorMsg && <ErrorAlert>{errorMsg}</ErrorAlert>}
     </main>

@@ -4,7 +4,7 @@ use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::{
     get_message_type, MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType,
-    PeerInfo, PeerList, PeerState, RelayPacket,
+    PeerInfo, PeerList, PeerState, RelayPacket, UDPHeartbeat,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -274,6 +274,12 @@ impl UdpServer {
                         if let Some(peer) = peers.get_mut(src) {
                             let udp_peer = peer.as_any_mut().downcast_mut::<UdpPeer>().unwrap();
                             udp_peer.update_last_heartbeat();
+                        }
+                        let reply = UDPHeartbeat::new();
+                        if let Ok(data) = reply.serialize() {
+                            if let Err(e) = transport.send(&data, Some(src)).await {
+                                error!("Failed to send heartbeat reply to {:?}: {}", src, e);
+                            }
                         }
                     }
                     _ => {
