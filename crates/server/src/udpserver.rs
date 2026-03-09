@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::{error, info, trace, warn};
-use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::packet::is_multicast_or_broadcast;
+use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::{
     get_message_type, MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType,
     PeerInfo, PeerList, PeerState, RelayPacket, UDPHeartbeat,
@@ -381,12 +381,10 @@ impl UdpServer {
 
         // Find destination peer and forward
         if let Some(dst_addr) = self.server.peers.find_by_sdn_ip(&dst_sdn_ip).await {
-            if dst_addr != *src {
-                if let Err(e) = transport.send(raw_data, Some(&dst_addr)).await {
-                    error!("Failed to relay packet to {:?}: {}", dst_addr, e);
-                } else {
-                    self.server.stats.add_out_bytes(raw_data.len());
-                }
+            if let Err(e) = transport.send(raw_data, Some(&dst_addr)).await {
+                error!("Failed to relay packet to {:?}: {}", dst_addr, e);
+            } else {
+                self.server.stats.add_out_bytes(raw_data.len());
             }
         } else {
             trace!("Destination {} not found for relay", relay.dst_sdn_ip);
