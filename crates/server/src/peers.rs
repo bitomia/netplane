@@ -2,7 +2,9 @@ use bytes::Bytes;
 use netplane_common::{PeerInfo, PeerState};
 use std::any::Any;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -127,15 +129,23 @@ impl Peer for TcpPeer {
 
 pub type Peers<Key> = Arc<Mutex<HashMap<Key, Box<dyn Peer>>>>;
 
-pub trait PeersRouting {
+pub trait PeersRouting<T> {
     /// Get list of all connected peers as PeerInfo for broadcasting
     async fn get_peer_list(&self) -> Vec<PeerInfo>;
+
+    async fn update(
+        &self,
+        peer_id: T,
+        sdn_client_ip: String,
+        client_pub_key: String,
+        state: PeerState,
+    );
 }
 
-impl<T> PeersRouting for Peers<T> {
+impl<T: Eq + Hash> PeersRouting<T> for Peers<T> {
     async fn get_peer_list(&self) -> Vec<PeerInfo> {
-        let peers = self.lock().await;
-        peers
+        self.lock()
+            .await
             .values()
             .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
             .map(|peer| {
@@ -145,6 +155,23 @@ impl<T> PeersRouting for Peers<T> {
                 )
             })
             .collect()
+    }
+
+    async fn update(
+        &self,
+        peer_id: T,
+        sdn_client_ip: String,
+        client_pub_key: String,
+        state: PeerState,
+    ) {
+        let mut peers = self.lock().await;
+        peers.retain(|_, v| v.get_sdn_addr().to_string() != sdn_client_ip);
+
+        if let Some(peer) = peers.get_mut(&peer_id) {
+            peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip).expect("Invalid SDN client IP"));
+            peer.set_client_public_key(Some(client_pub_key));
+            peer.set_state(state);
+        }
     }
 }
 
@@ -179,7 +206,7 @@ impl PeersVec<Tx, Ipv4Addr> for Peers<i32> {
 }
 
 /// Trait for peer routing operations
-pub trait UdpPeersRouting: PeersRouting {
+pub trait UdpPeersRouting: PeersRouting<SocketAddr> {
     /// Find peer address by SDN IP
     async fn find_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<SocketAddr>;
     /// Find all HandshakeDone peer addresses except the sender

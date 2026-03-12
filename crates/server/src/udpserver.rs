@@ -308,14 +308,15 @@ impl UdpServer {
                                     let peer_info = PeerInfo::new(&sdn_client_ip, &client_pub_key);
 
                                     // Update peer state
-                                    {
-                                        let mut peers = self.server.peers.lock().await;
-                                        if let Some(peer) = peers.get_mut(src) {
-                                            peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip)?);
-                                            peer.set_client_public_key(Some(client_pub_key));
-                                            peer.set_state(PeerState::HandshakeDone);
-                                        }
-                                    }
+                                    self.server
+                                        .peers
+                                        .update(
+                                            src.clone(),
+                                            sdn_client_ip.clone(),
+                                            client_pub_key.clone(),
+                                            PeerState::HandshakeDone,
+                                        )
+                                        .await;
 
                                     // Send current peer list to new peer
                                     self.send_peer_list(transport, src).await;

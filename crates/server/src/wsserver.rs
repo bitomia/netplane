@@ -197,19 +197,14 @@ impl WebSocketServer {
                                                 PeerInfo::new(&sdn_client_ip, &client_pub_key);
 
                                             // Update peer state
-                                            {
-                                                let mut peers_guard = peers.lock().await;
-                                                if let Some(peer) = peers_guard.get_mut(&peer_id) {
-                                                    peer.set_sdn_addr(
-                                                        &Ipv4Addr::from_str(&sdn_client_ip)
-                                                            .expect("Invalid SDN client IP"),
-                                                    );
-                                                    peer.set_client_public_key(Some(
-                                                        client_pub_key,
-                                                    ));
-                                                    peer.set_state(PeerState::HandshakeDone);
-                                                }
-                                            }
+                                            peers
+                                                .update(
+                                                    peer_id,
+                                                    sdn_client_ip.clone(),
+                                                    client_pub_key.clone(),
+                                                    PeerState::HandshakeDone,
+                                                )
+                                                .await;
 
                                             // Send current peer list to new peer (excluding self)
                                             let peer_list: Vec<PeerInfo> = peers
