@@ -61,6 +61,7 @@ impl ClientManager {
     /// Add or update a known peer
     pub fn add_peer(&mut self, peer: PeerInfo) {
         if let Ok(ip) = Ipv4Addr::from_str(&peer.sdn_ip) {
+            self.remove_peer(&ip); // Invalidate previous peer data (e.g. in case of a reconnect)
             info!(
                 "Added peer: {} (key: {}...)",
                 peer.sdn_ip,
