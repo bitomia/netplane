@@ -127,6 +127,27 @@ impl Peer for TcpPeer {
 
 pub type Peers<Key> = Arc<Mutex<HashMap<Key, Box<dyn Peer>>>>;
 
+pub trait PeersRouting {
+    /// Get list of all connected peers as PeerInfo for broadcasting
+    async fn get_peer_list(&self) -> Vec<PeerInfo>;
+}
+
+impl<T> PeersRouting for Peers<T> {
+    async fn get_peer_list(&self) -> Vec<PeerInfo> {
+        let peers = self.lock().await;
+        peers
+            .values()
+            .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
+            .map(|peer| {
+                PeerInfo::new(
+                    &peer.get_sdn_addr().to_string(),
+                    &peer.get_client_public_key().unwrap_or_default(),
+                )
+            })
+            .collect()
+    }
+}
+
 pub trait PeersVec<Key, Value> {
     async fn to_vec(&self) -> Vec<(Key, Value)>;
 }
@@ -158,16 +179,14 @@ impl PeersVec<Tx, Ipv4Addr> for Peers<i32> {
 }
 
 /// Trait for peer routing operations
-pub trait PeersRouting {
+pub trait UdpPeersRouting: PeersRouting {
     /// Find peer address by SDN IP
     async fn find_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<SocketAddr>;
-    /// Get list of all connected peers as PeerInfo for broadcasting
-    async fn get_peer_list(&self) -> Vec<PeerInfo>;
     /// Find all HandshakeDone peer addresses except the sender
     async fn find_all_addrs_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<SocketAddr>;
 }
 
-impl PeersRouting for Peers<SocketAddr> {
+impl UdpPeersRouting for Peers<SocketAddr> {
     async fn find_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<SocketAddr> {
         let peers = self.lock().await;
         for (addr, peer) in peers.iter() {
@@ -176,20 +195,6 @@ impl PeersRouting for Peers<SocketAddr> {
             }
         }
         None
-    }
-
-    async fn get_peer_list(&self) -> Vec<PeerInfo> {
-        let peers = self.lock().await;
-        peers
-            .values()
-            .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
-            .map(|peer| {
-                PeerInfo::new(
-                    &peer.get_sdn_addr().to_string(),
-                    &peer.get_client_public_key().unwrap_or_default(),
-                )
-            })
-            .collect()
     }
 
     async fn find_all_addrs_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<SocketAddr> {
@@ -208,8 +213,7 @@ impl PeersRouting for Peers<SocketAddr> {
 pub trait TcpPeersRouting {
     /// Find peer TX channel by SDN IP
     async fn find_tx_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<Tx>;
-    /// Get list of all connected peers as PeerInfo for broadcasting
-    async fn get_peer_list(&self) -> Vec<PeerInfo>;
+
     /// Get all TX channels for connected peers (for broadcasting)
     async fn get_all_tx(&self) -> Vec<Tx>;
     /// Get all TX channels except the sender (for multicast/broadcast fan-out)
@@ -227,20 +231,6 @@ impl TcpPeersRouting for Peers<i32> {
             }
         }
         None
-    }
-
-    async fn get_peer_list(&self) -> Vec<PeerInfo> {
-        let peers = self.lock().await;
-        peers
-            .values()
-            .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
-            .map(|peer| {
-                PeerInfo::new(
-                    &peer.get_sdn_addr().to_string(),
-                    &peer.get_client_public_key().unwrap_or_default(),
-                )
-            })
-            .collect()
     }
 
     async fn get_all_tx(&self) -> Vec<Tx> {

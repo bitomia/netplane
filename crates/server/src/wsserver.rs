@@ -1,7 +1,7 @@
 use anyhow::Result;
 use log::{debug, error, info, trace, warn};
-use netplane_common::transport::{Transport, WebSocketTransport};
 use netplane_common::packet::is_multicast_or_broadcast;
+use netplane_common::transport::{Transport, WebSocketTransport};
 use netplane_common::{
     get_message_type, MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType,
     PeerInfo, PeerList, PeerState, RelayPacket,
@@ -161,7 +161,7 @@ impl WebSocketServer {
                                 }
                             }
                             MessageType::P2PHandshakeResp(resp) => {
-                                debug!("P2pHandshakeResp");
+                                debug!("P2PHandshakeResp");
                                 if let Err(e) =
                                     handle_ws_p2p_handshake_resp(&peers, &resp, &buf[..amt]).await
                                 {

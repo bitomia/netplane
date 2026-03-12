@@ -18,8 +18,8 @@ use tokio::sync::Mutex;
 use tokio::time;
 
 use crate::db;
-use crate::peers::PeersRouting;
 use crate::peers::PeersVec;
+use crate::peers::UdpPeersRouting;
 use crate::peers::*;
 use crate::server::*;
 use crate::source::*;
@@ -218,14 +218,16 @@ impl UdpServer {
 
     /// Send peer list to a specific peer
     async fn send_peer_list(&self, transport: &mut UdpTransport, to: &SocketAddr) {
-        let peer_list = self.server.peers.get_peer_list().await;
-        // Filter out the peer we're sending to
-        let filtered: Vec<PeerInfo> = peer_list
+        let peer_list = self
+            .server
+            .peers
+            .get_peer_list()
+            .await
             .into_iter()
             .filter(|p| Ipv4Addr::from_str(&p.sdn_ip).ok() != Some(Ipv4Addr::UNSPECIFIED))
             .collect();
 
-        let msg = PeerList::new(filtered);
+        let msg = PeerList::new(peer_list);
         if let Ok(serialized) = msg.serialize() {
             if let Err(e) = transport.send(&serialized, Some(to)).await {
                 error!("Failed to send peer list to {:?}: {}", to, e);

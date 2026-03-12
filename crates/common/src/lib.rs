@@ -448,8 +448,6 @@ pub enum MessageType {
     HandshakeRep(HandshakeRep),
     HandshakeError(HandshakeError),
     Heartbeat(UDPHeartbeat),
-    NoiseHandshakeInit(NoiseHandshakeInit),
-    NoiseHandshakeResp(NoiseHandshakeResp),
     PeerList(PeerList),
     PeerAnnounce(PeerAnnounce),
     P2PHandshakeInit(P2PHandshakeInit),
@@ -477,10 +475,6 @@ pub fn get_message_type(buf: &[u8]) -> MessageType {
         HEARTBEAT_HEADER => {
             UDPHeartbeat::deserialize(buf).map_or(MessageType::Unknown, MessageType::Heartbeat)
         }
-        NOISE_HANDSHAKE_INIT_HEADER => NoiseHandshakeInit::deserialize(buf)
-            .map_or(MessageType::Unknown, MessageType::NoiseHandshakeInit),
-        NOISE_HANDSHAKE_RESP_HEADER => NoiseHandshakeResp::deserialize(buf)
-            .map_or(MessageType::Unknown, MessageType::NoiseHandshakeResp),
         PEER_LIST_HEADER => {
             PeerList::deserialize(buf).map_or(MessageType::Unknown, MessageType::PeerList)
         }

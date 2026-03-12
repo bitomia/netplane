@@ -1,5 +1,8 @@
 use log::{error, info};
-use netplane_common::{transport::TransportMode, HandshakeError, HandshakeRep, HandshakeReq};
+use netplane_common::{
+    transport::TransportMode, HandshakeError, HandshakeRep, HandshakeReq, PeerList,
+};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
