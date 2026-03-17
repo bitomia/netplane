@@ -343,7 +343,7 @@ pub extern "C" fn netplane_create_transport(
         };
 
         match client::create_transport(&control_addr, transport_type_opt).await {
-            Ok(transport) => Box::into_raw(Box::new(transport)) as *mut std::ffi::c_void,
+            Ok(transport) => Box::into_raw(transport) as *mut std::ffi::c_void,
             Err(err) => {
                 error!("Error creating transport: {:?}", err);
                 std::ptr::null_mut()

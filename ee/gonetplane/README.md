@@ -10,7 +10,7 @@ Go bindings for the Netplane client library using CGO.
    cargo build --release
    ```
 
-2. Ensure Go 1.21+ is installed
+2. Ensure Go 1.26+ is installed
 
 ## Installation
 
@@ -89,37 +89,6 @@ func main() {
     defer netplane.ClientStop()
 }
 ```
-
-## API Reference
-
-### Functions
-
-- `InitLogger()` - Initialize the netplane logger
-- `ClientAuth(authKeyPath, publicKeyPath, privateKeyPath, host, linkCode string, authPort uint16) error` - Authenticate with the server
-- `TryGenerateCryptoKeys(publicFilepath, privateFilepath string) error` - Generate crypto keys if they don't exist
-- `CreateTransport(serverAddr string, serverPort uint16, transportType string) (*Transport, error)` - Create a new transport
-- `ClientHandshake(authKeyPath string, transport *Transport) (*HandshakeResult, error)` - Perform handshake with server
-- `ClientRun(tunFd int, transport *Transport, handshake *HandshakeResult) error` - Run the client
-- `ClientStop()` - Stop the running client
-
-### Types
-
-#### Transport
-Represents a netplane transport connection.
-
-Methods:
-- `Free()` - Free the transport resources
-
-#### HandshakeResult
-Contains the network configuration from the handshake.
-
-Fields:
-- `Netmask string` - Network mask
-- `Destination string` - Destination address
-- `IPAddr string` - Assigned IP address
-
-Methods:
-- `Free()` - Free the handshake result resources
 
 ## Notes
 

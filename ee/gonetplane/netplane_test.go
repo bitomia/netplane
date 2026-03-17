@@ -20,5 +20,6 @@ func TestNetplane(t *testing.T) {
 
 	transport, err := netplane.CreateTransport("example.com", 5000, "udp")
 	assert.NoError(t, err)
+	assert.NotNil(t, transport)
 	defer transport.Free()
 }
