@@ -16,5 +16,3 @@ vendor/
 
 # Go workspace file
 go.work
-
-netplane.h
