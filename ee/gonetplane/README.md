@@ -10,7 +10,7 @@ Go bindings for the Netplane client library using CGO.
    cargo build --release
    ```
 
-2. Ensure Go 1.26+ is installed
+2. Ensure Go 1.26+ and cbindgen are installed
 
 ## Installation
 

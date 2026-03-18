@@ -8,8 +8,9 @@ else
 endif
 
 .PHONY: all
-all: bindgen
+all:
 	$(GO) mod tidy
+	$(GO) generate .
 	$(GO) build .
 
 .PHONY: bindgen
@@ -19,7 +20,8 @@ bindgen:
 
 .PHONY: test
 test:
-	$(GO) test -v .
+	cargo build -r -p netplane_client
+	$(GO) test -ldflags="-extldflags '-L../../target/release'" -v .
 
 clean:
 	-$(RM) -f netplane.h

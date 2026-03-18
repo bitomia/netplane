@@ -1,11 +1,11 @@
+//go:generate make -C . bindgen
+
 package gonetplane
 
 /*
 #cgo CFLAGS: -I.
-#cgo linux,arm64   LDFLAGS: -L../../target/aarch64-unknown-linux-gnu/release -lnetplane_client
-#cgo linux,amd64   LDFLAGS: -L../../target/x86_64-unknown-linux-gnu/release -lnetplane_client
-#cgo windows,amd64 LDFLAGS: -L../../target/x86_64-pc-windows-msvc/release -lnetplane_client
-#cgo darwin LDFLAGS: -L../../target/universal-apple-darwin/release -lnetplane_client -framework Security -framework SystemConfiguration
+#cgo LDFLAGS: -lnetplane_client
+#cgo darwin LDFLAGS: -framework Security -framework SystemConfiguration
 #include "netplane.h"
 #include <stdlib.h>
 */
