@@ -18,7 +18,7 @@ import {
 import { useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { NavLink } from "react-router";
-import logo from "~/assets/small_icon.svg";
+import { SmallIcon } from "~/assets/SmallIcon";
 import { useGetUserDataQuery } from "~/services/api";
 import { ThemeToggle } from "~/components/ThemeToggle";
 
@@ -44,7 +44,7 @@ function PageBreadcrumb() {
       <BreadcrumbList>
         <BreadcrumbItem>
           <BreadcrumbLink href="/">
-            <img src={logo} alt="logo" className="max-w-5" />
+            <SmallIcon aria-label="logo" className="w-5 h-5 text-foreground" />
           </BreadcrumbLink>
         </BreadcrumbItem>
         <BreadcrumbSeparator />

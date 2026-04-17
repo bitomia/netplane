@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import logo from "~/assets/logo.svg";
+import { Logo } from "~/assets/Logo";
 import { useLoginMutation } from "~/services/api";
 
 export function LoginForm({
@@ -40,7 +40,10 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader className="text-center">
-          <img src={logo} alt="logo" className="max-w-24 pb-2 mx-auto" />
+          <Logo
+            aria-label="logo"
+            className="max-w-24 pb-2 mx-auto text-foreground h-auto w-auto"
+          />
           <CardTitle className="text-xl">Welcome back</CardTitle>
           <CardDescription>Login with your credentials</CardDescription>
         </CardHeader>

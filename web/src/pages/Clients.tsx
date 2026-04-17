@@ -37,28 +37,36 @@ function ClientsPage() {
           ) : (
             clients?.map((c) => (
               <div
-                className="flex flex-row w-full mb-5 bg-white hover:bg-slate-200 hover:cursor-pointer px-4 py-3 rounded-md"
+                className="flex flex-row w-full mb-5 bg-card text-card-foreground hover:bg-accent hover:cursor-pointer px-4 py-3 rounded-md"
                 key={c.id}
                 onClick={() => setOpenUpdate(c)}
               >
-                <div className="w-full text-slate-700">
+                <div className="w-full">
                   <div className="flex flex-row">
                     <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs">SDN IP</span>
+                      <span className="font-bold text-xs text-muted-foreground">
+                        SDN IP
+                      </span>
                       {c.sdn_client_ip}
                     </div>
                     <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs">NETMASK</span>
+                      <span className="font-bold text-xs text-muted-foreground">
+                        NETMASK
+                      </span>
                       {c.netmask}
                     </div>
                     <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs">Authed</span>
+                      <span className="font-bold text-xs text-muted-foreground">
+                        Authed
+                      </span>
                       {c.used ? "✅" : "⚠️"}
                     </div>
                   </div>
-                  <div className="text-[10px] pb-1">{c.id}</div>
+                  <div className="text-[10px] pb-1 text-muted-foreground">
+                    {c.id}
+                  </div>
                 </div>
-                <div className="flex items-center text-slate-900">...</div>
+                <div className="flex items-center">...</div>
               </div>
             ))
           )}

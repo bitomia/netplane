@@ -100,18 +100,8 @@ fn start_netplane_server(
     netplane_server
 }
 
-pub fn evaluation_banner() {
-    println!("{}", "*".repeat(62));
-    println!("EVALUATION BUILD {}", netplane_common::git_rev_main!());
-    println!("This build is licensed only for evaluation.");
-    println!("To obtain a full license, please contact: support@bitomia.com");
-    println!("{}", "*".repeat(62));
-}
-
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
-    evaluation_banner();
-
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Netplane server rev {}", netplane_common::git_rev_main!());
 

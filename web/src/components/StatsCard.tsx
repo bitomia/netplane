@@ -10,8 +10,8 @@ export function SkeletonStatsCard() {
 
 export function StatsCard({ name, value }: { name: string; value: string }) {
   return (
-    <div className="flex flex-col bg-white px-7 py-5 rounded-md mr-5">
-      <span className="text-sm text-slate-400">{name}</span>
+    <div className="flex flex-col bg-card text-card-foreground px-7 py-5 rounded-md mr-5">
+      <span className="text-sm text-muted-foreground">{name}</span>
       <span className="font-bold text-lg">{value}</span>
     </div>
   );
