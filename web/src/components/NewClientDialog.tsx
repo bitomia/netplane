@@ -37,14 +37,14 @@ function NewClientForm({
       e.preventDefault();
       setError(null);
       const formData = new FormData(e.currentTarget);
-      const { sdn_client_ip, netmask } = Object.fromEntries(
-        formData.entries(),
-      ) as {
+      const { sdn_client_ip } = Object.fromEntries(formData.entries()) as {
         sdn_client_ip: string;
-        netmask: string;
       };
       try {
-        await createClient({ sdn_client_ip, netmask: "255.255.255.0" }).unwrap();
+        await createClient({
+          sdn_client_ip,
+          netmask: "255.255.255.0",
+        }).unwrap();
         closeForm();
       } catch {
         setError("A client with this IP address already exists.");
@@ -68,10 +68,10 @@ function NewClientForm({
           required
         />
       </div>
-      {error && (
-        <p className="text-sm text-destructive">{error}</p>
-      )}
-      <Button type="submit" disabled={isLoading}>Create client</Button>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button type="submit" disabled={isLoading}>
+        Create client
+      </Button>
     </form>
   );
 }

@@ -35,7 +35,7 @@ function UpdateClient({
   closeForm: () => void;
   className?: string;
 }) {
-  const [deleteClient, { status, isLoading }] = useDeleteClientMutation();
+  const [deleteClient] = useDeleteClientMutation();
   const onDeleteClient = useCallback(() => {
     deleteClient({ id });
     closeForm();
