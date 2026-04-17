@@ -33,16 +33,40 @@ pub struct ClientManager {
     /// Queued packets waiting for handshake completion (SDN IP -> packets)
     pending_packets: HashMap<Ipv4Addr, Vec<Vec<u8>>>,
 
+    /// SDN network address + dotted-quad netmask for in-subnet checks
+    sdn_network: Ipv4Addr,
+    sdn_netmask: Ipv4Addr,
+
+    /// Whether this client is configured as an exit node (serves internet traffic)
+    is_exit_node: bool,
+    /// SDN IP of the exit node this client routes non-SDN traffic through, if any.
+    exit_node_ip: Option<Ipv4Addr>,
+
     heartbeat_time: Option<Instant>,
 }
 
 impl ClientManager {
     pub fn new(own_sdn_ip: Ipv4Addr, private_key: Vec<u8>, public_key: String) -> Self {
-        // Add ourselves to known_peers for loopback support
+        Self::new_with_network(
+            own_sdn_ip,
+            private_key,
+            public_key,
+            Ipv4Addr::UNSPECIFIED,
+            Ipv4Addr::UNSPECIFIED,
+        )
+    }
+
+    pub fn new_with_network(
+        own_sdn_ip: Ipv4Addr,
+        private_key: Vec<u8>,
+        public_key: String,
+        sdn_network: Ipv4Addr,
+        sdn_netmask: Ipv4Addr,
+    ) -> Self {
         let mut known_peers = HashMap::new();
         known_peers.insert(
             own_sdn_ip,
-            PeerInfo::new(&own_sdn_ip.to_string(), &public_key),
+            PeerInfo::new(&own_sdn_ip.to_string(), &public_key, false),
         );
 
         Self {
@@ -54,8 +78,41 @@ impl ClientManager {
             loopback_session: None,
             pending_initiator: HashMap::new(),
             pending_packets: HashMap::new(),
+            sdn_network,
+            sdn_netmask,
+            is_exit_node: false,
+            exit_node_ip: None,
             heartbeat_time: None,
         }
+    }
+
+    pub fn in_sdn_subnet(&self, ip: &Ipv4Addr) -> bool {
+        let mask = u32::from(self.sdn_netmask);
+        if mask == 0 {
+            return false;
+        }
+        u32::from(*ip) & mask == u32::from(self.sdn_network) & mask
+    }
+
+    pub fn set_is_exit_node(&mut self, is_exit_node: bool) {
+        self.is_exit_node = is_exit_node;
+    }
+
+    pub fn is_exit_node(&self) -> bool {
+        self.is_exit_node
+    }
+
+    pub fn set_exit_node_ip(&mut self, ip: Option<Ipv4Addr>) {
+        self.exit_node_ip = ip;
+        if let Some(ip) = ip {
+            info!("Routing non-SDN traffic via exit node {}", ip);
+        } else {
+            info!("Exit node unset");
+        }
+    }
+
+    pub fn get_exit_node_ip(&self) -> Option<Ipv4Addr> {
+        self.exit_node_ip
     }
 
     /// Add or update a known peer

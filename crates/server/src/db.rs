@@ -38,6 +38,8 @@ pub struct Client {
     pub network: String,
     pub netmask: String,
     pub used: Option<bool>,
+    pub is_exit_node: bool,
+    pub exit_node_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -163,7 +165,7 @@ impl Db {
         let clients = sqlx::query_as!(
             Client,
             r#"
-SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients
+SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used, is_exit_node as "is_exit_node!: bool", exit_node_id FROM clients
 INNER JOIN auth_links ON clients.id=auth_links.client_id
 "#,
         )
@@ -176,7 +178,7 @@ INNER JOIN auth_links ON clients.id=auth_links.client_id
         let client = sqlx::query_as!(
             Client,
             r#"
-SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients
+SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used, is_exit_node as "is_exit_node!: bool", exit_node_id FROM clients
 INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
 "#,
             client_id
@@ -235,6 +237,70 @@ INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
         .fetch_one(&self.pool)
         .await?;
         Ok(user)
+    }
+
+    pub async fn set_exit_node(
+        self: &Self,
+        client_id: &str,
+        is_exit_node: bool,
+    ) -> Result<(), anyhow::Error> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE clients SET is_exit_node=? WHERE id=?")
+            .bind(is_exit_node)
+            .bind(client_id)
+            .execute(&mut *tx)
+            .await?;
+        if !is_exit_node {
+            sqlx::query("UPDATE clients SET exit_node_id=NULL WHERE exit_node_id=?")
+                .bind(client_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn set_use_exit_node(
+        self: &Self,
+        client_id: &str,
+        exit_node_id: Option<&str>,
+    ) -> Result<(), anyhow::Error> {
+        if let Some(target_id) = exit_node_id {
+            if target_id == client_id {
+                return Err(anyhow!("Client cannot use itself as an exit node"));
+            }
+            let is_exit: Option<bool> =
+                sqlx::query_scalar("SELECT is_exit_node FROM clients WHERE id=?")
+                    .bind(target_id)
+                    .fetch_optional(&self.pool)
+                    .await?;
+            match is_exit {
+                Some(true) => {}
+                Some(false) => return Err(anyhow!("Target client is not configured as exit node")),
+                None => return Err(anyhow!("Exit node client not found")),
+            }
+        }
+        sqlx::query("UPDATE clients SET exit_node_id=? WHERE id=?")
+            .bind(exit_node_id)
+            .bind(client_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_exit_node_sdn_ip(
+        self: &Self,
+        client_id: &str,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let ip: Option<String> = sqlx::query_scalar(
+            r#"SELECT e.sdn_client_ip FROM clients c
+               INNER JOIN clients e ON c.exit_node_id = e.id
+               WHERE c.id = ? AND e.is_exit_node = 1"#,
+        )
+        .bind(client_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(ip)
     }
 
     pub async fn get_hostname(

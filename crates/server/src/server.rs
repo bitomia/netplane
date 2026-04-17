@@ -11,8 +11,8 @@ use crate::peers::*;
 
 #[derive(Debug)]
 pub enum HandshakeResult {
-    /// Success with reply, SDN client IP, and client public key
-    Success(HandshakeRep, String, String),
+    /// Success with reply, SDN client IP, client public key, and is_exit_node
+    Success(HandshakeRep, String, String, bool),
     Error(HandshakeError),
 }
 
@@ -64,12 +64,22 @@ impl<PeerKey> Server<PeerKey> {
 
                     // Client must provide public key for E2E encryption with other clients
                     if let Some(client_pub_key) = handshake_req.client_public_key {
+                        let exit_node_sdn_ip = db
+                            .get_exit_node_sdn_ip(&client.id)
+                            .await
+                            .unwrap_or(None);
                         let reply = HandshakeRep::new(
                             &client.netmask,
                             &client.network,
                             &client.sdn_client_ip,
-                        );
-                        HandshakeResult::Success(reply, client.sdn_client_ip, client_pub_key)
+                        )
+                        .with_exit_node(client.is_exit_node, exit_node_sdn_ip);
+                        HandshakeResult::Success(
+                            reply,
+                            client.sdn_client_ip,
+                            client_pub_key,
+                            client.is_exit_node,
+                        )
                     } else {
                         error!("Client did not provide public key - required for E2E encryption");
                         HandshakeResult::Error(HandshakeError::new(

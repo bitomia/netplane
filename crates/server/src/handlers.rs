@@ -34,6 +34,16 @@ pub struct DeleteClientRequest {
 }
 
 #[derive(Deserialize)]
+pub struct SetExitNodeRequest {
+    pub is_exit_node: bool,
+}
+
+#[derive(Deserialize)]
+pub struct SetUseExitNodeRequest {
+    pub exit_node_id: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
@@ -165,17 +175,7 @@ pub async fn get_clients(
     }
 
     match state.db.get_all_clients().await {
-        Ok(clients) => web_ok!(clients
-            .iter()
-            .map(|c| crate::db::Client {
-                id: c.id.clone(),
-                auth_link_id: c.auth_link_id.clone(),
-                sdn_client_ip: c.sdn_client_ip.clone(),
-                network: c.network.clone(),
-                netmask: c.netmask.clone(),
-                used: c.used,
-            })
-            .collect::<Vec<crate::db::Client>>()),
+        Ok(clients) => web_ok!(clients),
         Err(error) => web_err!(error.to_string()),
     }
 }
@@ -240,6 +240,64 @@ pub async fn delete_client(
 
     match state.db.get_all_clients().await {
         Ok(clients) => web_ok!(clients),
+        Err(error) => web_err!(error.to_string()),
+    }
+}
+
+pub async fn set_exit_node(
+    State(state): State<AppState>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
+    Path(client_id): Path<String>,
+    Json(payload): Json<SetExitNodeRequest>,
+) -> WebResult<crate::db::Client> {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+
+    if verify_jwt(token, &state.jwt_secret).is_err() {
+        return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
+    }
+
+    if let Err(error) = state
+        .db
+        .set_exit_node(&client_id, payload.is_exit_node)
+        .await
+    {
+        return web_err!(error.to_string());
+    }
+
+    match state.db.get_client(&client_id).await {
+        Ok(client) => web_ok!(client),
+        Err(error) => web_err!(error.to_string()),
+    }
+}
+
+pub async fn set_use_exit_node(
+    State(state): State<AppState>,
+    TypedHeader(cookie): TypedHeader<Cookie>,
+    Path(client_id): Path<String>,
+    Json(payload): Json<SetUseExitNodeRequest>,
+) -> WebResult<crate::db::Client> {
+    let token = match cookie.get("auth_token") {
+        Some(token) => token,
+        None => return web_err!(StatusCode::UNAUTHORIZED, "No auth token".to_string()),
+    };
+
+    if verify_jwt(token, &state.jwt_secret).is_err() {
+        return web_err!(StatusCode::UNAUTHORIZED, "Invalid token".to_string());
+    }
+
+    if let Err(error) = state
+        .db
+        .set_use_exit_node(&client_id, payload.exit_node_id.as_deref())
+        .await
+    {
+        return web_err!(error.to_string());
+    }
+
+    match state.db.get_client(&client_id).await {
+        Ok(client) => web_ok!(client),
         Err(error) => web_err!(error.to_string()),
     }
 }

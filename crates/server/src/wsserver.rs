@@ -133,6 +133,7 @@ impl WebSocketServer {
                             sdn_addr: Ipv4Addr::UNSPECIFIED,
                             state: PeerState::HandshakePending,
                             client_public_key: None,
+                            is_exit_node: false,
                         },
                         tx.clone(),
                     ));
@@ -182,7 +183,12 @@ impl WebSocketServer {
                         {
                             match Server::<i32>::process_handshake(handshake, &db, addr.ip()).await
                             {
-                                HandshakeResult::Success(reply, sdn_client_ip, client_pub_key) => {
+                                HandshakeResult::Success(
+                                    reply,
+                                    sdn_client_ip,
+                                    client_pub_key,
+                                    is_exit_node,
+                                ) => {
                                     let mut reply_socket = socket.clone();
                                     match reply_socket.send(&reply.serialize().unwrap(), None).await
                                     {
@@ -193,8 +199,11 @@ impl WebSocketServer {
                                             );
 
                                             // Create peer info for announcements
-                                            let peer_info =
-                                                PeerInfo::new(&sdn_client_ip, &client_pub_key);
+                                            let peer_info = PeerInfo::new(
+                                                &sdn_client_ip,
+                                                &client_pub_key,
+                                                is_exit_node,
+                                            );
 
                                             // Update peer state
                                             peers
@@ -203,6 +212,7 @@ impl WebSocketServer {
                                                     sdn_client_ip.clone(),
                                                     client_pub_key.clone(),
                                                     PeerState::HandshakeDone,
+                                                    is_exit_node,
                                                 )
                                                 .await;
 

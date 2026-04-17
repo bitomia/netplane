@@ -75,6 +75,8 @@ pub struct HandshakeRep {
     pub network: String,
     pub sdn_ip_addr: String,
     pub server_public_key: Option<String>,
+    pub is_exit_node: bool,
+    pub exit_node_sdn_ip: Option<String>,
 }
 
 impl HandshakeRep {
@@ -85,6 +87,8 @@ impl HandshakeRep {
             network: network.clone(),
             sdn_ip_addr: sdn_ip_addr.clone(),
             server_public_key: None,
+            is_exit_node: false,
+            exit_node_sdn_ip: None,
         }
     }
 
@@ -100,7 +104,15 @@ impl HandshakeRep {
             network: network.clone(),
             sdn_ip_addr: sdn_ip_addr.clone(),
             server_public_key: Some(server_public_key.clone()),
+            is_exit_node: false,
+            exit_node_sdn_ip: None,
         }
+    }
+
+    pub fn with_exit_node(mut self, is_exit_node: bool, exit_node_sdn_ip: Option<String>) -> Self {
+        self.is_exit_node = is_exit_node;
+        self.exit_node_sdn_ip = exit_node_sdn_ip;
+        self
     }
     pub fn serialize(self: &Self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
@@ -272,13 +284,15 @@ pub enum PeerEventType {
 pub struct PeerInfo {
     pub sdn_ip: String,
     pub public_key: String,
+    pub is_exit_node: bool,
 }
 
 impl PeerInfo {
-    pub fn new(sdn_ip: &str, public_key: &str) -> Self {
+    pub fn new(sdn_ip: &str, public_key: &str, is_exit_node: bool) -> Self {
         Self {
             sdn_ip: sdn_ip.to_string(),
             public_key: public_key.to_string(),
+            is_exit_node,
         }
     }
 }
@@ -489,5 +503,56 @@ pub fn get_message_type(buf: &[u8]) -> MessageType {
             RelayPacket::deserialize(buf).map_or(MessageType::Unknown, MessageType::RelayPacket)
         }
         _ => MessageType::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handshake_rep_roundtrip_with_exit_node() {
+        let rep = HandshakeRep::new(
+            &"255.255.255.0".to_string(),
+            &"10.0.0.0".to_string(),
+            &"10.0.0.2".to_string(),
+        )
+        .with_exit_node(true, Some("10.0.0.5".to_string()));
+
+        let bytes = rep.serialize().expect("serialize");
+        let decoded = HandshakeRep::deserialize(&bytes).expect("deserialize");
+
+        assert_eq!(decoded, rep);
+        assert!(decoded.is_exit_node);
+        assert_eq!(decoded.exit_node_sdn_ip.as_deref(), Some("10.0.0.5"));
+    }
+
+    #[test]
+    fn handshake_rep_roundtrip_without_exit_node() {
+        let rep = HandshakeRep::new(
+            &"255.255.255.0".to_string(),
+            &"10.0.0.0".to_string(),
+            &"10.0.0.2".to_string(),
+        );
+
+        let bytes = rep.serialize().expect("serialize");
+        let decoded = HandshakeRep::deserialize(&bytes).expect("deserialize");
+
+        assert_eq!(decoded, rep);
+        assert!(!decoded.is_exit_node);
+        assert_eq!(decoded.exit_node_sdn_ip, None);
+    }
+
+    #[test]
+    fn peer_info_roundtrip_with_exit_node_flag() {
+        let peer = PeerInfo::new("10.0.0.3", "somebase64key", true);
+
+        let peers = PeerList::new(vec![peer.clone()]);
+        let bytes = peers.serialize().expect("serialize");
+        let decoded = PeerList::deserialize(&bytes).expect("deserialize");
+
+        assert_eq!(decoded.peers.len(), 1);
+        assert_eq!(decoded.peers[0], peer);
+        assert!(decoded.peers[0].is_exit_node);
     }
 }

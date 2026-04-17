@@ -20,6 +20,8 @@ pub trait Peer: Send + Any {
     fn set_state(&mut self, state: PeerState);
     fn get_client_public_key(&self) -> Option<String>;
     fn set_client_public_key(&mut self, key: Option<String>);
+    fn get_is_exit_node(&self) -> bool;
+    fn set_is_exit_node(&mut self, is_exit_node: bool);
 }
 
 impl dyn Peer {
@@ -37,6 +39,7 @@ pub struct PeerData {
     pub sdn_addr: Ipv4Addr,
     pub state: PeerState,
     pub client_public_key: Option<String>,
+    pub is_exit_node: bool,
 }
 
 #[derive(Clone)]
@@ -77,6 +80,14 @@ impl Peer for UdpPeer {
 
     fn set_client_public_key(&mut self, key: Option<String>) {
         self.data.client_public_key = key;
+    }
+
+    fn get_is_exit_node(&self) -> bool {
+        self.data.is_exit_node
+    }
+
+    fn set_is_exit_node(&mut self, is_exit_node: bool) {
+        self.data.is_exit_node = is_exit_node;
     }
 }
 
@@ -125,6 +136,14 @@ impl Peer for TcpPeer {
     fn set_client_public_key(&mut self, key: Option<String>) {
         self.data.client_public_key = key;
     }
+
+    fn get_is_exit_node(&self) -> bool {
+        self.data.is_exit_node
+    }
+
+    fn set_is_exit_node(&mut self, is_exit_node: bool) {
+        self.data.is_exit_node = is_exit_node;
+    }
 }
 
 pub type Peers<Key> = Arc<Mutex<HashMap<Key, Box<dyn Peer>>>>;
@@ -139,6 +158,7 @@ pub trait PeersRouting<T> {
         sdn_client_ip: String,
         client_pub_key: String,
         state: PeerState,
+        is_exit_node: bool,
     );
 }
 
@@ -152,6 +172,7 @@ impl<T: Eq + Hash> PeersRouting<T> for Peers<T> {
                 PeerInfo::new(
                     &peer.get_sdn_addr().to_string(),
                     &peer.get_client_public_key().unwrap_or_default(),
+                    peer.get_is_exit_node(),
                 )
             })
             .collect()
@@ -163,6 +184,7 @@ impl<T: Eq + Hash> PeersRouting<T> for Peers<T> {
         sdn_client_ip: String,
         client_pub_key: String,
         state: PeerState,
+        is_exit_node: bool,
     ) {
         let mut peers = self.lock().await;
         peers.retain(|_, v| v.get_sdn_addr().to_string() != sdn_client_ip);
@@ -171,6 +193,7 @@ impl<T: Eq + Hash> PeersRouting<T> for Peers<T> {
             peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip).expect("Invalid SDN client IP"));
             peer.set_client_public_key(Some(client_pub_key));
             peer.set_state(state);
+            peer.set_is_exit_node(is_exit_node);
         }
     }
 }

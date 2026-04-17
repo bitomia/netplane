@@ -14,6 +14,7 @@ pub mod client;
 pub mod client_manager;
 pub mod fd;
 mod http_client;
+pub mod routing;
 mod tundev;
 
 use crate::fd::PlatformFd;
@@ -24,6 +25,11 @@ static GLOBAL_RT: Lazy<Runtime> =
 
 static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
     Lazy::new(|| Mutex::new(CancellationToken::new()));
+
+/// Global override for the exit node, set from the mobile app before calling
+/// `netplane_run`. `None` = use server-assigned exit node.
+static EXIT_NODE_OVERRIDE: Lazy<Mutex<Option<client::ExitNodeOverride>>> =
+    Lazy::new(|| Mutex::new(None));
 
 async fn do_handshake(
     authkey_path: *const c_char,
@@ -413,6 +419,8 @@ pub extern "C" fn netplane_client_run(
             netmask,
             destination,
             ip_addr,
+            is_exit_node: false,
+            exit_node_sdn_ip: None,
         }
     };
     if transport.is_null() {
@@ -569,6 +577,7 @@ pub extern "C" fn netplane_run(
             }
         };
 
+        let exit_node_override = EXIT_NODE_OVERRIDE.lock().unwrap().clone();
         match client::run(
             tun_dev,
             host,
@@ -581,6 +590,7 @@ pub extern "C" fn netplane_run(
             private_filepath,
             Some(cancel_token),
             None,
+            exit_node_override,
         )
         .await
         {
@@ -610,4 +620,32 @@ pub extern "C" fn netplane_free_cancel_token(token: *mut std::ffi::c_void) {
     unsafe {
         let _ = Box::from_raw(token as *mut CancellationToken);
     }
+}
+
+/// Set an exit-node override for subsequent `netplane_run` calls.
+///
+/// Pass a null or empty pointer to clear the override (use server-assigned).
+/// Pass "off" / "disabled" to disable exit-node consumption entirely.
+/// Otherwise the string is interpreted as the SDN IP to use as the exit node.
+#[unsafe(no_mangle)]
+pub extern "C" fn netplane_set_exit_node(ip: *const c_char) {
+    let mut guard = EXIT_NODE_OVERRIDE.lock().unwrap();
+    if ip.is_null() {
+        *guard = None;
+        return;
+    }
+    let s = unsafe {
+        match CStr::from_ptr(ip).to_str() {
+            Ok(s) => s.trim().to_string(),
+            Err(err) => {
+                error!("Invalid exit_node ip: {:?}", err);
+                return;
+            }
+        }
+    };
+    *guard = match s.as_str() {
+        "" => None,
+        "off" | "disable" | "disabled" => Some(client::ExitNodeOverride::Disabled),
+        ip => Some(client::ExitNodeOverride::Use(ip.to_string())),
+    };
 }

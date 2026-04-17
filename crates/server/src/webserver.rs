@@ -1,4 +1,4 @@
-use axum::{routing::get, routing::post, serve::Serve, Router};
+use axum::{routing::get, routing::patch, routing::post, serve::Serve, Router};
 use axum_embed::ServeEmbed;
 use log::info;
 use rust_embed::RustEmbed;
@@ -11,7 +11,7 @@ struct Assets;
 
 use crate::handlers::{
     auth_client, create_client, delete_client, get_clients, get_server_stats, get_user_data, login,
-    logout, verify_client, AppState,
+    logout, set_exit_node, set_use_exit_node, verify_client, AppState,
 };
 
 pub struct WebServer {}
@@ -39,6 +39,8 @@ impl WebServer {
                 "/api/clients",
                 get(get_clients).post(create_client).delete(delete_client),
             )
+            .route("/api/clients/{id}/exit-node", patch(set_exit_node))
+            .route("/api/clients/{id}/use-exit-node", patch(set_use_exit_node))
             .route("/api/login", post(login))
             .route("/api/logout", get(logout))
             .route("/api/user", get(get_user_data))

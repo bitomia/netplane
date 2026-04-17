@@ -173,6 +173,7 @@ pub async fn start_client(
             &private_filepath,
             Some(cloned_token),
             state_tx,
+            None,
         )
         .await
         {

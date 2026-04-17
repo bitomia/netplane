@@ -38,6 +38,17 @@ pub struct StartParams {
     pub netmask: String,
     pub destination: String,
     pub ip_addr: String,
+    pub is_exit_node: bool,
+    pub exit_node_sdn_ip: Option<String>,
+}
+
+/// CLI override for the server-assigned exit node.
+#[derive(Debug, Clone)]
+pub enum ExitNodeOverride {
+    /// Disable exit-node consumption even if server assigned one.
+    Disabled,
+    /// Use this SDN IP as the exit node instead of the server's choice.
+    Use(String),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,6 +84,8 @@ pub async fn handshake(
                     netmask: handshake_rep.netmask,
                     destination: handshake_rep.network,
                     ip_addr: handshake_rep.sdn_ip_addr,
+                    is_exit_node: handshake_rep.is_exit_node,
+                    exit_node_sdn_ip: handshake_rep.exit_node_sdn_ip,
                 },
                 client_pub,
             ));
@@ -137,6 +150,7 @@ pub async fn run(
     private_filepath: &str,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
+    exit_node_override: Option<ExitNodeOverride>,
 ) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client");
 
@@ -146,7 +160,7 @@ pub async fn run(
 
     info!("Client connected to relay server");
 
-    let (start_params, _client_pub) = match handshake(
+    let (mut start_params, _client_pub) = match handshake(
         auth_key,
         public_filepath,
         private_filepath,
@@ -164,11 +178,22 @@ pub async fn run(
             std::process::exit(1)
         }
     };
+    match &exit_node_override {
+        Some(ExitNodeOverride::Disabled) => {
+            info!("Exit node disabled via CLI override");
+            start_params.exit_node_sdn_ip = None;
+        }
+        Some(ExitNodeOverride::Use(ip)) => {
+            info!("Exit node overridden via CLI to {}", ip);
+            start_params.exit_node_sdn_ip = Some(ip.clone());
+        }
+        None => {}
+    }
     let (own_sdn_ip, client_manager) =
         create_p2p_session(&start_params, public_filepath, private_filepath)?;
 
     let dev = tundev::TunDev::new(
-        tun_dev,
+        tun_dev.clone(),
         start_params.netmask.as_str(),
         start_params.destination.as_str(),
         start_params.ip_addr.as_str(),
@@ -179,6 +204,9 @@ pub async fn run(
         transport,
         client_manager,
         own_sdn_ip,
+        Some(tun_dev),
+        Some(start_params.destination.clone()),
+        Some(start_params.netmask.clone()),
         loopback_relay,
         no_encryption,
         option_token,
@@ -213,6 +241,9 @@ pub async fn run_from_fd(
         transport,
         client_manager,
         own_sdn_ip,
+        None,
+        None,
+        None,
         loopback_relay,
         no_encryption,
         None,
@@ -228,7 +259,23 @@ fn create_p2p_session(
     let (client_pub, client_priv) = try_load_crypto_keys(public_filepath, private_filepath)?;
     let client_priv_bytes = general_purpose::URL_SAFE_NO_PAD.decode(&client_priv)?;
     let own_sdn_ip = Ipv4Addr::from_str(&start_params.ip_addr)?;
-    let client_manager = ClientManager::new(own_sdn_ip, client_priv_bytes, client_pub);
+    let sdn_network = Ipv4Addr::from_str(&start_params.destination)
+        .unwrap_or(Ipv4Addr::UNSPECIFIED);
+    let sdn_netmask =
+        Ipv4Addr::from_str(&start_params.netmask).unwrap_or(Ipv4Addr::UNSPECIFIED);
+    let mut client_manager = ClientManager::new_with_network(
+        own_sdn_ip,
+        client_priv_bytes,
+        client_pub,
+        sdn_network,
+        sdn_netmask,
+    );
+    client_manager.set_is_exit_node(start_params.is_exit_node);
+    if let Some(ip_str) = &start_params.exit_node_sdn_ip {
+        if let Ok(ip) = Ipv4Addr::from_str(ip_str) {
+            client_manager.set_exit_node_ip(Some(ip));
+        }
+    }
 
     Ok((own_sdn_ip, client_manager))
 }
@@ -238,12 +285,50 @@ fn update_loop(
     mut transport: Box<AnyTransport>,
     mut client_manager: ClientManager,
     own_sdn_ip: Ipv4Addr,
+    tun_dev_name: Option<String>,
+    sdn_network: Option<String>,
+    sdn_netmask: Option<String>,
     loopback_relay: bool,
     no_encryption: bool,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let consumer_state = if client_manager.get_exit_node_ip().is_some() {
+            tun_dev_name
+                .as_deref()
+                .and_then(|n| match crate::routing::enable_consumer(n) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        error!("Failed to enable consumer routes: {}", e);
+                        None
+                    }
+                })
+        } else {
+            None
+        };
+
+        let exit_node_state = if client_manager.is_exit_node() {
+            match (tun_dev_name.as_deref(), sdn_network.as_deref(), sdn_netmask.as_deref()) {
+                (Some(tun), Some(net), Some(mask)) => match crate::routing::sdn_cidr(net, mask) {
+                    Ok(cidr) => match crate::routing::enable_exit_node(&cidr, tun) {
+                        Ok(s) => Some(s),
+                        Err(e) => {
+                            error!("Failed to enable exit-node NAT: {}", e);
+                            None
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to compute SDN CIDR: {}", e);
+                        None
+                    }
+                },
+                _ => None,
+            }
+        } else {
+            None
+        };
+
         let mut heartbeat_interval = interval(Duration::from_secs(5));
         let mut socket_buf = [0; 1500];
         let mut tun_buf = [0; 1500];
@@ -307,6 +392,13 @@ fn update_loop(
                     break;
                 }
             }
+        }
+
+        if let Some(state) = &consumer_state {
+            crate::routing::disable_consumer(state);
+        }
+        if let Some(state) = &exit_node_state {
+            crate::routing::disable_exit_node(state);
         }
     })
 }
@@ -462,7 +554,7 @@ async fn handle_outgoing_packet(
         }
     };
 
-    let dst_ip = match Ipv4Addr::from_str(&header.dst_ip) {
+    let parsed_dst_ip = match Ipv4Addr::from_str(&header.dst_ip) {
         Ok(ip) => ip,
         Err(_) => {
             warn!("Invalid destination IP: {}", header.dst_ip);
@@ -471,10 +563,30 @@ async fn handle_outgoing_packet(
     };
 
     // Handle loopback - direct path unless --loopback-relay is enabled
-    if dst_ip == *own_sdn_ip && !loopback_relay {
+    if parsed_dst_ip == *own_sdn_ip && !loopback_relay {
         send_tun(dev, packet, packet.len()).await;
         return;
     }
+
+    // If dst is outside the SDN subnet and we have an exit node assigned,
+    // redirect the RelayPacket to the exit node peer. The inner IP header
+    // is preserved so the exit node can forward it to the internet.
+    let dst_ip = if !is_multicast_or_broadcast(&parsed_dst_ip)
+        && !client_manager.in_sdn_subnet(&parsed_dst_ip)
+    {
+        match client_manager.get_exit_node_ip() {
+            Some(exit_ip) => {
+                debug!("Routing non-SDN packet {} via exit node {}", parsed_dst_ip, exit_ip);
+                exit_ip
+            }
+            None => {
+                debug!("Dropping non-SDN packet (no exit node): {}", parsed_dst_ip);
+                return;
+            }
+        }
+    } else {
+        parsed_dst_ip
+    };
 
     // Handle multicast/broadcast
     if is_multicast_or_broadcast(&dst_ip) {

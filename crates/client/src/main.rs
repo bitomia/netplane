@@ -8,13 +8,14 @@ pub mod client;
 pub mod client_manager;
 mod fd;
 mod http_client;
+pub mod routing;
 mod tundev;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
+        "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption] [--exit-node=<sdn_ip>|off]",
         args[0]
     );
 }
@@ -44,6 +45,7 @@ fn main() -> Result<()> {
         let mut auth_port = None;
         let mut loopback_relay = false;
         let mut no_encryption = false;
+        let mut exit_node_override: Option<client::ExitNodeOverride> = None;
 
         // Parse optional arguments
         for arg in &args[2..] {
@@ -65,6 +67,14 @@ fn main() -> Result<()> {
                 loopback_relay = true;
             } else if arg == "--no-encryption" {
                 no_encryption = true;
+            } else if arg.starts_with("--exit-node=") {
+                let value = arg.split('=').nth(1).unwrap_or("").trim().to_string();
+                exit_node_override = match value.as_str() {
+                    "" | "off" | "disable" | "disabled" => {
+                        Some(client::ExitNodeOverride::Disabled)
+                    }
+                    ip => Some(client::ExitNodeOverride::Use(ip.to_string())),
+                };
             }
         }
 
@@ -101,6 +111,7 @@ fn main() -> Result<()> {
                 "private.key",
                 None,
                 None,
+                exit_node_override,
             )
             .await?
             .await?;

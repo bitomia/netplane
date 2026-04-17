@@ -250,6 +250,7 @@ impl UdpServer {
                 sdn_addr: Ipv4Addr::UNSPECIFIED,
                 state: PeerState::HandshakePending,
                 client_public_key: None,
+                is_exit_node: false,
             }));
             peer.get_state()
         };
@@ -298,14 +299,23 @@ impl UdpServer {
                     )
                     .await
                     {
-                        HandshakeResult::Success(reply, sdn_client_ip, client_pub_key) => {
+                        HandshakeResult::Success(
+                            reply,
+                            sdn_client_ip,
+                            client_pub_key,
+                            is_exit_node,
+                        ) => {
                             // Send handshake reply
                             match transport.send(&reply.serialize()?, Some(src)).await {
                                 Ok(_) => {
                                     info!("User {} connected with SDN IP {}", src, sdn_client_ip);
 
                                     // Create peer info for announcements
-                                    let peer_info = PeerInfo::new(&sdn_client_ip, &client_pub_key);
+                                    let peer_info = PeerInfo::new(
+                                        &sdn_client_ip,
+                                        &client_pub_key,
+                                        is_exit_node,
+                                    );
 
                                     // Update peer state
                                     self.server
@@ -315,6 +325,7 @@ impl UdpServer {
                                             sdn_client_ip.clone(),
                                             client_pub_key.clone(),
                                             PeerState::HandshakeDone,
+                                            is_exit_node,
                                         )
                                         .await;
 

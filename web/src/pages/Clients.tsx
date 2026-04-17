@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NewClientDialog } from "~/components/NewClientDialog";
 import { UpdateClientDialog } from "~/components/UpdateClientDialog";
-import { useGetClientsQuery } from "~/services/api";
+import { Client, useGetClientsQuery } from "~/services/api";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Alert } from "~/components/Alert";
 
@@ -15,7 +15,10 @@ function SkeletonClient() {
 
 function ClientsPage() {
   const { data: clients, isLoading, isError } = useGetClientsQuery();
-  const [openUpdate, setOpenUpdate] = useState(false);
+  const [openUpdate, setOpenUpdate] = useState<Client | null | false>(null);
+
+  const clientById = (id: string | null) =>
+    id ? clients?.find((c) => c.id === id) : undefined;
 
   return (
     <div className="max-w-5xl mx-auto px-5">
@@ -35,40 +38,55 @@ function ClientsPage() {
           ) : isError ? (
             <Alert>Something wrong happened. Contact support</Alert>
           ) : (
-            clients?.map((c) => (
-              <div
-                className="flex flex-row w-full mb-5 bg-card text-card-foreground hover:bg-accent hover:cursor-pointer px-4 py-3 rounded-md"
-                key={c.id}
-                onClick={() => setOpenUpdate(c)}
-              >
-                <div className="w-full">
-                  <div className="flex flex-row">
-                    <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs text-muted-foreground">
-                        SDN IP
-                      </span>
-                      {c.sdn_client_ip}
+            clients?.map((c) => {
+              const exitPeer = clientById(c.exit_node_id);
+              return (
+                <div
+                  className="flex flex-row w-full mb-5 bg-card text-card-foreground hover:bg-accent hover:cursor-pointer px-4 py-3 rounded-md"
+                  key={c.id}
+                  onClick={() => setOpenUpdate(c)}
+                >
+                  <div className="w-full">
+                    <div className="flex flex-row">
+                      <div className="flex flex-col w-full">
+                        <span className="font-bold text-xs text-muted-foreground">
+                          SDN IP
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {c.sdn_client_ip}
+                          {c.is_exit_node && (
+                            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-600 text-white">
+                              Exit
+                            </span>
+                          )}
+                        </span>
+                        {exitPeer && (
+                          <span className="text-[10px] text-muted-foreground">
+                            via {exitPeer.sdn_client_ip}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-col w-full">
+                        <span className="font-bold text-xs text-muted-foreground">
+                          NETMASK
+                        </span>
+                        {c.netmask}
+                      </div>
+                      <div className="flex flex-col w-full">
+                        <span className="font-bold text-xs text-muted-foreground">
+                          Authed
+                        </span>
+                        {c.used ? "✅" : "⚠️"}
+                      </div>
                     </div>
-                    <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs text-muted-foreground">
-                        NETMASK
-                      </span>
-                      {c.netmask}
-                    </div>
-                    <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs text-muted-foreground">
-                        Authed
-                      </span>
-                      {c.used ? "✅" : "⚠️"}
+                    <div className="text-[10px] pb-1 text-muted-foreground">
+                      {c.id}
                     </div>
                   </div>
-                  <div className="text-[10px] pb-1 text-muted-foreground">
-                    {c.id}
-                  </div>
+                  <div className="flex items-center">...</div>
                 </div>
-                <div className="flex items-center">...</div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
