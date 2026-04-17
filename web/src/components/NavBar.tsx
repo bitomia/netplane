@@ -20,6 +20,7 @@ import { useNavigate, useLocation } from "react-router";
 import { NavLink } from "react-router";
 import logo from "~/assets/small_icon.svg";
 import { useGetUserDataQuery } from "~/services/api";
+import { ThemeToggle } from "~/components/ThemeToggle";
 
 function PageBreadcrumb() {
   const location = useLocation();
@@ -99,11 +100,12 @@ function AvatarMenu() {
 
 export function NavBar() {
   return (
-    <div className="w-full bg-white border-b border-zinc-200">
+    <div className="w-full bg-background border-b border-border">
       <div className="max-w-5xl mx-auto">
         <div className="w-full py-6 flex justify-between px-5">
           <PageBreadcrumb />
-          <div className="flex">
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
             <AvatarMenu />
           </div>
         </div>
