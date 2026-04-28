@@ -127,16 +127,14 @@ pub fn run(
 ) -> JoinHandle<Result<(), Error>> {
     tokio::spawn(async move {
         match transport_mode {
-            TransportMode::WebSocket => {
-                WebSocketServer::new(
-                    Arc::clone(&db),
-                    Arc::clone(&server_stats),
-                    dynamic_clients_key,
-                )
-                .start()
-                .await
-                .map_err(anyhow::Error::from)
-            }
+            TransportMode::WebSocket => WebSocketServer::new(
+                Arc::clone(&db),
+                Arc::clone(&server_stats),
+                dynamic_clients_key,
+            )
+            .start()
+            .await
+            .map_err(anyhow::Error::from),
             _ => {
                 UdpServer::new(
                     Arc::clone(&db),

@@ -14,6 +14,7 @@ pub mod client;
 pub mod client_manager;
 pub mod fd;
 mod http_client;
+mod routes;
 mod tundev;
 
 use crate::fd::PlatformFd;
@@ -621,6 +622,7 @@ pub unsafe extern "C" fn netplane_client_run(
             public_filepath,
             private_filepath,
             Some(cancel_token),
+            None,
             None,
         )
         .await

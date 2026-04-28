@@ -268,6 +268,7 @@ pub const PEER_ANNOUNCE_HEADER: [u8; 3] = [0x50, 0x41, 0x4E]; // "PAN"
 pub const P2P_HANDSHAKE_INIT_HEADER: [u8; 3] = [0x50, 0x48, 0x49]; // "PHI"
 pub const P2P_HANDSHAKE_RESP_HEADER: [u8; 3] = [0x50, 0x48, 0x52]; // "PHR"
 pub const RELAY_PACKET_HEADER: [u8; 3] = [0x52, 0x4C, 0x59]; // "RLY"
+pub const RELAY_EXIT_PACKET_HEADER: [u8; 3] = [0x52, 0x4C, 0x60]; // "RLY_EXIT"
 
 #[derive(Encode, Decode, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum PeerEventType {
@@ -419,17 +420,64 @@ impl P2PHandshakeResp {
 #[derive(Encode, Decode, PartialEq, Debug)]
 pub struct RelayPacket {
     pub header: [u8; 3],
-    pub src_sdn_ip: String,
-    pub dst_sdn_ip: String,
+    pub src_ip: String,
+    pub dst_ip: String,
+    pub exit_ip: Option<String>,
     pub encrypted_payload: Vec<u8>,
 }
 
 impl RelayPacket {
-    pub fn new(src_sdn_ip: &str, dst_sdn_ip: &str, encrypted_payload: Vec<u8>) -> Self {
+    pub fn new(
+        src_sdn_ip: &str,
+        dst_sdn_ip: &str,
+        exit_ip: Option<String>,
+        encrypted_payload: Vec<u8>,
+    ) -> Self {
+        Self {
+            header: RELAY_PACKET_HEADER,
+            src_ip: src_sdn_ip.to_string(),
+            dst_ip: dst_sdn_ip.to_string(),
+            exit_ip,
+            encrypted_payload,
+        }
+    }
+
+    pub fn serialize(&self) -> Result<Vec<u8>> {
+        match bincode::encode_to_vec(self, config::standard()) {
+            Ok(v) => Ok(v),
+            Err(err) => Err(anyhow!(err)),
+        }
+    }
+
+    pub fn deserialize(buf: &[u8]) -> Result<Self> {
+        match bincode::decode_from_slice::<Self, _>(buf, config::standard()) {
+            Ok((v, _)) => Ok(v),
+            Err(err) => Err(anyhow!(err)),
+        }
+    }
+}
+
+#[derive(Encode, Decode, PartialEq, Debug)]
+pub struct RelayExitPacket {
+    pub header: [u8; 3],
+    pub src_sdn_ip: String,
+    pub dst_sdn_ip: String,
+    pub exit_sdn_ip: String,
+    pub encrypted_payload: Vec<u8>,
+}
+
+impl RelayExitPacket {
+    pub fn new(
+        src_sdn_ip: &str,
+        dst_sdn_ip: &str,
+        exit_sdn_ip: &str,
+        encrypted_payload: Vec<u8>,
+    ) -> Self {
         Self {
             header: RELAY_PACKET_HEADER,
             src_sdn_ip: src_sdn_ip.to_string(),
             dst_sdn_ip: dst_sdn_ip.to_string(),
+            exit_sdn_ip: exit_sdn_ip.to_string(),
             encrypted_payload,
         }
     }

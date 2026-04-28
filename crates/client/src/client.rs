@@ -139,7 +139,8 @@ pub async fn run(
     private_filepath: &str,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
-) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
+    exit_sdn_ip: Option<String>,
+) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client");
 
     let auth_key = load_auth_key(authkey_path.to_string())?;
@@ -177,15 +178,37 @@ pub async fn run(
         start_params.ip_addr.as_str(),
     )?;
 
+    let route_guard = if exit_sdn_ip.is_some() {
+        match dev.name() {
+            Some(name) => match crate::routes::install_exit_node_routes(&name, &host).await {
+                Ok(g) => Some(g),
+                Err(e) => {
+                    error!("Failed to install exit-node routes: {}", e);
+                    None
+                }
+            },
+            None => {
+                error!("Cannot install exit-node routes: tun name unavailable");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let exit_sdn_ip: Option<Ipv4Addr> = exit_sdn_ip.map(|exit_node_ip| {
+        Ipv4Addr::from_str(&exit_node_ip).expect("Invalid exit node IP address")
+    });
     Ok(update_loop(
         dev,
         transport,
         client_manager,
         own_sdn_ip,
+        exit_sdn_ip,
         loopback_relay,
         no_encryption,
         option_token,
         state_tx,
+        route_guard,
     ))
 }
 
@@ -199,7 +222,7 @@ pub async fn run_from_fd(
     public_filepath: &str,
     private_filepath: &str,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
-) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
+) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
     info!("Starting client with fd");
 
     let (own_sdn_ip, client_manager) =
@@ -217,10 +240,12 @@ pub async fn run_from_fd(
         transport,
         client_manager,
         own_sdn_ip,
+        None,
         loopback_relay,
         no_encryption,
         None,
         state_tx,
+        None,
     ))
 }
 
@@ -243,11 +268,13 @@ fn update_loop(
     mut transport: Box<AnyTransport>,
     mut client_manager: ClientManager,
     own_sdn_ip: Ipv4Addr,
+    exit_sdn_ip: Option<Ipv4Addr>,
     loopback_relay: bool,
     no_encryption: bool,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
-) -> tokio::task::JoinHandle<std::io::Error> {
+    route_guard: Option<crate::routes::RouteGuard>,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut heartbeat_interval = matches!(
             transport.as_ref(),
@@ -256,6 +283,18 @@ fn update_loop(
         .then(|| interval(Duration::from_secs(1)));
         let mut socket_buf = [0; 1500];
         let mut tun_buf = [0; 1500];
+        #[cfg(unix)]
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install SIGTERM handler");
+        #[cfg(unix)]
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                .expect("failed to install SIGINT handler");
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+        #[cfg(not(unix))]
+        let interrupt = std::future::pending::<()>();
 
         loop {
             tokio::select! {
@@ -275,7 +314,7 @@ fn update_loop(
                         },
                         Err(err) => {
                             error!("Receive error: {}", err);
-                            return err;
+                            break;
                         }
                     }
                 },
@@ -290,13 +329,14 @@ fn update_loop(
                                 &mut dev,
                                 &mut client_manager,
                                 &own_sdn_ip,
+                                &exit_sdn_ip,
                                 loopback_relay,
                                 no_encryption,
                             ).await;
                         }
                         Err(err) => {
                             error!("TUN read error: {}", err);
-                            return err;
+                            break;
                         }
                     }
                 },
@@ -314,11 +354,12 @@ fn update_loop(
                         Ok(_) => debug!("Heartbeat sent"),
                         Err(err) => {
                             error!("Failed to send heartbeat: {}", err);
-                            return err;
                         }
                     }
                 },
-
+                _ = tokio::signal::ctrl_c() => { break; },
+                _ = terminate.recv() => { break; },
+                _ = interrupt.recv() => { break; },
                 Some(_) = async {
                     match &option_token {
                         Some(t) => {
@@ -332,6 +373,11 @@ fn update_loop(
                 }
             }
         }
+        info!("Shutting down...");
+        if let Some(guard) = route_guard {
+            guard.restore().await;
+        }
+        info!("Client stopped")
     })
 }
 
@@ -400,6 +446,7 @@ async fn handle_relay_server_message(
                                 let relay = RelayPacket::new(
                                     &own_sdn_ip.to_string(),
                                     &dst_ip.to_string(),
+                                    None,
                                     encrypted,
                                 );
                                 if let Ok(data) = relay.serialize() {
@@ -429,7 +476,7 @@ async fn handle_relay_server_message(
                 }
             } else {
                 // E2E encrypted packet from another peer
-                if let Ok(src_ip) = Ipv4Addr::from_str(&relay.src_sdn_ip) {
+                if let Ok(src_ip) = Ipv4Addr::from_str(&relay.src_ip) {
                     match client_manager
                         .decrypt_from(&src_ip, &relay.encrypted_payload)
                         .await
@@ -467,12 +514,14 @@ async fn handle_relay_server_message(
 }
 
 /// Handle an outgoing packet from the TUN device
+#[allow(clippy::too_many_arguments)]
 async fn handle_outgoing_packet(
     packet: &[u8],
     transport: &mut AnyTransport,
     dev: &mut tundev::TunDev,
     client_manager: &mut ClientManager,
     own_sdn_ip: &Ipv4Addr,
+    exit_sdn_ip: &Option<Ipv4Addr>,
     loopback_relay: bool,
     no_encryption: bool,
 ) {
@@ -485,14 +534,14 @@ async fn handle_outgoing_packet(
     };
 
     let dst_ip = match Ipv4Addr::from_str(&header.dst_ip) {
-        Ok(ip) => ip,
+        Ok(ip) => exit_sdn_ip.unwrap_or(ip),
         Err(_) => {
             warn!("Invalid destination IP: {}", header.dst_ip);
             return;
         }
     };
 
-    // Handle loopback - direct path unless --loopback-relay is enabled
+    // Handle loopback. Direct path unless --loopback-relay is enabled
     if dst_ip == *own_sdn_ip && !loopback_relay {
         send_tun(dev, packet, packet.len()).await;
         return;
@@ -500,98 +549,34 @@ async fn handle_outgoing_packet(
 
     // Handle multicast/broadcast
     if is_multicast_or_broadcast(&dst_ip) {
-        if no_encryption {
-            // No-encryption mode: send single RelayPacket with multicast dst,
-            // server will fan out to all peers
-            let relay = RelayPacket::new(
-                &own_sdn_ip.to_string(),
-                &dst_ip.to_string(),
-                packet.to_vec(),
-            );
-            if let Ok(data) = relay.serialize()
-                && let Err(e) = transport.send(&data, None).await
-            {
-                error!("Failed to send multicast relay packet: {}", e);
-            }
-        } else {
-            // Encryption mode: encrypt separately for each peer with an established session
-            let peers = client_manager.get_all_session_peers();
-            for peer_ip in peers {
-                match client_manager.encrypt_for(&peer_ip, packet).await {
-                    Ok(encrypted) => {
-                        let relay = RelayPacket::new(
-                            &own_sdn_ip.to_string(),
-                            &peer_ip.to_string(),
-                            encrypted,
-                        );
-                        if let Ok(data) = relay.serialize()
-                            && let Err(e) = transport.send(&data, None).await
-                        {
-                            error!("Failed to send multicast relay to {}: {}", peer_ip, e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to encrypt multicast for {}: {}", peer_ip, e);
-                    }
-                }
-            }
-        }
-        return;
-    }
-
-    // No encryption mode - send plaintext through relay
-    if no_encryption {
-        let relay = RelayPacket::new(
+        handle_broadcast_relay_packet(
+            no_encryption,
             &own_sdn_ip.to_string(),
             &dst_ip.to_string(),
-            packet.to_vec(),
-        );
-        if let Ok(data) = relay.serialize()
-            && let Err(e) = transport.send(&data, None).await
-        {
-            error!("Failed to send relay packet: {}", e);
-        }
-        return;
+            packet,
+            client_manager,
+            transport,
+        )
+        .await;
     }
-
-    // Check if we have a session with this peer
-    if client_manager.has_session(&dst_ip) {
-        // Encrypt and send
-        match client_manager.encrypt_for(&dst_ip, packet).await {
-            Ok(encrypted) => {
-                let relay =
-                    RelayPacket::new(&own_sdn_ip.to_string(), &dst_ip.to_string(), encrypted);
-                if let Ok(data) = relay.serialize()
-                    && let Err(e) = transport.send(&data, None).await
-                {
-                    error!("Failed to send relay packet: {}", e);
-                }
-            }
-            Err(e) => {
-                error!("Failed to encrypt packet for {}: {}", dst_ip, e);
-            }
-        }
-    } else if client_manager.knows_peer(&dst_ip) {
-        // Queue packet and initiate handshake if not already in progress
-        client_manager.queue_packet(&dst_ip, packet.to_vec());
-
-        if !client_manager.handshake_in_progress(&dst_ip) {
-            match client_manager.initiate_handshake(&dst_ip) {
-                Ok(init) => {
-                    if let Ok(data) = init.serialize()
-                        && let Err(e) = transport.send(&data, None).await
-                    {
-                        error!("Failed to send P2P handshake init: {}", e);
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to initiate handshake with {}: {}", dst_ip, e);
-                }
-            }
-        }
+    // No encryption mode. Send plaintext through relay
+    else if no_encryption {
+        handle_relay_packet(
+            &own_sdn_ip.to_string(),
+            &dst_ip.to_string(),
+            packet,
+            transport,
+        )
+        .await;
     } else {
-        // Unknown peer - drop packet
-        debug!("Dropping packet to unknown peer: {}", dst_ip);
+        handle_encrypted_relay_packet(
+            client_manager,
+            &own_sdn_ip.to_string(),
+            &dst_ip,
+            packet,
+            transport,
+        )
+        .await;
     }
 }
 
@@ -894,6 +879,105 @@ mod logfmt {
             writer.write_char('"')
         } else {
             write!(writer, " {}={}", key, value)
+        }
+    }
+}
+
+async fn handle_relay_packet(
+    own_sdn_ip: &str,
+    dst_ip: &str,
+    packet: &[u8],
+    transport: &mut impl Transport,
+) {
+    let relay = RelayPacket::new(own_sdn_ip, dst_ip, None, packet.to_vec());
+    if let Ok(data) = relay.serialize()
+        && let Err(e) = transport.send(&data, None).await
+    {
+        error!("Failed to send relay packet: {}", e);
+    }
+}
+
+async fn handle_encrypted_relay_packet(
+    client_manager: &mut ClientManager,
+    own_sdn_ip: &str,
+    dst_ip: &Ipv4Addr,
+    packet: &[u8],
+    transport: &mut impl Transport,
+) {
+    // Check if we have a session with this peer
+    if client_manager.has_session(dst_ip) {
+        // Encrypt and send
+        match client_manager.encrypt_for(dst_ip, packet).await {
+            Ok(encrypted) => {
+                let relay = RelayPacket::new(own_sdn_ip, &dst_ip.to_string(), None, encrypted);
+                if let Ok(data) = relay.serialize()
+                    && let Err(e) = transport.send(&data, None).await
+                {
+                    error!("Failed to send relay packet: {}", e);
+                }
+            }
+            Err(e) => {
+                error!("Failed to encrypt packet for {}: {}", dst_ip, e);
+            }
+        }
+    } else if client_manager.knows_peer(dst_ip) {
+        // Queue packet and initiate handshake if not already in progress
+        client_manager.queue_packet(dst_ip, packet.to_vec());
+
+        if !client_manager.handshake_in_progress(dst_ip) {
+            match client_manager.initiate_handshake(dst_ip) {
+                Ok(init) => {
+                    if let Ok(data) = init.serialize()
+                        && let Err(e) = transport.send(&data, None).await
+                    {
+                        error!("Failed to send P2P handshake init: {}", e);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to initiate handshake with {}: {}", dst_ip, e);
+                }
+            }
+        }
+    } else {
+        // Unknown peer. Drop packet
+        debug!("Dropping packet to unknown peer: {}", dst_ip);
+    }
+}
+
+async fn handle_broadcast_relay_packet(
+    no_encryption: bool,
+    own_sdn_ip: &str,
+    dst_ip: &str,
+    packet: &[u8],
+    client_manager: &ClientManager,
+    transport: &mut impl Transport,
+) {
+    if no_encryption {
+        // No-encryption mode: send single RelayPacket with multicast dst,
+        // server will fan out to all peers
+        let relay = RelayPacket::new(own_sdn_ip, dst_ip, None, packet.to_vec());
+        if let Ok(data) = relay.serialize()
+            && let Err(e) = transport.send(&data, None).await
+        {
+            error!("Failed to send multicast relay packet: {}", e);
+        }
+    } else {
+        // Encryption mode: encrypt separately for each peer with an established session
+        let peers = client_manager.get_all_session_peers();
+        for peer_ip in peers {
+            match client_manager.encrypt_for(&peer_ip, packet).await {
+                Ok(encrypted) => {
+                    let relay = RelayPacket::new(own_sdn_ip, &peer_ip.to_string(), None, encrypted);
+                    if let Ok(data) = relay.serialize()
+                        && let Err(e) = transport.send(&data, None).await
+                    {
+                        error!("Failed to send multicast relay to {}: {}", peer_ip, e);
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to encrypt multicast for {}: {}", peer_ip, e);
+                }
+            }
         }
     }
 }

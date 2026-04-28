@@ -1,6 +1,6 @@
 use tokio::io::AsyncReadExt;
 use tracing::info;
-use tun::Configuration;
+use tun::{AbstractDevice, Configuration};
 
 use super::fd::PlatformFd;
 
@@ -38,6 +38,10 @@ impl TunDev {
         let dev = tun::create_as_async(&config)
             .map_err(|e| anyhow::anyhow!("Cannot create TUN device: {}", e))?;
         Ok(TunDev { dev })
+    }
+
+    pub fn name(&self) -> Option<String> {
+        self.dev.tun_name().ok()
     }
 
     pub fn new_from_fd(

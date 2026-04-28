@@ -319,11 +319,11 @@ async fn handle_ws_relay_packet(
     relay: &RelayPacket,
     raw_data: &[u8],
 ) -> Result<()> {
-    let dst_sdn_ip = Ipv4Addr::from_str(&relay.dst_sdn_ip)?;
+    let dst_sdn_ip = Ipv4Addr::from_str(&relay.dst_ip)?;
 
     // Multicast/broadcast: fan out to all peers except the sender
     if is_multicast_or_broadcast(&dst_sdn_ip) {
-        let src_sdn_ip = Ipv4Addr::from_str(&relay.src_sdn_ip)?;
+        let src_sdn_ip = Ipv4Addr::from_str(&relay.src_ip)?;
         let txs = peers.get_all_tx_except(&src_sdn_ip).await;
         let data = bytes::Bytes::from(raw_data.to_vec());
         for tx in txs {
@@ -343,7 +343,7 @@ async fn handle_ws_relay_packet(
             stats.add_out_bytes(raw_data.len());
         }
     } else {
-        trace!("Destination {} not found for relay", relay.dst_sdn_ip);
+        trace!("Destination {} not found for relay", relay.dst_ip);
     }
 
     Ok(())

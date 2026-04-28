@@ -73,8 +73,9 @@ async fn main() -> Result<(), ProcessError> {
 
     #[cfg(unix)]
     {
-        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM handler");
-        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT handler");
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
 
         tokio::spawn(async move {
             tokio::select! {

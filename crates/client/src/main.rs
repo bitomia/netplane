@@ -8,6 +8,7 @@ pub mod client;
 pub mod client_manager;
 mod fd;
 mod http_client;
+mod routes;
 mod tundev;
 
 const AUTH_KEY_FILENAME: &str = "auth.key";
@@ -20,7 +21,7 @@ fn echo_syntax(msg: Option<String>, args: &[String]) {
         print!("{}. ", msg);
     }
     println!(
-        "Use {} [server] [--port=5000] [--tun=device] [--link=link_code|--dynamic-link=dynamic_link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
+        "Use {} [server] [--port=5000] [--tun=device] [--link=link_code|--dynamic-link=dynamic_link_code] [--auth-port=8000] [--transport=udp|websocket] [--exit-node=sdn_ip] [--loopback-relay] [--no-encryption]",
         args[0]
     );
 }
@@ -59,6 +60,7 @@ fn main() -> Result<()> {
         let mut auth_port = None;
         let mut loopback_relay = false;
         let mut no_encryption = false;
+        let mut exit_node: Option<String> = None;
 
         if args[1] == "--help" {
             echo_syntax(None, &args);
@@ -94,6 +96,8 @@ fn main() -> Result<()> {
                 loopback_relay = true;
             } else if arg == "--no-encryption" {
                 no_encryption = true;
+            } else if arg.starts_with("--exit-node=") {
+                exit_node = arg.split('=').nth(1).map(|s| s.to_string());
             } else if arg.starts_with("--help") {
                 echo_syntax(None, &args);
                 std::process::exit(1);
@@ -156,6 +160,7 @@ fn main() -> Result<()> {
                 "private.key",
                 None,
                 None,
+                exit_node,
             )
             .await?
             .await?;

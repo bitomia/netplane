@@ -369,16 +369,16 @@ impl UdpServer {
         relay: &RelayPacket,
         raw_data: &[u8],
     ) -> Result<()> {
-        let dst_sdn_ip = Ipv4Addr::from_str(&relay.dst_sdn_ip)?;
+        let dst_sdn_ip = Ipv4Addr::from_str(&relay.dst_ip)?;
 
         // Log traffic if configured
         if let Some(ref logger) = self.traffic_logger {
-            logger.log_packet(&relay.dst_sdn_ip, raw_data).await;
+            logger.log_packet(&relay.dst_ip, raw_data).await;
         }
 
         // Multicast/broadcast: fan out to all peers except the sender
         if is_multicast_or_broadcast(&dst_sdn_ip) {
-            let src_sdn_ip = Ipv4Addr::from_str(&relay.src_sdn_ip)?;
+            let src_sdn_ip = Ipv4Addr::from_str(&relay.src_ip)?;
             let addrs = self.server.peers.find_all_addrs_except(&src_sdn_ip).await;
             for addr in addrs {
                 if let Err(e) = transport.send(raw_data, Some(&addr)).await {
@@ -398,7 +398,7 @@ impl UdpServer {
                 self.server.stats.add_out_bytes(raw_data.len());
             }
         } else {
-            trace!("Destination {} not found for relay", relay.dst_sdn_ip);
+            trace!("Destination {} not found for relay", relay.dst_ip);
         }
 
         Ok(())
