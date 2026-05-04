@@ -6,3 +6,4 @@ netplane.db
 web/.env*
 .env*
 **/\#*#
+bindings/cpp/build/

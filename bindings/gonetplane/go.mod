@@ -1,4 +1,4 @@
-module github.com/bitomia/netplane/ee/gonetplane
+module github.com/bitomia/netplane/bindings/gonetplane
 
 go 1.26.0
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	netplane "github.com/bitomia/netplane/ee/gonetplane"
+	netplane "github.com/bitomia/netplane/bindings/gonetplane"
 )
 
 func TestNetplane(t *testing.T) {

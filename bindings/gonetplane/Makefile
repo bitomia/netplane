@@ -13,16 +13,10 @@ all:
 	$(GO) generate .
 	$(GO) build .
 
-.PHONY: bindgen
-bindgen:
-	cd $(ROOT_DIR)../.. && \
-	cbindgen --config crates/client/cbindgen.toml --crate netplane_client --output $(ROOT_DIR)/netplane.h
-
 .PHONY: test
 test:
 	cargo build -r -p netplane_client
 	$(GO) test -ldflags="-extldflags '-L../../target/release'" -v .
 
 clean:
-	-$(RM) -f netplane.h
 	-$(RM) -f private.key public.key auth.key

@@ -1,4 +1,4 @@
-//go:generate make -C . bindgen
+//go:generate make -C ../cpp/ bindgen
 
 package gonetplane
 
