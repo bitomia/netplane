@@ -17,9 +17,4 @@ func TestNetplane(t *testing.T) {
 	err := netplane.TryGenerateCryptoKeys("public.key", "private.key")
 	assert.NoError(t, err)
 	assert.FileExists(t, "public.key", "private.key")
-
-	transport, err := netplane.CreateTransport("example.com", 5000, "udp")
-	assert.NoError(t, err)
-	assert.NotNil(t, transport)
-	defer transport.Free()
 }

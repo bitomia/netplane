@@ -11,7 +11,6 @@ package gonetplane
 */
 import "C"
 import (
-	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -71,113 +70,8 @@ func TryGenerateCryptoKeys(publicFilepath, privateFilepath string) error {
 	return nil
 }
 
-// Transport represents a netplane transport
-type Transport struct {
-	ptr unsafe.Pointer
-}
-
-// CreateTransport creates a new transport
-func CreateTransport(serverAddr string, serverPort uint16, transportType string) (*Transport, error) {
-	cServerAddr := C.CString(serverAddr)
-	defer C.free(unsafe.Pointer(cServerAddr))
-
-	var cTransportType *C.char
-	if transportType != "" {
-		cTransportType = C.CString(transportType)
-		defer C.free(unsafe.Pointer(cTransportType))
-	}
-
-	ptr := C.netplane_create_transport(cServerAddr, C.uint16_t(serverPort), cTransportType)
-	if ptr == nil {
-		return nil, errors.New("failed to create transport")
-	}
-
-	return &Transport{ptr: ptr}, nil
-}
-
-// Free frees the transport
-func (t *Transport) Free() {
-	if t.ptr != nil {
-		C.netplane_free_transport(t.ptr)
-		t.ptr = nil
-	}
-}
-
-// HandshakeResult contains the result of a handshake
-type HandshakeResult struct {
-	Netmask     string
-	Destination string
-	IPAddr      string
-	cResult     *C.struct_NetplaneHandshakeResult
-}
-
-// ClientHandshake performs a handshake with the server
-func ClientHandshake(authKeyPath, publicKeyPath, privateKeyPath string, transport *Transport) (*HandshakeResult, error) {
-	if transport == nil || transport.ptr == nil {
-		return nil, errors.New("transport is nil")
-	}
-
-	cAuthKeyPath := C.CString(authKeyPath)
-	defer C.free(unsafe.Pointer(cAuthKeyPath))
-
-	cPublicKeyPath := C.CString(publicKeyPath)
-	defer C.free(unsafe.Pointer(cPublicKeyPath))
-
-	cPrivateKeyPath := C.CString(privateKeyPath)
-	defer C.free(unsafe.Pointer(cPrivateKeyPath))
-
-	var cResult C.struct_NetplaneHandshakeResult
-	result := C.netplane_client_handshake(cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, transport.ptr, &cResult)
-
-	if result != 0 {
-		return nil, fmt.Errorf("handshake failed with code: %d", result)
-	}
-
-	handshake := &HandshakeResult{
-		Netmask:     C.GoString(cResult.netmask),
-		Destination: C.GoString(cResult.destination),
-		IPAddr:      C.GoString(cResult.ip_addr),
-		cResult:     &cResult,
-	}
-
-	return handshake, nil
-}
-
-// Free frees the handshake result
-func (h *HandshakeResult) Free() {
-	if h.cResult != nil {
-		C.netplane_client_free_handshake(h.cResult)
-		h.cResult = nil
-	}
-}
-
-// ClientRun runs the client with the given TUN file descriptor
-func ClientRun(tunFd int, transport *Transport, handshake *HandshakeResult, publicKeyPath, privateKeyPath string) error {
-	if transport == nil || transport.ptr == nil {
-		return errors.New("transport is nil")
-	}
-
-	if handshake == nil || handshake.cResult == nil {
-		return errors.New("handshake is nil")
-	}
-
-	cPublicKeyPath := C.CString(publicKeyPath)
-	defer C.free(unsafe.Pointer(cPublicKeyPath))
-
-	cPrivateKeyPath := C.CString(privateKeyPath)
-	defer C.free(unsafe.Pointer(cPrivateKeyPath))
-
-	result := C.netplane_client_run(C.int(tunFd), transport.ptr, handshake.cResult, false, false, cPublicKeyPath, cPrivateKeyPath)
-
-	if result != 0 {
-		return fmt.Errorf("client run failed with code: %d", result)
-	}
-
-	return nil
-}
-
-// ClientStop stops the running client
-func ClientStop() {
+// Stop stops the running client
+func Stop() {
 	C.netplane_client_stop()
 }
 
