@@ -7,6 +7,7 @@ package gonetplane
 #cgo LDFLAGS: -lnetplane_client
 #cgo darwin LDFLAGS: -framework Security -framework SystemConfiguration
 #include "netplane.h"
+#include <stdint.h>
 #include <stdlib.h>
 */
 import "C"
@@ -15,9 +16,18 @@ import (
 	"unsafe"
 )
 
-// InitLogger initializes the netplane logger
-func InitLogger() {
-	C.netplane_init_logger()
+// LogFormat selects the log output style.
+type LogFormat uint32
+
+const (
+	LogFormatPretty LogFormat = 0
+	LogFormatJSON   LogFormat = 1
+	LogFormatLogfmt LogFormat = 2
+)
+
+// InitLogger initializes the netplane logger with the given output format.
+func InitLogger(format LogFormat) {
+	C.netplane_init_logger(C.uint32_t(format))
 }
 
 // ClientAuth authenticates the client with the server

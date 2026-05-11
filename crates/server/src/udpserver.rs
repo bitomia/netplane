@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::{

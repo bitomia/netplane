@@ -1,5 +1,5 @@
 use dotenv::dotenv;
-use log::info;
+use tracing::info;
 use netplane_client::client;
 
 #[cfg(target_os = "android")]
@@ -10,7 +10,6 @@ use netplane_client::{client::create_transport, client::StartParams, fd::Platfor
 use tauri_plugin_netplane_vpn_manager::NetplaneVpnManagerExt;
 
 use std::path::{Path, PathBuf};
-use tauri_plugin_log::{Target, TargetKind};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(not(target_os = "android"))]
@@ -70,7 +69,7 @@ pub async fn start_client(
     dotenv().ok();
 
     if server.is_empty() {
-        log::error!("No server");
+        tracing::error!("No server");
         app_handle
             .emit("connect_error", AppError::NoServer.to_string())
             .expect("no server emit error");
@@ -81,7 +80,7 @@ pub async fn start_client(
         netplane_common::crypto::try_generate_crypto_keys(&public_filepath, &private_filepath)
     {
         if err.kind() != std::io::ErrorKind::AlreadyExists {
-            log::error!("crypto_keys error: {:?}", err);
+            tracing::error!("crypto_keys error: {:?}", err);
             app_handle
                 .emit("connect_error", AppError::GenericError.to_string())
                 .expect("crypto_keys error emit error");
@@ -117,13 +116,13 @@ pub async fn start_client(
             //TODO: Change literal str for client error types
             match err.to_string().as_str() {
                 "Auth failed: \"Couldn't open file\"" => {
-                    log::error!("Could not open auth.key");
+                    tracing::error!("Could not open auth.key");
                     app_handle
                         .emit("connect_error", AppError::AuthKey.to_string())
                         .expect("auth emit error");
                 }
                 "Link failed" => {
-                    log::error!("Invalid link code");
+                    tracing::error!("Invalid link code");
                     app_handle
                         .emit("connect_error", AppError::AuthCode.to_string())
                         .expect("auth emit error");
@@ -138,7 +137,7 @@ pub async fn start_client(
         let mut token = match app_state.disconnect_token.lock() {
             Ok(t) => t,
             Err(err) => {
-                log::error!("Token could not be adquired: {:?}", err);
+                tracing::error!("Token could not be adquired: {:?}", err);
                 app_handle
                     .emit("connect_error", AppError::GenericError.to_string())
                     .expect("cloned_token emit error");
@@ -176,7 +175,7 @@ pub async fn start_client(
         )
         .await
         {
-            log::error!("Error when executing run: {:?}", err);
+            tracing::error!("Error when executing run: {:?}", err);
             app_handle
                 .emit("connect_error", AppError::GenericError.to_string())
                 .expect("run emit error");
@@ -193,7 +192,7 @@ pub async fn start_client(
             .map_err(|e| anyhow!("Failed to request VPN permission: {}", e))?;
 
         if !vpn_permission.granted {
-            log::error!("VPN permission not granted");
+            tracing::error!("VPN permission not granted");
             app_handle
                 .emit("connect_error", AppError::GenericError.to_string())
                 .expect("vpn permission emit error");
@@ -228,7 +227,7 @@ pub async fn start_client(
             .map_err(|e| anyhow!("Failed to start VPN: {}", e))?;
 
         if vpn_response.fd < 0 {
-            log::error!("VPN tunnel fd is invalid: {}", vpn_response.fd);
+            tracing::error!("VPN tunnel fd is invalid: {}", vpn_response.fd);
             app_handle
                 .emit("connect_error", AppError::GenericError.to_string())
                 .expect("vpn fd emit error");
@@ -259,7 +258,7 @@ pub async fn start_client(
         let connected_icon = match Image::from_path(Path::new("icons/connected/connected.png")) {
             Ok(image) => image,
             Err(err) => {
-                log::error!("connected.png not found: {:?}", err);
+                tracing::error!("connected.png not found: {:?}", err);
                 app_handle
                     .emit("connect_error", AppError::GenericError.to_string())
                     .expect("connected_icon emit error");
@@ -268,7 +267,7 @@ pub async fn start_client(
         };
 
         if let Err(err) = tray.set_icon(Some(connected_icon)) {
-            log::error!("Could not set icon: {:?}", err);
+            tracing::error!("Could not set icon: {:?}", err);
             app_handle
                 .emit("connect_error", AppError::GenericError.to_string())
                 .expect("set_icon connect emit error");
@@ -278,7 +277,7 @@ pub async fn start_client(
         let show_item = match MenuItem::with_id(&app_handle, "show", "Show", true, None::<&str>) {
             Ok(menu_item) => menu_item,
             Err(err) => {
-                log::error!("Could not create show item: {:?}", err);
+                tracing::error!("Could not create show item: {:?}", err);
                 app_handle
                     .emit("connect_error", AppError::GenericError.to_string())
                     .expect("show_item connect emit error");
@@ -289,7 +288,7 @@ pub async fn start_client(
         let quit_item = match MenuItem::with_id(&app_handle, "quit", "Quit", true, None::<&str>) {
             Ok(menu_item) => menu_item,
             Err(err) => {
-                log::error!("Could not create quit item: {:?}", err);
+                tracing::error!("Could not create quit item: {:?}", err);
                 app_handle
                     .emit("connect_error", AppError::GenericError.to_string())
                     .expect("quit_item connect emit error");
@@ -301,7 +300,7 @@ pub async fn start_client(
             match MenuItem::with_id(&app_handle, "disconnect", "Disconnect", true, None::<&str>) {
                 Ok(menu_item) => menu_item,
                 Err(err) => {
-                    log::error!("Could not create disconnect item: {:?}", err);
+                    tracing::error!("Could not create disconnect item: {:?}", err);
                     app_handle
                         .emit("connect_error", AppError::GenericError.to_string())
                         .expect("disconnect_item connect emit error");
@@ -313,7 +312,7 @@ pub async fn start_client(
         {
             Ok(menu) => menu,
             Err(err) => {
-                log::error!("Could not create connect menu: {:?}", err);
+                tracing::error!("Could not create connect menu: {:?}", err);
                 app_handle
                     .emit("connect_error", AppError::GenericError.to_string())
                     .expect("menu connect emit error");
@@ -322,7 +321,7 @@ pub async fn start_client(
         };
 
         if let Err(err) = tray.set_menu(Some(menu)) {
-            log::error!("Could not set connect menu: {:?}", err);
+            tracing::error!("Could not set connect menu: {:?}", err);
             app_handle
                 .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("set_menu connect emit error");
@@ -352,7 +351,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
     match app_state.disconnect_token.lock() {
         Ok(lock) => lock.cancel(),
         Err(err) => {
-            log::error!("Token could not be adquired: {:?}", err);
+            tracing::error!("Token could not be adquired: {:?}", err);
             app_handle
                 .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("disconnect_token emit error");
@@ -364,7 +363,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
     {
         use tauri_plugin_netplane_vpn_manager::NetplaneVpnManagerExt;
         if let Err(err) = app_handle.netplane_vpn_manager().stop_vpn() {
-            log::error!("Failed to stop VPN: {:?}", err);
+            tracing::error!("Failed to stop VPN: {:?}", err);
         }
     }
 
@@ -374,7 +373,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
             match Image::from_path(Path::new("icons/disconnected/disconnected.ico")) {
                 Ok(image) => image,
                 Err(err) => {
-                    log::error!("disconnected.png not found: {:?}", err);
+                    tracing::error!("disconnected.png not found: {:?}", err);
                     app_handle
                         .emit("disconnect_error", AppError::GenericError.to_string())
                         .expect("disconnected_icon emit error");
@@ -383,7 +382,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
             };
 
         if let Err(err) = tray.set_icon(Some(disconnected_icon)) {
-            log::error!("Could not set icon: {:?}", err);
+            tracing::error!("Could not set icon: {:?}", err);
             app_handle
                 .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("set_icon disconnect emit error");
@@ -393,7 +392,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
         let show_item = match MenuItem::with_id(&app_handle, "show", "Show", true, None::<&str>) {
             Ok(menu_item) => menu_item,
             Err(err) => {
-                log::error!("Could not create show item: {:?}", err);
+                tracing::error!("Could not create show item: {:?}", err);
                 app_handle
                     .emit("disconnect_error", AppError::GenericError.to_string())
                     .expect("show_item disconnect emit error");
@@ -404,7 +403,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
         let quit_item = match MenuItem::with_id(&app_handle, "quit", "Quit", true, None::<&str>) {
             Ok(menu_item) => menu_item,
             Err(err) => {
-                log::error!("Could not create quit item: {:?}", err);
+                tracing::error!("Could not create quit item: {:?}", err);
                 app_handle
                     .emit("disconnect_error", AppError::GenericError.to_string())
                     .expect("quit_item disconnect emit error");
@@ -415,7 +414,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
         let menu = match Menu::with_items(&app_handle, &[&show_item, &quit_item]) {
             Ok(menu) => menu,
             Err(err) => {
-                log::error!("Could not create disconnect menu: {:?}", err);
+                tracing::error!("Could not create disconnect menu: {:?}", err);
                 app_handle
                     .emit("disconnect_error", AppError::GenericError.to_string())
                     .expect("menu disconnect emit error");
@@ -424,7 +423,7 @@ pub async fn disconnect(app_handle: tauri::AppHandle) {
         };
 
         if let Err(err) = tray.set_menu(Some(menu)) {
-            log::error!("Could not set disconnect menu: {:?}", err);
+            tracing::error!("Could not set disconnect menu: {:?}", err);
             app_handle
                 .emit("disconnect_error", AppError::GenericError.to_string())
                 .expect("set_menu disconnect emit error");

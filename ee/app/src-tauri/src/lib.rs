@@ -9,8 +9,8 @@ use tauri::{
     tray::TrayIconBuilder,
     Manager,
 };
-use tauri_plugin_log::{Target, TargetKind};
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::EnvFilter;
 
 mod commands;
 mod error;
@@ -23,12 +23,13 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .targets([Target::new(TargetKind::Stdout)])
-                .build(),
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        .init();
+
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init());
 

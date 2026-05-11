@@ -9,7 +9,7 @@ typedef struct NetplaneHandshakeResult {
   char *ip_addr;
 } NetplaneHandshakeResult;
 
- void netplane_init_logger(void) ;
+ void netplane_init_logger(uint32_t format) ;
 
 
 int32_t netplane_client_auth(const char *authkey_path,

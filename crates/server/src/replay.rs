@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use log::info;
+use tracing::info;
 use netplane_common::transport::{Transport, TransportMode, UdpTransport, WebSocketTransport};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -96,7 +96,7 @@ pub async fn replay_traffic(file_path: &str, transport_mode: TransportMode, dela
                                 info!("Sent {} bytes", entry.data.len());
                             }
                             Err(e) => {
-                                log::error!("Failed to send packet: {}", e);
+                                tracing::error!("Failed to send packet: {}", e);
                             }
                         }
 
@@ -104,7 +104,7 @@ pub async fn replay_traffic(file_path: &str, transport_mode: TransportMode, dela
                         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     }
                     Err(e) => {
-                        log::warn!("Failed to parse line: {} - {}", line, e);
+                        tracing::warn!("Failed to parse line: {} - {}", line, e);
                     }
                 }
             }
@@ -140,7 +140,7 @@ pub async fn replay_traffic(file_path: &str, transport_mode: TransportMode, dela
                                 info!("Sent {} bytes", entry.data.len());
                             }
                             Err(e) => {
-                                log::error!("Failed to send packet: {}", e);
+                                tracing::error!("Failed to send packet: {}", e);
                             }
                         }
 
@@ -148,7 +148,7 @@ pub async fn replay_traffic(file_path: &str, transport_mode: TransportMode, dela
                         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     }
                     Err(e) => {
-                        log::warn!("Failed to parse line: {} - {}", line, e);
+                        tracing::warn!("Failed to parse line: {} - {}", line, e);
                     }
                 }
             }

@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
-use env_logger::Env;
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use serde::Serialize;
 use std::env;
 use std::io;
@@ -619,14 +618,292 @@ pub async fn auth_client(
     }
 }
 
-pub fn init_logger() {
+#[derive(Debug, Clone, Copy, Default)]
+pub enum LogFormat {
+    #[default]
+    Pretty,
+    Json,
+    Logfmt,
+}
+
+#[cfg(not(target_os = "android"))]
+mod json_fmt {
+    use std::fmt;
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::fmt::{format::Writer, FmtContext, FormatEvent, FormatFields};
+    use tracing_subscriber::registry::LookupSpan;
+
+    pub struct JsonFormatter;
+
+    impl<S, N> FormatEvent<S, N> for JsonFormatter
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+        N: for<'a> FormatFields<'a> + 'static,
+    {
+        fn format_event(
+            &self,
+            _ctx: &FmtContext<'_, S, N>,
+            mut writer: Writer<'_>,
+            event: &Event<'_>,
+        ) -> fmt::Result {
+            let ts = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, false);
+            writer.write_char('{')?;
+            write!(writer, "\"time\":\"{}\"", ts)?;
+            write!(writer, ",\"level\":\"{}\"", event.metadata().level())?;
+
+            let mut visitor = JsonVisitor {
+                writer: &mut writer,
+                result: Ok(()),
+            };
+            event.record(&mut visitor);
+            visitor.result?;
+
+            writer.write_char('}')?;
+            writeln!(writer)
+        }
+    }
+
+    struct JsonVisitor<'a, 'b> {
+        writer: &'a mut Writer<'b>,
+        result: fmt::Result,
+    }
+
+    impl<'a, 'b> tracing::field::Visit for JsonVisitor<'a, 'b> {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+            if self.result.is_err() {
+                return;
+            }
+            let rendered = format!("{:?}", value);
+            let unquoted = strip_debug_quotes(&rendered).to_string();
+            self.result = write_string(self.writer, Self::name_or_msg(field), &unquoted);
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            if self.result.is_err() {
+                return;
+            }
+            self.result = write_string(self.writer, Self::name_or_msg(field), value);
+        }
+
+        fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+            if self.result.is_err() {
+                return;
+            }
+            self.result = write_raw(self.writer, Self::name_or_msg(field), &value.to_string());
+        }
+
+        fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+            if self.result.is_err() {
+                return;
+            }
+            self.result = write_raw(self.writer, Self::name_or_msg(field), &value.to_string());
+        }
+
+        fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+            if self.result.is_err() {
+                return;
+            }
+            let v = if value.is_finite() {
+                value.to_string()
+            } else {
+                format!("\"{}\"", value)
+            };
+            self.result = write_raw(self.writer, Self::name_or_msg(field), &v);
+        }
+
+        fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+            if self.result.is_err() {
+                return;
+            }
+            self.result = write_raw(self.writer, Self::name_or_msg(field), if value { "true" } else { "false" });
+        }
+    }
+
+    impl<'a, 'b> JsonVisitor<'a, 'b> {
+        fn name_or_msg(field: &tracing::field::Field) -> &str {
+            if field.name() == "message" {
+                "msg"
+            } else {
+                field.name()
+            }
+        }
+    }
+
+    fn strip_debug_quotes(s: &str) -> &str {
+        if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+            &s[1..s.len() - 1]
+        } else {
+            s
+        }
+    }
+
+    fn write_raw(writer: &mut Writer<'_>, key: &str, raw: &str) -> fmt::Result {
+        writer.write_char(',')?;
+        write_json_string(writer, key)?;
+        writer.write_char(':')?;
+        writer.write_str(raw)
+    }
+
+    fn write_string(writer: &mut Writer<'_>, key: &str, value: &str) -> fmt::Result {
+        writer.write_char(',')?;
+        write_json_string(writer, key)?;
+        writer.write_char(':')?;
+        write_json_string(writer, value)
+    }
+
+    fn write_json_string(writer: &mut Writer<'_>, s: &str) -> fmt::Result {
+        writer.write_char('"')?;
+        for c in s.chars() {
+            match c {
+                '"' => writer.write_str("\\\"")?,
+                '\\' => writer.write_str("\\\\")?,
+                '\n' => writer.write_str("\\n")?,
+                '\r' => writer.write_str("\\r")?,
+                '\t' => writer.write_str("\\t")?,
+                '\x08' => writer.write_str("\\b")?,
+                '\x0c' => writer.write_str("\\f")?,
+                c if (c as u32) < 0x20 => write!(writer, "\\u{:04x}", c as u32)?,
+                c => writer.write_char(c)?,
+            }
+        }
+        writer.write_char('"')
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+mod logfmt {
+    use std::fmt;
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::fmt::{
+        format::Writer,
+        FmtContext, FormatEvent, FormatFields,
+    };
+    use tracing_subscriber::registry::LookupSpan;
+
+    pub struct LogfmtFormatter;
+
+    impl<S, N> FormatEvent<S, N> for LogfmtFormatter
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+        N: for<'a> FormatFields<'a> + 'static,
+    {
+        fn format_event(
+            &self,
+            ctx: &FmtContext<'_, S, N>,
+            mut writer: Writer<'_>,
+            event: &Event<'_>,
+        ) -> fmt::Result {
+            let ts = chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+            write!(writer, "time={} level={}", ts, event.metadata().level())?;
+
+            let mut visitor = LogfmtVisitor {
+                writer: &mut writer,
+                result: Ok(()),
+            };
+            event.record(&mut visitor);
+            visitor.result?;
+
+            if let Some(scope) = ctx.event_scope() {
+                for span in scope.from_root() {
+                    write!(writer, " span={}", span.name())?;
+                }
+            }
+
+            writeln!(writer)
+        }
+    }
+
+    struct LogfmtVisitor<'a, 'b> {
+        writer: &'a mut Writer<'b>,
+        result: fmt::Result,
+    }
+
+    impl<'a, 'b> tracing::field::Visit for LogfmtVisitor<'a, 'b> {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+            if self.result.is_err() {
+                return;
+            }
+            let rendered = format!("{:?}", value);
+            let unquoted = strip_debug_quotes(&rendered);
+            self.result = write_kv(self.writer, field.name(), unquoted);
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            if self.result.is_err() {
+                return;
+            }
+            self.result = write_kv(self.writer, field.name(), value);
+        }
+    }
+
+    fn strip_debug_quotes(s: &str) -> &str {
+        if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+            &s[1..s.len() - 1]
+        } else {
+            s
+        }
+    }
+
+    fn write_kv(writer: &mut Writer<'_>, key: &str, value: &str) -> fmt::Result {
+        let key = if key == "message" { "msg" } else { key };
+        let needs_quote = value.is_empty()
+            || value
+                .chars()
+                .any(|c| c == ' ' || c == '"' || c == '=' || c.is_control());
+        if needs_quote {
+            write!(writer, " {}=\"", key)?;
+            for c in value.chars() {
+                match c {
+                    '"' => writer.write_str("\\\"")?,
+                    '\\' => writer.write_str("\\\\")?,
+                    '\n' => writer.write_str("\\n")?,
+                    '\r' => writer.write_str("\\r")?,
+                    '\t' => writer.write_str("\\t")?,
+                    c => writer.write_char(c)?,
+                }
+            }
+            writer.write_char('"')
+        } else {
+            write!(writer, " {}={}", key, value)
+        }
+    }
+}
+
+pub fn init_logger(format: LogFormat) {
     #[cfg(target_os = "android")]
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Trace)
-            .with_tag("netplane"),
-    );
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        let _ = format;
+        let android_layer = tracing_android::layer("netplane").expect("init tracing-android");
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::new("trace"))
+            .with(android_layer)
+            .init();
+    }
 
     #[cfg(not(target_os = "android"))]
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    {
+        use tracing_subscriber::EnvFilter;
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        match format {
+            LogFormat::Json => {
+                let _ = tracing_subscriber::fmt()
+                    .event_format(json_fmt::JsonFormatter)
+                    .with_env_filter(filter)
+                    .try_init();
+            }
+            LogFormat::Pretty => {
+                let _ = tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .try_init();
+            }
+            LogFormat::Logfmt => {
+                let _ = tracing_subscriber::fmt()
+                    .event_format(logfmt::LogfmtFormatter)
+                    .with_env_filter(filter)
+                    .try_init();
+            }
+        }
+    }
 }

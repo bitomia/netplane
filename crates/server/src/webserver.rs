@@ -1,6 +1,6 @@
 use axum::{routing::get, routing::post, serve::Serve, Router};
 use axum_embed::ServeEmbed;
-use log::info;
+use tracing::info;
 use rust_embed::RustEmbed;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;

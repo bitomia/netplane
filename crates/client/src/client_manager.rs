@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
-use log::{debug, info};
+use tracing::{debug, info};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;

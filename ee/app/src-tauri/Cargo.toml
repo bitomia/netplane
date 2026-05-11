@@ -27,7 +27,7 @@ tauri = { version = "2", features = [
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-log = "0.4.22"
+tracing = "0.1"
 netplane_client = { path = "../../../crates/client/" }
 netplane_common = { path = "../../../crates/common/" }
 dotenv = "0.15.0"
@@ -35,7 +35,7 @@ anyhow = "1.0.100"
 tokio = "1.49.0"
 tokio-util = "0.7.17"
 tauri-plugin-fs = "2"
-tauri-plugin-log = "2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(any(target_os="android",target_os="ios"))'.dependencies]
 tauri-plugin-netplane-vpn-manager = { path = "../plugins/netplane-vpn-manager" }

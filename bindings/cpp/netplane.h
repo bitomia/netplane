@@ -9,7 +9,11 @@ typedef struct NetplaneHandshakeResult {
   char *ip_addr;
 } NetplaneHandshakeResult;
 
- void netplane_init_logger(void) ;
+/**
+ * Log format selector for the C FFI.
+ * 0 = Pretty (default), 1 = Json, 2 = Logfmt. Unknown values fall back to Pretty.
+ */
+ void netplane_init_logger(uint32_t format) ;
 
 
 int32_t netplane_client_auth(const char *authkey_path,

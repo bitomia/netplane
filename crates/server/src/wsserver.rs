@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, WebSocketTransport};
 use netplane_common::{

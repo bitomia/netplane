@@ -1,4 +1,4 @@
-use log::{error, info};
+use tracing::{error, info};
 use netplane_common::{
     transport::TransportMode, HandshakeError, HandshakeRep, HandshakeReq, PeerList,
 };

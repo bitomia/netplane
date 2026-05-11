@@ -10,7 +10,7 @@ import (
 )
 
 func TestNetplane(t *testing.T) {
-	netplane.InitLogger()
+	netplane.InitLogger(netplane.LogFormatPretty)
 
 	os.Remove("public.key")
 	os.Remove("private.key")

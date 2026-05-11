@@ -1,4 +1,4 @@
-use log::info;
+use tracing::info;
 use tokio::io::AsyncReadExt;
 use tun::Configuration;
 

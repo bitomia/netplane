@@ -1,8 +1,8 @@
 use anyhow::Error;
 use axum::{serve::Serve, Router};
 use dotenv::dotenv;
-use env_logger::Env;
-use log::{info, warn};
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
@@ -102,7 +102,9 @@ fn start_netplane_server(
 
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
     info!("Netplane server rev {}", netplane_common::git_rev_main!());
 
     dotenv().ok();

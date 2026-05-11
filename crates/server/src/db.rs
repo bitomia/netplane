@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use log::info;
+use tracing::info;
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, FromRow, Pool, Sqlite};
 use std::{env, path::Path as FilePath};

@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
-use log::info;
+use tracing::info;
 
 use std::env;
 
@@ -22,7 +22,16 @@ fn echo_syntax(args: &Vec<String>) {
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
 fn main() -> Result<()> {
-    client::init_logger();
+    let log_format = env::args()
+        .find_map(|a| a.strip_prefix("--log-format=").map(str::to_string))
+        .as_deref()
+        .map(|v| match v {
+            "json" => client::LogFormat::Json,
+            "logfmt" => client::LogFormat::Logfmt,
+            _ => client::LogFormat::Pretty,
+        })
+        .unwrap_or(client::LogFormat::Pretty);
+    client::init_logger(log_format);
     info!("Netplane client rev {}", netplane_common::git_rev_main!());
 
     dotenv().ok();

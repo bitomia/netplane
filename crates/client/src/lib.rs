@@ -1,4 +1,3 @@
-use log::{error, info};
 use once_cell::sync::Lazy;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
@@ -6,6 +5,7 @@ use std::sync::Mutex;
 use tokio::runtime::Runtime;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 use netplane_common::crypto::load_auth_key;
 use netplane_common::transport::AnyTransport;
@@ -134,9 +134,17 @@ pub struct HandshakeResult {
     pub ip_addr: *mut c_char,
 }
 
+/// Log format selector for the C FFI.
+/// 0 = Pretty (default), 1 = Json, 2 = Logfmt. Unknown values fall back to Pretty.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_init_logger() {
-    client::init_logger();
+pub extern "C" fn netplane_init_logger(format: u32) {
+    let format = match format {
+        1 => client::LogFormat::Json,
+        2 => client::LogFormat::Logfmt,
+        _ => client::LogFormat::Pretty,
+    };
+
+    client::init_logger(format);
 }
 
 #[unsafe(no_mangle)]

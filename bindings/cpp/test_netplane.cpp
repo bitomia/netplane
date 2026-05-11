@@ -21,7 +21,7 @@ static int failures = 0;
     } while (0)
 
 static void test_init_logger() {
-    netplane_init_logger();
+    netplane_init_logger(0);
 }
 
 static void test_generate_crypto_keys() {

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{error, info};
+use tracing::{error, info};
 use std::net::{Ipv4Addr, UdpSocket};
 use std::str;
 use std::sync::Arc;
