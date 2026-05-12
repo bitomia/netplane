@@ -1,7 +1,12 @@
-# Tauri + React
+# Netplane App
 
-This template should help get you started developing with Tauri and React in Vite.
+Multiplatform client app based on Tauri.
 
-## Recommended IDE Setup
+Supported platforms:
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+[x] MacOS
+[x] Windows
+[x] Android
+[ ] iOS (in-progress)
+
+
