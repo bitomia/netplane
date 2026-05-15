@@ -1,6 +1,6 @@
 use dotenv::dotenv;
-use tracing::info;
 use netplane_client::client;
+use tracing::info;
 
 #[cfg(target_os = "android")]
 use anyhow::anyhow;
@@ -202,7 +202,7 @@ pub async fn start_client(
         let start_params = StartParams {
             netmask: "255.255.255.0".to_string(),
             destination: "192.168.1.37".to_string(),
-            ip_addr: "10.0.0.3".to_string(),
+            ip_addr: "12.0.0.2".to_string(),
         };
 
         let prefix_length = 24;
