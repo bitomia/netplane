@@ -1,4 +1,4 @@
-# Netplane - Software defined networks
+# Netplane - Overlay Network
 
 ## Dependencies
 
