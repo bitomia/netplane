@@ -1,13 +1,19 @@
-use tracing::{error, info};
-use netplane_common::{
-    transport::TransportMode, HandshakeError, HandshakeRep, HandshakeReq, PeerList,
-};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use anyhow::Error;
+use tokio::task::JoinHandle;
+use tracing::{error, info};
+
+use netplane_common::{
+    transport::TransportMode, HandshakeError, HandshakeRep, HandshakeReq, PeerList,
+};
+
 use crate::db;
 use crate::peers::*;
+use crate::udpserver::UdpServer;
+use crate::wsserver::WebSocketServer;
 
 #[derive(Debug)]
 pub enum HandshakeResult {
@@ -95,4 +101,35 @@ impl<PeerKey> Server<PeerKey> {
             }
         }
     }
+}
+
+pub fn run(
+    db: Arc<crate::db::Db>,
+    server_stats: Arc<ServerStats>,
+    transport_mode: TransportMode,
+    dump_file: Option<String>,
+    replay_file: Option<String>,
+    replay_delay: Option<u64>,
+) -> JoinHandle<Result<(), Error>> {
+    let netplane_server = tokio::spawn(async move {
+        match transport_mode {
+            TransportMode::WebSocket => {
+                WebSocketServer::new(Arc::clone(&db), Arc::clone(&server_stats))
+                    .start()
+                    .await
+            }
+            _ => {
+                UdpServer::new(
+                    Arc::clone(&db),
+                    Arc::clone(&server_stats),
+                    dump_file,
+                    replay_file,
+                    replay_delay,
+                )
+                .start()
+                .await
+            }
+        }
+    });
+    netplane_server
 }

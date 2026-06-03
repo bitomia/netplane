@@ -3,8 +3,9 @@
 package gonetplane
 
 /*
-#cgo CFLAGS: -I.
-#cgo LDFLAGS: -lnetplane_client
+#cgo CFLAGS: -I../cpp
+#cgo LDFLAGS: ${SRCDIR}/../../target/release/libnetplane_client.a
+#cgo linux LDFLAGS: -lpthread -ldl -lm -lrt
 #cgo darwin LDFLAGS: -framework Security -framework SystemConfiguration
 #include "netplane.h"
 #include <stdint.h>
@@ -25,9 +26,9 @@ const (
 	LogFormatLogfmt LogFormat = 2
 )
 
-// InitLogger initializes the netplane logger with the given output format.
-func InitLogger(format LogFormat) {
-	C.netplane_init_logger(C.uint32_t(format))
+// ClientInitLogger initializes the netplane logger with the given output format.
+func ClientInitLogger(format LogFormat) {
+	C.netplane_client_init_logger(C.uint32_t(format))
 }
 
 // ClientAuth authenticates the client with the server
@@ -80,18 +81,13 @@ func TryGenerateCryptoKeys(publicFilepath, privateFilepath string) error {
 	return nil
 }
 
-// Stop stops the running client
-func Stop() {
+// ClientStop stops the running client
+func ClientStop() {
 	C.netplane_client_stop()
 }
 
-// CancelToken is an opaque handle to a cancellation token
-type CancelToken struct {
-	ptr unsafe.Pointer
-}
-
-// Run runs the netplane client with the given parameters and returns a CancelToken
-func Run(tunDev, host string, port uint16, transportType, authKeyPath, publicKeyPath, privateKeyPath string) (*CancelToken, error) {
+// ClientRun runs the netplane client with the given parameters and returns a CancelToken
+func ClientRun(tunDev, host string, port uint16, transportType, authKeyPath, publicKeyPath, privateKeyPath string) error {
 	cTunDev := C.CString(tunDev)
 	defer C.free(unsafe.Pointer(cTunDev))
 
@@ -114,26 +110,11 @@ func Run(tunDev, host string, port uint16, transportType, authKeyPath, publicKey
 	defer C.free(unsafe.Pointer(cPrivateKeyPath))
 
 	var tokenPtr unsafe.Pointer
-	result := C.netplane_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false, cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
+	result := C.netplane_client_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false, cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
 
 	if result != 0 {
-		return nil, fmt.Errorf("run failed with code: %d", result)
+		return fmt.Errorf("run failed with code: %d", result)
 	}
 
-	return &CancelToken{ptr: tokenPtr}, nil
-}
-
-// Cancel cancels the operation associated with this token
-func (t *CancelToken) Cancel() {
-	if t != nil && t.ptr != nil {
-		C.netplane_cancel(t.ptr)
-	}
-}
-
-// Free releases the resources associated with this token
-func (t *CancelToken) Free() {
-	if t != nil && t.ptr != nil {
-		C.netplane_free_cancel_token(t.ptr)
-		t.ptr = nil
-	}
+	return nil
 }

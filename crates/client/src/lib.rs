@@ -137,7 +137,7 @@ pub struct HandshakeResult {
 /// Log format selector for the C FFI.
 /// 0 = Pretty (default), 1 = Json, 2 = Logfmt. Unknown values fall back to Pretty.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_init_logger(format: u32) {
+pub extern "C" fn netplane_client_init_logger(format: u32) {
     let format = match format {
         1 => client::LogFormat::Json,
         2 => client::LogFormat::Logfmt,
@@ -375,7 +375,7 @@ fn reset_cancel_token() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_client_run(
+pub extern "C" fn netplane_client_run_fd(
     tun_fd: c_int,
     transport: *mut std::ffi::c_void,
     handshake: *mut HandshakeResult,
@@ -487,7 +487,7 @@ pub extern "C" fn netplane_client_stop() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_run(
+pub extern "C" fn netplane_client_run(
     tun_dev: *const c_char,
     host: *const c_char,
     port: u16,
@@ -599,23 +599,4 @@ pub extern "C" fn netplane_run(
             }
         }
     })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn netplane_cancel(token: *mut std::ffi::c_void) {
-    if token.is_null() {
-        return;
-    }
-    let token = unsafe { &*(token as *const CancellationToken) };
-    token.cancel();
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn netplane_free_cancel_token(token: *mut std::ffi::c_void) {
-    if token.is_null() {
-        return;
-    }
-    unsafe {
-        let _ = Box::from_raw(token as *mut CancellationToken);
-    }
 }

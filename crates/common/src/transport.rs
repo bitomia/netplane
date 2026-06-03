@@ -23,6 +23,7 @@ pub enum TransportError {
 }
 
 #[derive(Debug, Serialize, Clone)]
+#[repr(C)]
 pub enum TransportMode {
     UDP = 0,
     WebSocket,

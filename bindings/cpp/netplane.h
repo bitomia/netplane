@@ -13,7 +13,7 @@ typedef struct NetplaneHandshakeResult {
  * Log format selector for the C FFI.
  * 0 = Pretty (default), 1 = Json, 2 = Logfmt. Unknown values fall back to Pretty.
  */
- void netplane_init_logger(uint32_t format) ;
+ void netplane_client_init_logger(uint32_t format) ;
 
 
 int32_t netplane_client_auth(const char *authkey_path,
@@ -50,30 +50,26 @@ void *netplane_create_transport(const char *server_addr,
  void netplane_free_transport(void *transport) ;
 
 
-int32_t netplane_client_run(int tun_fd,
-                            void *transport,
-                            struct NetplaneHandshakeResult *handshake,
-                            bool loopback_relay,
-                            bool no_encryption,
-                            const char *public_filepath,
-                            const char *private_filepath)
+int32_t netplane_client_run_fd(int tun_fd,
+                               void *transport,
+                               struct NetplaneHandshakeResult *handshake,
+                               bool loopback_relay,
+                               bool no_encryption,
+                               const char *public_filepath,
+                               const char *private_filepath)
 ;
 
  void netplane_client_stop(void) ;
 
 
-int32_t netplane_run(const char *tun_dev,
-                     const char *host,
-                     uint16_t port,
-                     const char *transport_type,
-                     bool loopback_relay,
-                     bool no_encryption,
-                     const char *authkey_path,
-                     const char *public_filepath,
-                     const char *private_filepath,
-                     void **cancel_token_out)
+int32_t netplane_client_run(const char *tun_dev,
+                            const char *host,
+                            uint16_t port,
+                            const char *transport_type,
+                            bool loopback_relay,
+                            bool no_encryption,
+                            const char *authkey_path,
+                            const char *public_filepath,
+                            const char *private_filepath,
+                            void **cancel_token_out)
 ;
-
- void netplane_cancel(void *token) ;
-
- void netplane_free_cancel_token(void *token) ;

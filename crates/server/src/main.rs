@@ -1,14 +1,14 @@
 use anyhow::Error;
 use axum::{serve::Serve, Router};
 use dotenv::dotenv;
-use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::task::JoinHandle;
+use tracing::{info, warn};
+use tracing_subscriber::EnvFilter;
 
 mod db;
 mod dnsserver;
@@ -23,9 +23,7 @@ mod wsserver;
 
 use crate::dnsserver::DnsServer;
 use crate::server::ProcessError;
-use crate::udpserver::UdpServer;
 use crate::webserver::WebServer;
-use crate::wsserver::WebSocketServer;
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
@@ -69,41 +67,12 @@ async fn try_start_web_server(
     }
 }
 
-fn start_netplane_server(
-    db: Arc<crate::db::Db>,
-    server_stats: Arc<server::ServerStats>,
-    transport_mode: TransportMode,
-    dump_file: Option<String>,
-    replay_file: Option<String>,
-    replay_delay: Option<u64>,
-) -> JoinHandle<Result<(), Error>> {
-    let netplane_server = tokio::spawn(async move {
-        match transport_mode {
-            TransportMode::WebSocket => {
-                WebSocketServer::new(Arc::clone(&db), Arc::clone(&server_stats))
-                    .start()
-                    .await
-            }
-            _ => {
-                UdpServer::new(
-                    Arc::clone(&db),
-                    Arc::clone(&server_stats),
-                    dump_file,
-                    replay_file,
-                    replay_delay,
-                )
-                .start()
-                .await
-            }
-        }
-    });
-    netplane_server
-}
-
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
     info!("Netplane server rev {}", netplane_common::git_rev_main!());
 
@@ -241,7 +210,7 @@ async fn main() -> Result<(), ProcessError> {
     tokio::select! {
         _ = async { webserver.unwrap().await }, if webserver.is_some() => { info!("Web server stopped") }
         _ = async { dnsserver.unwrap().await }, if dnsserver.is_some() => { info!("DNS server stopped") }
-        _ = start_netplane_server(Arc::clone(&db), Arc::clone(&server_stats), transport_mode, dump_file, replay_file, replay_delay) => info!("Netplane server stopped")
+        _ = server::run(Arc::clone(&db), Arc::clone(&server_stats), transport_mode, dump_file, replay_file, replay_delay) => info!("Netplane server stopped")
     }
     Ok(())
 }

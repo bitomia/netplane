@@ -2987,6 +2987,7 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "netplane_common",
+ "once_cell",
  "rpassword",
  "rust-embed",
  "serde",
