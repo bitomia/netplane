@@ -1,5 +1,4 @@
 use anyhow::Result;
-use tracing::{debug, error, info, trace, warn};
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, WebSocketTransport};
 use netplane_common::{
@@ -13,6 +12,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tracing::{debug, error, info, trace, warn};
 
 use crate::db;
 use crate::peers::TcpPeersRouting;

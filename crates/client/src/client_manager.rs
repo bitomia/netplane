@@ -1,10 +1,10 @@
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
-use tracing::{debug, info};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::time::Instant;
+use tracing::{debug, info};
 
 use netplane_common::PeerInfo;
 use netplane_common::noise_session::{

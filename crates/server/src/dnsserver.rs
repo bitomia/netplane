@@ -1,9 +1,9 @@
 use anyhow::Result;
-use tracing::{error, info};
 use std::net::{Ipv4Addr, UdpSocket};
 use std::str;
 use std::sync::Arc;
 use std::thread;
+use tracing::{error, info};
 
 fn u16_from_be(bytes: &[u8]) -> u16 {
     ((bytes[0] as u16) << 8) | (bytes[1] as u16)

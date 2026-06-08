@@ -1,5 +1,5 @@
-use tracing::info;
 use tokio::io::AsyncReadExt;
+use tracing::info;
 use tun::Configuration;
 
 use super::fd::PlatformFd;

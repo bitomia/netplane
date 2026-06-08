@@ -1,6 +1,5 @@
 use anyhow::{Result, anyhow};
 use base64::{Engine as _, engine::general_purpose};
-use tracing::{debug, error, info, warn};
 use serde::Serialize;
 use std::env;
 use std::io;
@@ -8,6 +7,7 @@ use std::net::Ipv4Addr;
 use std::str::FromStr;
 use tokio::time::{Duration, interval};
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
 
 use netplane_common::crypto::{load_auth_key, try_load_crypto_keys};
 use netplane_common::packet::{is_multicast_or_broadcast, parse_ipv4_header, validate_packet};
@@ -630,7 +630,7 @@ pub enum LogFormat {
 mod json_fmt {
     use std::fmt;
     use tracing::{Event, Subscriber};
-    use tracing_subscriber::fmt::{format::Writer, FmtContext, FormatEvent, FormatFields};
+    use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, format::Writer};
     use tracing_subscriber::registry::LookupSpan;
 
     pub struct JsonFormatter;
@@ -715,7 +715,11 @@ mod json_fmt {
             if self.result.is_err() {
                 return;
             }
-            self.result = write_raw(self.writer, Self::name_or_msg(field), if value { "true" } else { "false" });
+            self.result = write_raw(
+                self.writer,
+                Self::name_or_msg(field),
+                if value { "true" } else { "false" },
+            );
         }
     }
 
@@ -774,10 +778,7 @@ mod json_fmt {
 mod logfmt {
     use std::fmt;
     use tracing::{Event, Subscriber};
-    use tracing_subscriber::fmt::{
-        format::Writer,
-        FmtContext, FormatEvent, FormatFields,
-    };
+    use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, format::Writer};
     use tracing_subscriber::registry::LookupSpan;
 
     pub struct LogfmtFormatter;
@@ -894,9 +895,7 @@ pub fn init_logger(format: LogFormat) {
                     .try_init();
             }
             LogFormat::Pretty => {
-                let _ = tracing_subscriber::fmt()
-                    .with_env_filter(filter)
-                    .try_init();
+                let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
             }
             LogFormat::Logfmt => {
                 let _ = tracing_subscriber::fmt()

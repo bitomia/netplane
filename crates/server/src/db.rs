@@ -1,8 +1,8 @@
 use anyhow::anyhow;
-use tracing::info;
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, FromRow, Pool, Sqlite};
 use std::{env, path::Path as FilePath};
+use tracing::info;
 
 const DEFAULT_DATABASE_URL: &str = "sqlite://netplane.db";
 

@@ -1,9 +1,9 @@
 use axum::{routing::get, routing::post, serve::Serve, Router};
 use axum_embed::ServeEmbed;
-use tracing::info;
 use rust_embed::RustEmbed;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tracing::info;
 
 #[derive(RustEmbed, Clone)]
 #[folder = "../../web/dist/"]

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use tracing::{error, info, trace, warn};
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::{
@@ -16,6 +15,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use tokio::time;
+use tracing::{error, info, trace, warn};
 
 use crate::db;
 use crate::peers::PeersVec;
