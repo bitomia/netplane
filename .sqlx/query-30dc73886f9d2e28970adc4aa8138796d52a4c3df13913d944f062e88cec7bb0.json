@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT network, netmask FROM clients LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "network",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "netmask",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "30dc73886f9d2e28970adc4aa8138796d52a4c3df13913d944f062e88cec7bb0"
+}

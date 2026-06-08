@@ -20,6 +20,7 @@ pub const NOISE_HANDSHAKE_RESP_HEADER: [u8; 3] = [0x4E, 0x48, 0x52]; // "NHR"
 #[derive(Serialize, Deserialize)]
 pub struct AuthClientRequest {
     pub public_key: String,
+    pub dynamic_link: bool,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -36,7 +37,7 @@ pub struct HandshakeReq {
 }
 
 impl HandshakeReq {
-    pub fn new(auth_key: &String) -> Self {
+    pub fn new(auth_key: &String, is_dynamic: bool) -> Self {
         Self {
             header: HANDSHAKE_REQUEST_HEADER,
             auth_key: auth_key.clone(),
@@ -44,7 +45,11 @@ impl HandshakeReq {
         }
     }
 
-    pub fn new_with_crypto(auth_key: &String, client_public_key: &String) -> Self {
+    pub fn new_with_crypto(
+        auth_key: &String,
+        client_public_key: &String,
+        is_dynamic: bool,
+    ) -> Self {
         Self {
             header: HANDSHAKE_REQUEST_HEADER,
             auth_key: auth_key.clone(),

@@ -2,16 +2,16 @@ use anyhow::Result;
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, WebSocketTransport};
 use netplane_common::{
-    get_message_type, MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType,
-    PeerInfo, PeerList, PeerState, RelayPacket,
+    MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType, PeerInfo,
+    PeerList, PeerState, RelayPacket, get_message_type,
 };
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use std::sync::atomic::{AtomicI32, Ordering};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::db;
@@ -22,9 +22,18 @@ use crate::server::*;
 pub struct WebSocketServer(Server<i32>);
 
 impl WebSocketServer {
-    pub fn new(db: Arc<db::Db>, stats: Arc<ServerStats>) -> Self {
+    pub fn new(
+        db: Arc<db::Db>,
+        stats: Arc<ServerStats>,
+        dynamic_clients_key: Option<String>,
+    ) -> Self {
         let peers: Peers<i32> = Peers::new(Mutex::new(HashMap::new()));
-        Self(Server { peers, db, stats })
+        Self(Server {
+            peers,
+            db,
+            stats,
+            dynamic_clients_key,
+        })
     }
 
     pub async fn start(&mut self) -> Result<()> {
@@ -37,6 +46,7 @@ impl WebSocketServer {
             let stats = Arc::clone(&self.0.stats);
             let next_peer_id = Arc::new(AtomicI32::new(0));
             let next_peer_id_clone = Arc::clone(&next_peer_id);
+            let dynamic_clients_key = self.0.dynamic_clients_key.clone();
 
             move |socket, addr| {
                 let peer_id = next_peer_id_clone.fetch_add(1, Ordering::SeqCst);
@@ -48,6 +58,7 @@ impl WebSocketServer {
                     Arc::clone(&db),
                     Arc::clone(&peers),
                     Arc::clone(&stats),
+                    dynamic_clients_key.clone(),
                 )
             }
         })
@@ -63,6 +74,7 @@ impl WebSocketServer {
         db: Arc<db::Db>,
         peers: Peers<i32>,
         stats: Arc<ServerStats>,
+        dynamic_clients_key: Option<String>,
     ) {
         info!(
             "New client connection (connections={})",

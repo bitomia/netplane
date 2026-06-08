@@ -7,8 +7,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 
 pub type Tx = mpsc::UnboundedSender<Bytes>;
 pub type Rx = mpsc::UnboundedReceiver<Bytes>;

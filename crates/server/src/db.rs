@@ -1,8 +1,8 @@
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
-use sqlx::{sqlite::SqlitePoolOptions, FromRow, Pool, Sqlite};
-use std::{env, path::Path as FilePath};
-use tracing::info;
+use sqlx::{FromRow, Pool, Sqlite, sqlite::SqlitePoolOptions};
+use std::{collections::HashSet, env, net::Ipv4Addr, path::Path as FilePath};
+use tracing::{error, info};
 
 const DEFAULT_DATABASE_URL: &str = "sqlite://netplane.db";
 
@@ -33,7 +33,7 @@ pub struct Db {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Client {
     pub id: String,
-    pub auth_link_id: String,
+    pub auth_link_id: Option<String>,
     pub sdn_client_ip: String,
     pub network: String,
     pub netmask: String,
@@ -103,7 +103,115 @@ impl Db {
         self.get_client(&client_id).await
     }
 
-    pub async fn is_auth(self: &Self, auth_id: &String) -> Result<AuthClient, anyhow::Error> {
+    pub async fn create_dynamic_client(
+        self: &Self,
+        pub_key: &str,
+        max_attempts: usize,
+    ) -> Result<Client, anyhow::Error> {
+        // TODO: handle the empty-table case (no existing client to derive the network from)
+        let row = sqlx::query!("SELECT network, netmask FROM clients LIMIT 1")
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| anyhow!("No existing client to derive the network from"))?;
+        let network = row.network;
+        let netmask = row.netmask;
+
+        info!(
+            "Creating client for dynamic link (network={} netmask={})",
+            network, netmask
+        );
+        for _ in 0..max_attempts {
+            let client_id = uuid::Uuid::new_v4().to_string();
+            let free_ip = self.find_free_sdn_client_ip(&network, &netmask).await?;
+
+            match sqlx::query(
+                "INSERT INTO clients (id, sdn_client_ip, network, netmask, pub_key) VALUES (?, ?, ?, ?, ?)",
+            )
+                .bind(&client_id)
+                .bind(&free_ip)
+                .bind(&network)
+                .bind(&netmask)
+                .bind(&pub_key)
+                .execute(&self.pool)
+                .await
+            {
+                Ok(_) => {
+                    info!("Client with dynamic link created (network={} netmask={} client_id={})", network, netmask, client_id);
+                    return self.get_client(&client_id).await;
+                }
+                Err(err) => {
+                    let lost_race = err.as_database_error()
+                        .map(|e| e.is_unique_violation())
+                        .unwrap_or(false);
+                    if lost_race {
+                        continue;
+                    }
+                    error!("Creating client for dynamic link failed: {}", err.to_string());
+                    return Err(anyhow!("Database error on create_dynamic_client: {}", err.to_string()));
+                }
+            }
+        }
+
+        Err(anyhow!(
+            "Could not assign a free sdn_client_ip in {}/{} after {} attempts",
+            network,
+            netmask,
+            max_attempts,
+        ))
+    }
+
+    async fn find_free_sdn_client_ip(
+        self: &Self,
+        network: &str,
+        netmask: &str,
+    ) -> Result<String, anyhow::Error> {
+        let network_addr: Ipv4Addr = network
+            .parse()
+            .map_err(|_| anyhow!("Invalid network address: {}", network))?;
+        let netmask_addr: Ipv4Addr = netmask
+            .parse()
+            .map_err(|_| anyhow!("Invalid netmask: {}", netmask))?;
+
+        let network_bits = u32::from(network_addr);
+        let netmask_bits = u32::from(netmask_addr);
+        let broadcast_bits = network_bits | !netmask_bits;
+
+        // First and last usable host addresses (exclude network & broadcast).
+        let first_host = network_bits.checked_add(1).unwrap_or(network_bits);
+        let last_host = broadcast_bits.checked_sub(1).unwrap_or(broadcast_bits);
+        if first_host > last_host {
+            return Err(anyhow!(
+                "No usable host addresses in {}/{}",
+                network,
+                netmask
+            ));
+        }
+
+        let used: HashSet<u32> = sqlx::query_scalar!("SELECT sdn_client_ip FROM clients")
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .filter_map(|ip| ip.parse::<Ipv4Addr>().ok())
+            .map(u32::from)
+            .collect();
+
+        for candidate in first_host..=last_host {
+            if !used.contains(&candidate) {
+                return Ok(Ipv4Addr::from(candidate).to_string());
+            }
+        }
+
+        Err(anyhow!(
+            "No free sdn_client_ip available in {}/{}",
+            network,
+            netmask
+        ))
+    }
+
+    pub async fn check_link_key(
+        self: &Self,
+        auth_id: &String,
+    ) -> Result<AuthClient, anyhow::Error> {
         let auth_entry = sqlx::query_as!(
             AuthClient,
             "SELECT client_id, used FROM auth_links WHERE id=? LIMIT 1",
@@ -116,22 +224,22 @@ impl Db {
 
     pub async fn auth_client(
         self: &Self,
-        auth_id: &String,
+        link_key: &String,
         pub_key: &String,
     ) -> Result<String, anyhow::Error> {
-        match self.is_auth(&auth_id).await {
-            Ok(is_authed) => {
-                let has_used = match is_authed.used {
+        match self.check_link_key(&link_key).await {
+            Ok(is_linked) => {
+                let has_used = match is_linked.used {
                     Some(value) => value,
                     _ => {
                         return Err(anyhow!("Unexpected error on auth"));
                     }
                 };
                 if has_used == true {
-                    return Err(anyhow!("Auth link already used"));
+                    return Err(anyhow!("Link key already used"));
                 }
 
-                let client_id = match is_authed.client_id {
+                let client_id = match is_linked.client_id {
                     Some(value) => value,
                     _ => {
                         return Err(anyhow!("No user"));
@@ -140,7 +248,7 @@ impl Db {
 
                 let mut tx = self.pool.begin().await?;
                 sqlx::query("UPDATE auth_links SET used=true WHERE id=?")
-                    .bind(&auth_id)
+                    .bind(&link_key)
                     .execute(&mut *tx)
                     .await?;
                 sqlx::query("UPDATE clients SET pub_key=? WHERE id=?")
@@ -164,7 +272,7 @@ impl Db {
             Client,
             r#"
 SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients
-INNER JOIN auth_links ON clients.id=auth_links.client_id
+LEFT JOIN auth_links ON clients.id=auth_links.client_id
 "#,
         )
         .fetch_all(&self.pool)
@@ -177,7 +285,7 @@ INNER JOIN auth_links ON clients.id=auth_links.client_id
             Client,
             r#"
 SELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients
-INNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
+LEFT JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
 "#,
             client_id
         )

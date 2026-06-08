@@ -39,7 +39,7 @@ function ClientsPage() {
               <div
                 className="flex flex-row w-full mb-5 bg-card text-card-foreground hover:bg-accent hover:cursor-pointer px-4 py-3 rounded-md"
                 key={c.id}
-                onClick={() => setOpenUpdate(c)}
+                onClick={() => c.auth_link_id && setOpenUpdate(c)}
               >
                 <div className="w-full">
                   <div className="flex flex-row">
@@ -55,18 +55,35 @@ function ClientsPage() {
                       </span>
                       {c.netmask}
                     </div>
-                    <div className="flex flex-col w-full">
-                      <span className="font-bold text-xs text-muted-foreground">
-                        Authed
-                      </span>
-                      {c.used ? "✅" : "⚠️"}
-                    </div>
+                    {c.auth_link_id ? (
+                      <div className="flex flex-col w-full justify-center">
+                        <span className="font-bold text-xs text-muted-foreground px-2.5">
+                          AUTHED
+                        </span>
+                        <span className="px-2.5">{c.used ? "✅" : "⚠️"}</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col w-full justify-center">
+                        <span
+                          className="self-start px-2.5 py-0.5 rounded-md text-xs font-semibold
+                 bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
+                        >
+                          Dynamic
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="text-[10px] pb-1 text-muted-foreground">
                     {c.id}
                   </div>
                 </div>
-                <div className="flex items-center">...</div>
+                {c.auth_link_id ? (
+                  <div className="flex items-center min-w-12 justify-end">
+                    ...
+                  </div>
+                ) : (
+                  <div className="flex items-center min-w-12">&nbsp;</div>
+                )}
               </div>
             ))
           )}

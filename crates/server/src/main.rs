@@ -1,11 +1,11 @@
 use anyhow::Error;
-use axum::{serve::Serve, Router};
+use axum::{Router, serve::Serve};
 use dotenv::dotenv;
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
 use std::sync::Arc;
 #[cfg(unix)]
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -27,7 +27,7 @@ use crate::webserver::WebServer;
 
 fn echo_syntax(args: &Vec<String>) {
     println!(
-        "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket] [--dump=<file>] [--replay=<file> --replay-delay=<seconds>]",
+        "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket] [--dump=<file>] [--replay=<file> --replay-delay=<seconds>] [--dynamic-clients=<link-key>]",
         args[0]
     );
     println!("\nOptions:");
@@ -38,6 +38,9 @@ fn echo_syntax(args: &Vec<String>) {
     println!("  --replay=<file>        Replay traffic from dump file (requires --replay-delay)");
     println!(
         "  --replay-delay=<sec>   Seconds to wait before replaying (allows clients to connect)"
+    );
+    println!(
+        "  --dynamic-clients=<auth_key>  Allow clients with this auth key to be assigned an IP dynamically (default: disabled)"
     );
 }
 
@@ -51,19 +54,6 @@ fn try_start_dns_server(db: Arc<crate::db::Db>) -> Option<JoinHandle<Result<(), 
         return Some(dns_server_task);
     } else {
         return None;
-    }
-}
-
-async fn try_start_web_server(
-    db: Arc<crate::db::Db>,
-    server_stats: Arc<crate::server::ServerStats>,
-) -> Option<Serve<tokio::net::TcpListener, Router, Router>> {
-    let is_web_server_enabled = std::env::var("WEBSERVER_ENABLED").unwrap_or("true".to_string());
-    if is_web_server_enabled == "true" {
-        let web_server = WebServer::new(Arc::clone(&db), Arc::clone(&server_stats));
-        Some(web_server.await)
-    } else {
-        None
     }
 }
 
@@ -120,6 +110,7 @@ async fn main() -> Result<(), ProcessError> {
     let mut dump_file: Option<String> = None;
     let mut replay_file: Option<String> = None;
     let mut replay_delay: Option<u64> = None;
+    let mut dynamic_clients_key: Option<String> = None;
 
     // Parse command line arguments
     for arg in &args[1..] {
@@ -138,7 +129,9 @@ async fn main() -> Result<(), ProcessError> {
         } else if arg.starts_with("--replay-delay=") {
             let delay_str = arg.split('=').nth(1).unwrap_or("0");
             replay_delay = Some(delay_str.parse().expect("Invalid replay delay value"));
-        } else if arg.starts_with("--") {
+        } else if arg.starts_with("--dynamic-clients=") {
+            dynamic_clients_key = Some(arg.split('=').nth(1).unwrap_or("").to_string());
+        } else if arg.starts_with("--help") {
             echo_syntax(&args);
             std::process::exit(1);
         }
@@ -201,16 +194,18 @@ async fn main() -> Result<(), ProcessError> {
         warn!("Crypto keys generation: {}", err.to_string());
     }
 
+    if dynamic_clients_key.is_some() {
+        info!("Dynamic linking of clients enabled")
+    }
+
     let db = Arc::new(db::Db::new().await);
     let server_stats = Arc::new(server::ServerStats::new(transport_mode.clone()));
-
-    let webserver = try_start_web_server(Arc::clone(&db), Arc::clone(&server_stats)).await;
     let dnsserver = try_start_dns_server(Arc::clone(&db));
 
     tokio::select! {
-        _ = async { webserver.unwrap().await }, if webserver.is_some() => { info!("Web server stopped") }
-        _ = async { dnsserver.unwrap().await }, if dnsserver.is_some() => { info!("DNS server stopped") }
-        _ = server::run(Arc::clone(&db), Arc::clone(&server_stats), transport_mode, dump_file, replay_file, replay_delay) => info!("Netplane server stopped")
+        _ = async { dnsserver.unwrap().await }, if dnsserver.is_some() => info!("DNS server stopped"),
+        _ = WebServer::new(Arc::clone(&db), Arc::clone(&server_stats), dynamic_clients_key.clone()).await => info!("Web server stopped"),
+        _ = server::run(Arc::clone(&db), Arc::clone(&server_stats), transport_mode, dump_file, replay_file, replay_delay, dynamic_clients_key) => info!("Netplane server stopped")
     }
     Ok(())
 }

@@ -22,6 +22,6 @@ pub extern "C" fn netplane_server_run(transport_mode: TransportMode) {
         let db = Arc::new(db::Db::new().await);
         let server_stats = Arc::new(server::ServerStats::new(transport_mode.clone()));
 
-        server::run(db, server_stats, transport_mode, None, None, None)
+        server::run(db, server_stats, transport_mode, None, None, None, None).await
     });
 }

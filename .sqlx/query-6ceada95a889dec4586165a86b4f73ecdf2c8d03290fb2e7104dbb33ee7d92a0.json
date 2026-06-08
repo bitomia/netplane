@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\nSELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients\nINNER JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?\n",
+  "query": "\nSELECT clients.id, auth_links.id as auth_link_id, sdn_client_ip, network, netmask, used FROM clients\nLEFT JOIN auth_links ON clients.id=auth_links.client_id\n",
   "describe": {
     "columns": [
       {
@@ -35,16 +35,16 @@
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       false,
-      false,
+      true,
       false,
       false,
       false,
       true
     ]
   },
-  "hash": "1ae1ca2b2761b5bc2434d235fe031ef9020c25a2be964846825557644253ce2a"
+  "hash": "6ceada95a889dec4586165a86b4f73ecdf2c8d03290fb2e7104dbb33ee7d92a0"
 }

@@ -49,6 +49,7 @@ pub async fn handshake(
     private_filepath: &str,
     server_addr: String,
     transport: &mut AnyTransport,
+    is_dynamic_link: bool,
 ) -> Result<(StartParams, String)> {
     info!("Starting handshake with relay server {}", server_addr);
 
@@ -56,7 +57,7 @@ pub async fn handshake(
     let (client_pub, _) = try_load_crypto_keys(public_filepath, private_filepath)
         .map_err(|e| anyhow!("Failed to load crypto keys: {}", e))?;
 
-    let handshake = HandshakeReq::new_with_crypto(&auth_key, &client_pub);
+    let handshake = HandshakeReq::new_with_crypto(&auth_key, &client_pub, is_dynamic_link);
 
     transport.send(&handshake.serialize()?, None).await?;
 
@@ -131,6 +132,7 @@ pub async fn run(
     transport_type: Option<String>,
     loopback_relay: bool,
     no_encryption: bool,
+    is_dynamic_link: bool,
     authkey_path: &str,
     public_filepath: &str,
     private_filepath: &str,
@@ -151,6 +153,7 @@ pub async fn run(
         private_filepath,
         control_addr,
         &mut transport,
+        is_dynamic_link,
     )
     .await
     {
@@ -578,6 +581,7 @@ pub async fn auth_client(
     privatekey_filepath: &str,
     host: &str,
     link_code: &str,
+    dynamic_link: bool,
     auth_port: Option<u16>,
 ) -> Result<()> {
     let port = auth_port.unwrap_or(8000);
@@ -606,7 +610,10 @@ pub async fn auth_client(
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
-    let payload = netplane_common::AuthClientRequest { public_key };
+    let payload = netplane_common::AuthClientRequest {
+        public_key,
+        dynamic_link,
+    };
     let res = http_client::http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
@@ -614,7 +621,7 @@ pub async fn auth_client(
             std::fs::write(authkey_filepath, auth_key)?;
             Ok(())
         }
-        _ => Err(anyhow!("Link failed")),
+        err => Err(anyhow!("{}:{}", err, res.payload)),
     }
 }
 

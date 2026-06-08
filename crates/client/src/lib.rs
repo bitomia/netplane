@@ -77,6 +77,7 @@ async fn do_handshake(
         private_filepath,
         "connected".to_string(),
         transport_ref,
+        false,
     )
     .await
     {
@@ -219,6 +220,7 @@ pub extern "C" fn netplane_client_auth(
             privatekey_path,
             host,
             link_code,
+            false,
             auth_port_opt,
         )
         .await
@@ -584,6 +586,7 @@ pub extern "C" fn netplane_client_run(
             transport_type_opt,
             loopback_relay,
             no_encryption,
+            false,
             authkey_path,
             public_filepath,
             private_filepath,

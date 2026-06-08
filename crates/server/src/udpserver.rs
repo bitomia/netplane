@@ -2,8 +2,8 @@ use anyhow::Result;
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::{
-    get_message_type, MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType,
-    PeerInfo, PeerList, PeerState, RelayPacket, UDPHeartbeat,
+    MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType, PeerInfo,
+    PeerList, PeerState, RelayPacket, UDPHeartbeat, get_message_type,
 };
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,8 +12,8 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tokio::time;
 use tracing::{error, info, trace, warn};
 
@@ -39,27 +39,43 @@ impl UdpServer {
         dump_file: Option<String>,
         replay_file: Option<String>,
         replay_delay: Option<u64>,
+        dynamic_clients_key: Option<String>,
     ) -> Self {
         let peers: Peers<SocketAddr> = Peers::new(Mutex::new(HashMap::new()));
 
         if let Some(traffic_logger_path) = dump_file {
             let traffic_logger = TrafficLogger::new(&traffic_logger_path).ok();
             Self {
-                server: Server { peers, db, stats },
+                server: Server {
+                    peers,
+                    db,
+                    stats,
+                    dynamic_clients_key,
+                },
                 traffic_logger,
                 replay_file,
                 replay_delay,
             }
         } else if replay_file.is_some() {
             Self {
-                server: Server { peers, db, stats },
+                server: Server {
+                    peers,
+                    db,
+                    stats,
+                    dynamic_clients_key,
+                },
                 traffic_logger: None,
                 replay_file,
                 replay_delay,
             }
         } else {
             Self {
-                server: Server { peers, db, stats },
+                server: Server {
+                    peers,
+                    db,
+                    stats,
+                    dynamic_clients_key,
+                },
                 traffic_logger: None,
                 replay_file: None,
                 replay_delay: None,
