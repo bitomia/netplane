@@ -1,4 +1,4 @@
-use axum::{routing::get, routing::post, serve::Serve, Router};
+use axum::{Router, routing::get, routing::post, serve::Serve};
 use axum_embed::ServeEmbed;
 use rust_embed::RustEmbed;
 use std::sync::Arc;
@@ -10,16 +10,18 @@ use tracing::info;
 struct Assets;
 
 use crate::handlers::{
-    auth_client, create_client, delete_client, get_clients, get_server_stats, get_user_data, login,
-    logout, verify_client, AppState,
+    AppState, auth_client, create_client, delete_client, get_clients, get_server_stats,
+    get_user_data, login, logout, verify_client,
 };
 
 pub struct WebServer {}
 
 impl WebServer {
+    #[allow(clippy::new_ret_no_self)]
     pub async fn new(
         db: Arc<crate::db::Db>,
         server_stats: Arc<crate::server::ServerStats>,
+        dynamic_clients_key: Option<String>,
     ) -> Serve<tokio::net::TcpListener, Router, Router> {
         let addr = std::env::var("WEBSERVER").unwrap_or("0.0.0.0:8000".to_string());
         info!("Starting web server {}", addr);
@@ -29,6 +31,7 @@ impl WebServer {
             db,
             server_stats,
             jwt_secret,
+            dynamic_clients_key,
         };
 
         let cors = CorsLayer::new().allow_credentials(true);
@@ -44,7 +47,7 @@ impl WebServer {
             .route("/api/user", get(get_user_data))
             .route("/api/server", get(get_server_stats))
             // Endpoints for netplane clients
-            .route("/auth/{auth_key}", post(auth_client))
+            .route("/auth/{link_key}", post(auth_client))
             .route("/auth", get(verify_client))
             .layer(cors)
             .with_state(state)

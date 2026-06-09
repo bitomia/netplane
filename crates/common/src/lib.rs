@@ -20,6 +20,7 @@ pub const NOISE_HANDSHAKE_RESP_HEADER: [u8; 3] = [0x4E, 0x48, 0x52]; // "NHR"
 #[derive(Serialize, Deserialize)]
 pub struct AuthClientRequest {
     pub public_key: String,
+    pub dynamic_link: bool,
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -36,22 +37,22 @@ pub struct HandshakeReq {
 }
 
 impl HandshakeReq {
-    pub fn new(auth_key: &String) -> Self {
+    pub fn new(auth_key: &str, _is_dynamic: bool) -> Self {
         Self {
             header: HANDSHAKE_REQUEST_HEADER,
-            auth_key: auth_key.clone(),
+            auth_key: auth_key.to_string(),
             client_public_key: None,
         }
     }
 
-    pub fn new_with_crypto(auth_key: &String, client_public_key: &String) -> Self {
+    pub fn new_with_crypto(auth_key: &str, client_public_key: &str, _is_dynamic: bool) -> Self {
         Self {
             header: HANDSHAKE_REQUEST_HEADER,
-            auth_key: auth_key.clone(),
-            client_public_key: Some(client_public_key.clone()),
+            auth_key: auth_key.to_string(),
+            client_public_key: Some(client_public_key.to_string()),
         }
     }
-    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
             Ok(v) => Ok(v),
             Err(err) => Err(anyhow!(err)),
@@ -63,7 +64,7 @@ impl HandshakeReq {
             Err(err) => Err(anyhow!(err)),
         }
     }
-    pub fn size(self: &Self) -> Result<usize> {
+    pub fn size(&self) -> Result<usize> {
         Ok(self.serialize()?.len())
     }
 }
@@ -78,31 +79,31 @@ pub struct HandshakeRep {
 }
 
 impl HandshakeRep {
-    pub fn new(netmask: &String, network: &String, sdn_ip_addr: &String) -> Self {
+    pub fn new(netmask: &str, network: &str, sdn_ip_addr: &str) -> Self {
         Self {
             header: HANDSHAKE_REPLY_HEADER,
-            netmask: netmask.clone(),
-            network: network.clone(),
-            sdn_ip_addr: sdn_ip_addr.clone(),
+            netmask: netmask.to_string(),
+            network: network.to_string(),
+            sdn_ip_addr: sdn_ip_addr.to_string(),
             server_public_key: None,
         }
     }
 
     pub fn new_with_crypto(
-        netmask: &String,
-        network: &String,
-        sdn_ip_addr: &String,
-        server_public_key: &String,
+        netmask: &str,
+        network: &str,
+        sdn_ip_addr: &str,
+        server_public_key: &str,
     ) -> Self {
         Self {
             header: HANDSHAKE_REPLY_HEADER,
-            netmask: netmask.clone(),
-            network: network.clone(),
-            sdn_ip_addr: sdn_ip_addr.clone(),
-            server_public_key: Some(server_public_key.clone()),
+            netmask: netmask.to_string(),
+            network: network.to_string(),
+            sdn_ip_addr: sdn_ip_addr.to_string(),
+            server_public_key: Some(server_public_key.to_string()),
         }
     }
-    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
             Ok(v) => Ok(v),
             Err(err) => Err(anyhow!(err)),
@@ -114,7 +115,7 @@ impl HandshakeRep {
             Err(err) => Err(anyhow!(err)),
         }
     }
-    pub fn size(self: &Self) -> Result<usize> {
+    pub fn size(&self) -> Result<usize> {
         Ok(self.serialize()?.len())
     }
 }
@@ -132,7 +133,7 @@ impl HandshakeError {
             error_message: error_message.to_string(),
         }
     }
-    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
             Ok(v) => Ok(v),
             Err(err) => Err(anyhow!(err)),
@@ -144,7 +145,7 @@ impl HandshakeError {
             Err(err) => Err(anyhow!(err)),
         }
     }
-    pub fn size(self: &Self) -> Result<usize> {
+    pub fn size(&self) -> Result<usize> {
         Ok(self.serialize()?.len())
     }
 }
@@ -171,6 +172,12 @@ pub struct UDPHeartbeat {
     pub header: [u8; 3],
 }
 
+impl Default for UDPHeartbeat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UDPHeartbeat {
     pub fn new() -> Self {
         Self {
@@ -178,7 +185,7 @@ impl UDPHeartbeat {
         }
     }
 
-    pub fn serialize(self: &Self) -> Result<Vec<u8>> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         match bincode::encode_to_vec(self, config::standard()) {
             Ok(v) => Ok(v),
             Err(err) => Err(anyhow!(err)),
@@ -192,7 +199,7 @@ impl UDPHeartbeat {
         }
     }
 
-    pub fn size(self: &Self) -> Result<usize> {
+    pub fn size(&self) -> Result<usize> {
         Ok(self.serialize()?.len())
     }
 }

@@ -5,10 +5,10 @@ use axum::{
     response::Json,
 };
 use axum_extra::{
-    headers::authorization::Bearer, headers::Authorization, headers::Cookie, TypedHeader,
+    TypedHeader, headers::Authorization, headers::Cookie, headers::authorization::Bearer,
 };
 use bcrypt::verify;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -18,6 +18,7 @@ pub struct AppState {
     pub db: Arc<crate::db::Db>,
     pub server_stats: Arc<crate::server::ServerStats>,
     pub jwt_secret: String,
+    pub dynamic_clients_key: Option<String>,
 }
 
 type ServerError = String;
@@ -165,17 +166,19 @@ pub async fn get_clients(
     }
 
     match state.db.get_all_clients().await {
-        Ok(clients) => web_ok!(clients
-            .iter()
-            .map(|c| crate::db::Client {
-                id: c.id.clone(),
-                auth_link_id: c.auth_link_id.clone(),
-                sdn_client_ip: c.sdn_client_ip.clone(),
-                network: c.network.clone(),
-                netmask: c.netmask.clone(),
-                used: c.used,
-            })
-            .collect::<Vec<crate::db::Client>>()),
+        Ok(clients) => web_ok!(
+            clients
+                .iter()
+                .map(|c| crate::db::Client {
+                    id: c.id.clone(),
+                    auth_link_id: c.auth_link_id.clone(),
+                    sdn_client_ip: c.sdn_client_ip.clone(),
+                    network: c.network.clone(),
+                    netmask: c.netmask.clone(),
+                    used: c.used,
+                })
+                .collect::<Vec<crate::db::Client>>()
+        ),
         Err(error) => web_err!(error.to_string()),
     }
 }
@@ -208,10 +211,10 @@ pub async fn create_client(
     match state
         .db
         .create_client(
-            &id.to_string().as_str(),
+            id.to_string().as_str(),
             &payload.sdn_client_ip,
-            &network_address.as_str(),
-            &payload.netmask.as_str(),
+            network_address.as_str(),
+            payload.netmask.as_str(),
         )
         .await
     {
@@ -246,16 +249,36 @@ pub async fn delete_client(
 
 pub async fn auth_client(
     State(state): State<AppState>,
-    Path(auth_link_id): Path<String>,
+    Path(link_key): Path<String>,
     Json(payload): Json<netplane_common::AuthClientRequest>,
 ) -> (StatusCode, Result<String, Json<ServerError>>) {
-    match state
-        .db
-        .auth_client(&auth_link_id, &payload.public_key)
-        .await
+    if let Some(dynamic_clients_key) = state.dynamic_clients_key
+        && link_key == dynamic_clients_key
     {
-        Ok(auth_key) => (StatusCode::OK, Ok(auth_key)),
-        Err(error) => web_err!(error.to_string()),
+        match state
+            .db
+            .create_dynamic_client(&payload.public_key, 10)
+            .await
+        {
+            Ok(client) => {
+                let auth_data = netplane_common::crypto::AuthData {
+                    client_id: client.id,
+                };
+                let auth_data = serde_json::json!(auth_data).to_string();
+                (
+                    StatusCode::OK,
+                    Ok(netplane_common::crypto::sign_key(auth_data.as_bytes())),
+                )
+            }
+            Err(error) => {
+                web_err!(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
+            }
+        }
+    } else {
+        match state.db.auth_client(&link_key, &payload.public_key).await {
+            Ok(auth_key) => (StatusCode::OK, Ok(auth_key)),
+            Err(error) => web_err!(error.to_string()),
+        }
     }
 }
 
@@ -267,7 +290,7 @@ pub async fn verify_client(
 
     match netplane_common::crypto::verify_signed_key(bearer_token) {
         Ok(auth_client) => {
-            if let Ok(_) = state.db.get_client(&auth_client.client_id).await {
+            if state.db.get_client(&auth_client.client_id).await.is_ok() {
                 (StatusCode::OK, Ok(()))
             } else {
                 web_err!(StatusCode::UNAUTHORIZED, "User does not exist".to_string())

@@ -12,9 +12,9 @@ mod tundev;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
-fn echo_syntax(args: &Vec<String>) {
+fn echo_syntax(args: &[String]) {
     println!(
-        "Use {} [server] [--port=5000] [--tun=device] [--auth=link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
+        "Use {} [server] [--port=5000] [--tun=device] [--link=link_code|--dynamic-link=dynamic_link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
         args[0]
     );
 }
@@ -40,13 +40,12 @@ fn main() -> Result<()> {
     if args.len() >= 2 {
         if let Err(err) =
             netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
-        {
-            if err.kind() != std::io::ErrorKind::AlreadyExists {
+            && err.kind() != std::io::ErrorKind::AlreadyExists {
                 return Err(anyhow!(err));
             }
-        }
 
-        let mut auth_arg = None;
+        let mut link_code = None;
+        let mut dynamic_link_code = None;
         let mut transport_type = None;
         let mut tun_dev = "tun0".to_string();
         let mut port = None;
@@ -56,8 +55,18 @@ fn main() -> Result<()> {
 
         // Parse optional arguments
         for arg in &args[2..] {
-            if arg.starts_with("--auth=") {
-                auth_arg = Some(arg.clone());
+            if arg.starts_with("--dynamic-link") {
+                let parts: Vec<&str> = arg.split("=").collect();
+                if parts.len() != 2 {
+                    return Err(anyhow!("Invalid dynamic-link argument"));
+                }
+                dynamic_link_code = Some(parts[1]);
+            } else if arg.starts_with("--link=") {
+                let parts: Vec<&str> = arg.split("=").collect();
+                if parts.len() != 2 {
+                    return Err(anyhow!("Invalid link argument"));
+                }
+                link_code = Some(parts[1]);
             } else if arg.starts_with("--transport=") {
                 transport_type = arg.split('=').nth(1).map(|s| s.to_string());
             } else if arg.starts_with("--tun=") {
@@ -77,26 +86,35 @@ fn main() -> Result<()> {
             }
         }
 
-        let host = args[1].clone();
+        if dynamic_link_code.is_some() && link_code.is_some() {
+            println!("Cannot set both dynamic-link and link options");
+            return Err(anyhow!("Cannot set both dynamic-link and link options"));
+        }
 
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
-            if let Some(auth_arg) = auth_arg {
-                let parts: Vec<&str> = auth_arg.split("=").collect();
-                if parts.len() != 2 {
-                    return Err(anyhow!("Invalid auth argument"));
-                }
-                let link_code = parts[1];
-                client::auth_client(
-                    "auth.key",
-                    "public.key",
-                    "private.key",
-                    &host,
-                    link_code,
-                    auth_port,
-                )
-                .await?;
-            }
+            let host = args[1].clone();
+            let (authkey_filepath, link_code, is_dynamic_link) =
+                if let Some(dynamic_link_code) = dynamic_link_code {
+                    ("dynamic.key", dynamic_link_code, true)
+                } else if let Some(link_code) = link_code {
+                    ("auth.key", link_code, false)
+                } else {
+                    println!("No link or dynamic link set");
+                    echo_syntax(&args);
+                    std::process::exit(1);
+                };
+
+            client::auth_client(
+                authkey_filepath,
+                "public.key",
+                "private.key",
+                &host,
+                link_code,
+                is_dynamic_link,
+                auth_port,
+            )
+            .await?;
 
             client::run(
                 tun_dev,
@@ -105,7 +123,8 @@ fn main() -> Result<()> {
                 transport_type,
                 loopback_relay,
                 no_encryption,
-                "auth.key",
+                is_dynamic_link,
+                authkey_filepath,
                 "public.key",
                 "private.key",
                 None,
@@ -114,7 +133,7 @@ fn main() -> Result<()> {
             .await?
             .await?;
 
-            Ok(())
+            Ok::<(), anyhow::Error>(())
         })?;
     } else {
         echo_syntax(&args);

@@ -37,13 +37,13 @@ pub fn try_generate_crypto_keys(
     let parsed_pattern = match NOISE_PARAMS.parse() {
         Ok(value) => value,
         Err(_) => {
-            return Err(Error::new(ErrorKind::Other, "Error parsing pattern"));
+            return Err(Error::other("Error parsing pattern"));
         }
     };
     let keypair = match snow::Builder::new(parsed_pattern).generate_keypair() {
         Ok(value) => value,
         Err(_) => {
-            return Err(Error::new(ErrorKind::Other, "Error generating keypair"));
+            return Err(Error::other("Error generating keypair"));
         }
     };
 
@@ -180,7 +180,7 @@ mod tests {
         let auth_data = serde_json::json!(auth_data).to_string();
         let signed_key = sign_key(auth_data.as_bytes());
 
-        assert!(signed_key.len() != 0, "empty signed key");
+        assert!(!signed_key.is_empty(), "empty signed key");
         assert!(
             verify_signed_key(signed_key).is_ok(),
             "verify signed key failed"

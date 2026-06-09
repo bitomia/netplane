@@ -118,8 +118,7 @@ impl Transport for WebSocketTransport {
             .await
         {
             Ok(_) => Ok(buf.len()),
-            Err(e) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(e) => Err(std::io::Error::other(
                 e.to_string(),
             )),
         }
@@ -135,24 +134,22 @@ impl Transport for WebSocketTransport {
                         let len = msg.len();
                         buf[..len].copy_from_slice(&msg);
 
-                        return Ok((len, "0.0.0.0:0".parse().unwrap()));
+                        Ok((len, "0.0.0.0:0".parse().unwrap()))
                     } else {
                         let len = msg.len();
                         buf[..len].copy_from_slice(msg.into_text().unwrap().as_bytes());
-                        return Ok((len, "0.0.0.0:0".parse().unwrap()));
+                        Ok((len, "0.0.0.0:0".parse().unwrap()))
                     }
                 }
                 Err(e) => {
                     eprintln!("Error processing message {}", e);
-                    Err(tokio::io::Error::new(
-                        tokio::io::ErrorKind::Other,
+                    Err(tokio::io::Error::other(
                         "Failed to handle received message",
                     ))
                 }
             }
         } else {
-            Err(tokio::io::Error::new(
-                tokio::io::ErrorKind::Other,
+            Err(tokio::io::Error::other(
                 "Failed to receive message",
             ))
         }
@@ -272,7 +269,7 @@ impl<T: Transport + Send> Transport for EncryptedTransport<T> {
         let encrypted = noise_session
             .encrypt(buf)
             .await
-            .map_err(|e| tokio::io::Error::new(tokio::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| tokio::io::Error::other(e.to_string()))?;
         self.inner.send(&encrypted, addr).await
     }
 
@@ -288,7 +285,7 @@ impl<T: Transport + Send> Transport for EncryptedTransport<T> {
         let decrypted = noise_session
             .decrypt(&buf[..amt])
             .await
-            .map_err(|e| tokio::io::Error::new(tokio::io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| tokio::io::Error::other(e.to_string()))?;
 
         let len = decrypted.len().min(buf.len());
         buf[..len].copy_from_slice(&decrypted[..len]);

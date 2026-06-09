@@ -74,11 +74,11 @@ impl TunDev {
         Ok(TunDev { dev })
     }
 
-    pub async fn send(self: &mut Self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
+    pub async fn send(&mut self, buf: &[u8], nbytes: usize) -> std::io::Result<usize> {
         return self.dev.send(&buf[..nbytes]).await;
     }
 
-    pub async fn read(self: &mut Self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
-        return self.dev.read(buffer).await;
+    pub async fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
+        self.dev.read(buffer).await
     }
 }

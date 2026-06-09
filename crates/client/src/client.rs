@@ -49,6 +49,7 @@ pub async fn handshake(
     private_filepath: &str,
     server_addr: String,
     transport: &mut AnyTransport,
+    is_dynamic_link: bool,
 ) -> Result<(StartParams, String)> {
     info!("Starting handshake with relay server {}", server_addr);
 
@@ -56,7 +57,7 @@ pub async fn handshake(
     let (client_pub, _) = try_load_crypto_keys(public_filepath, private_filepath)
         .map_err(|e| anyhow!("Failed to load crypto keys: {}", e))?;
 
-    let handshake = HandshakeReq::new_with_crypto(&auth_key, &client_pub);
+    let handshake = HandshakeReq::new_with_crypto(&auth_key, &client_pub, is_dynamic_link);
 
     transport.send(&handshake.serialize()?, None).await?;
 
@@ -124,6 +125,7 @@ pub async fn create_transport(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     tun_dev: String,
     host: String,
@@ -131,6 +133,7 @@ pub async fn run(
     transport_type: Option<String>,
     loopback_relay: bool,
     no_encryption: bool,
+    is_dynamic_link: bool,
     authkey_path: &str,
     public_filepath: &str,
     private_filepath: &str,
@@ -151,6 +154,7 @@ pub async fn run(
         private_filepath,
         control_addr,
         &mut transport,
+        is_dynamic_link,
     )
     .await
     {
@@ -185,6 +189,7 @@ pub async fn run(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_from_fd(
     tun_fd: PlatformFd,
     start_params: &StartParams,
@@ -232,6 +237,7 @@ fn create_p2p_session(
     Ok((own_sdn_ip, client_manager))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_loop(
     mut dev: tundev::TunDev,
     mut transport: Box<AnyTransport>,
@@ -298,7 +304,10 @@ fn update_loop(
 
                 Some(_) = async {
                     match &option_token {
-                        Some(t) => Some(t.cancelled().await),
+                        Some(t) => {
+                            let _: () = t.cancelled().await;
+                            Some(())
+                        },
                         None => None,
                     }
                 } => {
@@ -344,11 +353,10 @@ async fn handle_relay_server_message(
             debug!("Received P2P handshake init from {}", init.initiator_sdn_ip);
             match client_manager.handle_handshake_init(&init) {
                 Ok(resp) => {
-                    if let Ok(data) = resp.serialize() {
-                        if let Err(e) = transport.send(&data, None).await {
+                    if let Ok(data) = resp.serialize()
+                        && let Err(e) = transport.send(&data, None).await {
                             error!("Failed to send P2P handshake response: {}", e);
                         }
-                    }
                 }
                 Err(e) => {
                     error!("Failed to handle P2P handshake init: {}", e);
@@ -367,9 +375,9 @@ async fn handle_relay_server_message(
                     if let Ok(responder_ip) = Ipv4Addr::from_str(&resp.responder_sdn_ip) {
                         let pending = client_manager.take_pending_packets(&responder_ip);
                         for packet in pending {
-                            if let Some(header) = parse_ipv4_header(&packet) {
-                                if let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip) {
-                                    if let Ok(encrypted) =
+                            if let Some(header) = parse_ipv4_header(&packet)
+                                && let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip)
+                                    && let Ok(encrypted) =
                                         client_manager.encrypt_for(&dst_ip, &packet).await
                                     {
                                         let relay = RelayPacket::new(
@@ -385,8 +393,6 @@ async fn handle_relay_server_message(
                                             }
                                         }
                                     }
-                                }
-                            }
                         }
                     }
                 }
@@ -485,11 +491,10 @@ async fn handle_outgoing_packet(
                 &dst_ip.to_string(),
                 packet.to_vec(),
             );
-            if let Ok(data) = relay.serialize() {
-                if let Err(e) = transport.send(&data, None).await {
+            if let Ok(data) = relay.serialize()
+                && let Err(e) = transport.send(&data, None).await {
                     error!("Failed to send multicast relay packet: {}", e);
                 }
-            }
         } else {
             // Encryption mode: encrypt separately for each peer with an established session
             let peers = client_manager.get_all_session_peers();
@@ -501,11 +506,10 @@ async fn handle_outgoing_packet(
                             &peer_ip.to_string(),
                             encrypted,
                         );
-                        if let Ok(data) = relay.serialize() {
-                            if let Err(e) = transport.send(&data, None).await {
+                        if let Ok(data) = relay.serialize()
+                            && let Err(e) = transport.send(&data, None).await {
                                 error!("Failed to send multicast relay to {}: {}", peer_ip, e);
                             }
-                        }
                     }
                     Err(e) => {
                         error!("Failed to encrypt multicast for {}: {}", peer_ip, e);
@@ -523,11 +527,10 @@ async fn handle_outgoing_packet(
             &dst_ip.to_string(),
             packet.to_vec(),
         );
-        if let Ok(data) = relay.serialize() {
-            if let Err(e) = transport.send(&data, None).await {
+        if let Ok(data) = relay.serialize()
+            && let Err(e) = transport.send(&data, None).await {
                 error!("Failed to send relay packet: {}", e);
             }
-        }
         return;
     }
 
@@ -538,11 +541,10 @@ async fn handle_outgoing_packet(
             Ok(encrypted) => {
                 let relay =
                     RelayPacket::new(&own_sdn_ip.to_string(), &dst_ip.to_string(), encrypted);
-                if let Ok(data) = relay.serialize() {
-                    if let Err(e) = transport.send(&data, None).await {
+                if let Ok(data) = relay.serialize()
+                    && let Err(e) = transport.send(&data, None).await {
                         error!("Failed to send relay packet: {}", e);
                     }
-                }
             }
             Err(e) => {
                 error!("Failed to encrypt packet for {}: {}", dst_ip, e);
@@ -555,11 +557,10 @@ async fn handle_outgoing_packet(
         if !client_manager.handshake_in_progress(&dst_ip) {
             match client_manager.initiate_handshake(&dst_ip) {
                 Ok(init) => {
-                    if let Ok(data) = init.serialize() {
-                        if let Err(e) = transport.send(&data, None).await {
+                    if let Ok(data) = init.serialize()
+                        && let Err(e) = transport.send(&data, None).await {
                             error!("Failed to send P2P handshake init: {}", e);
                         }
-                    }
                 }
                 Err(e) => {
                     error!("Failed to initiate handshake with {}: {}", dst_ip, e);
@@ -578,6 +579,7 @@ pub async fn auth_client(
     privatekey_filepath: &str,
     host: &str,
     link_code: &str,
+    dynamic_link: bool,
     auth_port: Option<u16>,
 ) -> Result<()> {
     let port = auth_port.unwrap_or(8000);
@@ -606,7 +608,10 @@ pub async fn auth_client(
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
-    let payload = netplane_common::AuthClientRequest { public_key };
+    let payload = netplane_common::AuthClientRequest {
+        public_key,
+        dynamic_link,
+    };
     let res = http_client::http_post_json(&auth_url, &payload)?;
     match res.status_code {
         axum::http::StatusCode::OK => {
@@ -614,7 +619,7 @@ pub async fn auth_client(
             std::fs::write(authkey_filepath, auth_key)?;
             Ok(())
         }
-        _ => Err(anyhow!("Link failed")),
+        err => Err(anyhow!("{}:{}", err, res.payload)),
     }
 }
 

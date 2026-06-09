@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-pub static NOISE_PARAMS: &'static str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
+pub static NOISE_PARAMS: &str = "Noise_IK_25519_ChaChaPoly_BLAKE2s";
 
 #[derive(Clone)]
 pub struct NoiseSession {

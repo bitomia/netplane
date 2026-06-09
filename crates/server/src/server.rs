@@ -1,13 +1,12 @@
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::Error;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use netplane_common::{
-    transport::TransportMode, HandshakeError, HandshakeRep, HandshakeReq, PeerList,
+    HandshakeError, HandshakeRep, HandshakeReq, transport::TransportMode,
 };
 
 use crate::db;
@@ -23,10 +22,12 @@ pub enum HandshakeResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct ProcessError(u32);
 
 #[derive(Debug)]
 pub struct ServerStats {
+    #[allow(dead_code)]
     pub transport_mode: TransportMode,
     pub in_bytes: AtomicUsize,
     pub out_bytes: AtomicUsize,
@@ -41,11 +42,11 @@ impl ServerStats {
         }
     }
 
-    pub fn add_in_bytes(self: &Self, nbytes: usize) -> usize {
+    pub fn add_in_bytes(&self, nbytes: usize) -> usize {
         self.in_bytes.fetch_add(nbytes, Ordering::Relaxed)
     }
 
-    pub fn add_out_bytes(self: &Self, nbytes: usize) -> usize {
+    pub fn add_out_bytes(&self, nbytes: usize) -> usize {
         self.out_bytes.fetch_add(nbytes, Ordering::Relaxed)
     }
 }
@@ -54,6 +55,7 @@ pub struct Server<PeerKey> {
     pub peers: Peers<PeerKey>,
     pub db: Arc<db::Db>,
     pub stats: Arc<ServerStats>,
+    pub dynamic_clients_key: Option<String>,
 }
 
 impl<PeerKey> Server<PeerKey> {
@@ -110,13 +112,19 @@ pub fn run(
     dump_file: Option<String>,
     replay_file: Option<String>,
     replay_delay: Option<u64>,
+    dynamic_clients_key: Option<String>,
 ) -> JoinHandle<Result<(), Error>> {
-    let netplane_server = tokio::spawn(async move {
+    
+    tokio::spawn(async move {
         match transport_mode {
             TransportMode::WebSocket => {
-                WebSocketServer::new(Arc::clone(&db), Arc::clone(&server_stats))
-                    .start()
-                    .await
+                WebSocketServer::new(
+                    Arc::clone(&db),
+                    Arc::clone(&server_stats),
+                    dynamic_clients_key,
+                )
+                .start()
+                .await
             }
             _ => {
                 UdpServer::new(
@@ -125,11 +133,11 @@ pub fn run(
                     dump_file,
                     replay_file,
                     replay_delay,
+                    dynamic_clients_key,
                 )
                 .start()
                 .await
             }
         }
-    });
-    netplane_server
+    })
 }
