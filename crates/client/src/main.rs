@@ -1,14 +1,17 @@
+use std::env;
+
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
 use tracing::info;
-
-use std::env;
 
 pub mod client;
 pub mod client_manager;
 mod fd;
 mod http_client;
 mod tundev;
+
+const AUTH_KEY_FILENAME: &str = "auth.key";
+const DYNAMIC_KEY_FILENAME: &str = "dynamic.key";
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
@@ -40,9 +43,10 @@ fn main() -> Result<()> {
     if args.len() >= 2 {
         if let Err(err) =
             netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
-            && err.kind() != std::io::ErrorKind::AlreadyExists {
-                return Err(anyhow!(err));
-            }
+            && err.kind() != std::io::ErrorKind::AlreadyExists
+        {
+            return Err(anyhow!(err));
+        }
 
         let mut link_code = None;
         let mut dynamic_link_code = None;
@@ -94,27 +98,37 @@ fn main() -> Result<()> {
         let rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
             let host = args[1].clone();
-            let (authkey_filepath, link_code, is_dynamic_link) =
+
+            let (authkey_filepath, link_code, is_dynamic_link): (&str, Option<String>, bool) =
                 if let Some(dynamic_link_code) = dynamic_link_code {
-                    ("dynamic.key", dynamic_link_code, true)
+                    (
+                        DYNAMIC_KEY_FILENAME,
+                        Some(dynamic_link_code.to_string()),
+                        true,
+                    )
                 } else if let Some(link_code) = link_code {
-                    ("auth.key", link_code, false)
+                    (AUTH_KEY_FILENAME, Some(link_code.to_string()), false)
+                } else if std::fs::exists(DYNAMIC_KEY_FILENAME)? {
+                    (DYNAMIC_KEY_FILENAME, None, true)
+                } else if std::fs::exists(AUTH_KEY_FILENAME)? {
+                    (AUTH_KEY_FILENAME, None, false)
                 } else {
-                    println!("No link or dynamic link set");
                     echo_syntax(&args);
                     std::process::exit(1);
                 };
 
-            client::auth_client(
-                authkey_filepath,
-                "public.key",
-                "private.key",
-                &host,
-                link_code,
-                is_dynamic_link,
-                auth_port,
-            )
-            .await?;
+            if let Some(link_code) = link_code {
+                client::auth_client(
+                    authkey_filepath,
+                    "public.key",
+                    "private.key",
+                    &host,
+                    link_code.as_str(),
+                    is_dynamic_link,
+                    auth_port,
+                )
+                .await?;
+            }
 
             client::run(
                 tun_dev,
