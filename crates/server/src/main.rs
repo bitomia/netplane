@@ -1,5 +1,4 @@
 use anyhow::Error;
-use axum::{Router, serve::Serve};
 use dotenv::dotenv;
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
@@ -25,7 +24,7 @@ use crate::dnsserver::DnsServer;
 use crate::server::ProcessError;
 use crate::webserver::WebServer;
 
-fn echo_syntax(args: &Vec<String>) {
+fn echo_syntax(args: &[String]) {
     println!(
         "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket] [--dump=<file>] [--replay=<file> --replay-delay=<seconds>] [--dynamic-clients=<link-key>]",
         args[0]
@@ -51,9 +50,9 @@ fn try_start_dns_server(db: Arc<crate::db::Db>) -> Option<JoinHandle<Result<(), 
         let dns_server_task =
             tokio::spawn(async move { dns_server.start(dns_address.unwrap()).await });
 
-        return Some(dns_server_task);
+        Some(dns_server_task)
     } else {
-        return None;
+        None
     }
 }
 

@@ -95,6 +95,7 @@ pub async fn start_client(
     let auth_port: Option<u16> = Some(8000);
     let loopback_relay = false;
     let no_encryption = false;
+    let is_dynamic_link = false;
 
     if !transport.is_empty() {
         transport_type = Some(transport.to_string());
@@ -108,7 +109,8 @@ pub async fn start_client(
             &public_filepath,
             &private_filepath,
             &host,
-            &link_code,
+            link_code,
+            is_dynamic_link,
             auth_port,
         )
         .await
@@ -167,6 +169,7 @@ pub async fn start_client(
             transport_type,
             loopback_relay,
             no_encryption,
+            is_dynamic_link,
             &authkey_path,
             &public_filepath,
             &private_filepath,

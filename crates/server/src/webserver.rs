@@ -17,6 +17,7 @@ use crate::handlers::{
 pub struct WebServer {}
 
 impl WebServer {
+    #[allow(clippy::new_ret_no_self)]
     pub async fn new(
         db: Arc<crate::db::Db>,
         server_stats: Arc<crate::server::ServerStats>,

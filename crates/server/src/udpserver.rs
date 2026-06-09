@@ -219,7 +219,7 @@ impl UdpServer {
                 .iter()
                 .filter(|(addr, peer)| {
                     peer.get_state() == PeerState::HandshakeDone
-                        && exclude.map_or(true, |ex| ex != *addr)
+                        && (exclude != Some(*addr))
                 })
                 .map(|(addr, _)| *addr)
                 .collect()
@@ -244,11 +244,10 @@ impl UdpServer {
             .collect();
 
         let msg = PeerList::new(peer_list);
-        if let Ok(serialized) = msg.serialize() {
-            if let Err(e) = transport.send(&serialized, Some(to)).await {
+        if let Ok(serialized) = msg.serialize()
+            && let Err(e) = transport.send(&serialized, Some(to)).await {
                 error!("Failed to send peer list to {:?}: {}", to, e);
             }
-        }
     }
 
     async fn network(
@@ -294,11 +293,10 @@ impl UdpServer {
                             udp_peer.update_last_heartbeat();
                         }
                         let reply = UDPHeartbeat::new();
-                        if let Ok(data) = reply.serialize() {
-                            if let Err(e) = transport.send(&data, Some(src)).await {
+                        if let Ok(data) = reply.serialize()
+                            && let Err(e) = transport.send(&data, Some(src)).await {
                                 error!("Failed to send heartbeat reply to {:?}: {}", src, e);
                             }
-                        }
                     }
                     _ => {
                         warn!("Unknown or unexpected message type from {:?}", src);
@@ -327,7 +325,7 @@ impl UdpServer {
                                     self.server
                                         .peers
                                         .update(
-                                            src.clone(),
+                                            *src,
                                             sdn_client_ip.clone(),
                                             client_pub_key.clone(),
                                             PeerState::HandshakeDone,
@@ -373,7 +371,7 @@ impl UdpServer {
     async fn handle_relay_packet(
         &self,
         transport: &mut UdpTransport,
-        src: &SocketAddr,
+        _src: &SocketAddr,
         relay: &RelayPacket,
         raw_data: &[u8],
     ) -> Result<()> {

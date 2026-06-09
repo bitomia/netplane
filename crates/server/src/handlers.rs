@@ -211,10 +211,10 @@ pub async fn create_client(
     match state
         .db
         .create_client(
-            &id.to_string().as_str(),
+            id.to_string().as_str(),
             &payload.sdn_client_ip,
-            &network_address.as_str(),
-            &payload.netmask.as_str(),
+            network_address.as_str(),
+            payload.netmask.as_str(),
         )
         .await
     {
@@ -290,7 +290,7 @@ pub async fn verify_client(
 
     match netplane_common::crypto::verify_signed_key(bearer_token) {
         Ok(auth_client) => {
-            if let Ok(_) = state.db.get_client(&auth_client.client_id).await {
+            if state.db.get_client(&auth_client.client_id).await.is_ok() {
                 (StatusCode::OK, Ok(()))
             } else {
                 web_err!(StatusCode::UNAUTHORIZED, "User does not exist".to_string())

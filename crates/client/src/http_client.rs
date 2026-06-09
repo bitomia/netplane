@@ -76,8 +76,8 @@ pub fn http_post_json<T: Serialize>(url: &str, json: &T) -> Result<Response> {
         .ok_or_else(|| anyhow!("Invalid status code"))?;
     let status_code = StatusCode::from_bytes(http_status_code.as_bytes())?;
 
-    while let Some(line) = lines.next() {
-        if line == "" {
+    for line in lines.by_ref() {
+        if line.is_empty() {
             break;
         }
     }
@@ -121,8 +121,8 @@ pub fn http_get(url: &str, key: &str) -> Result<Response> {
         .ok_or_else(|| anyhow!("Invalid status code"))?;
     let status_code = StatusCode::from_bytes(http_status_code.as_bytes())?;
 
-    while let Some(line) = lines.next() {
-        if line == "" {
+    for line in lines.by_ref() {
+        if line.is_empty() {
             break;
         }
     }

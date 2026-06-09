@@ -74,7 +74,7 @@ impl WebSocketServer {
         db: Arc<db::Db>,
         peers: Peers<i32>,
         stats: Arc<ServerStats>,
-        dynamic_clients_key: Option<String>,
+        _dynamic_clients_key: Option<String>,
     ) {
         info!(
             "New client connection (connections={})",

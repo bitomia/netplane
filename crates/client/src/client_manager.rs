@@ -20,6 +20,7 @@ pub struct ClientManager {
     /// Our private key bytes
     private_key: Vec<u8>,
     /// Our public key (base64)
+    #[allow(dead_code)]
     public_key: String,
     /// Known peers (SDN IP -> PeerInfo)
     known_peers: HashMap<Ipv4Addr, PeerInfo>,
@@ -255,7 +256,7 @@ impl ClientManager {
     pub fn queue_packet(&mut self, dst: &Ipv4Addr, packet: Vec<u8>) {
         self.pending_packets
             .entry(*dst)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(packet);
         debug!("Queued packet for {} (waiting for handshake)", dst);
     }

@@ -46,6 +46,7 @@ pub struct UdpPeer {
 }
 
 impl UdpPeer {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(data: PeerData) -> Box<dyn Peer> {
         Box::new(UdpPeer {
             data,
@@ -60,7 +61,7 @@ impl Peer for UdpPeer {
     }
 
     fn set_sdn_addr(&mut self, addr: &Ipv4Addr) {
-        self.data.sdn_addr = addr.clone();
+        self.data.sdn_addr = *addr;
     }
 
     fn get_state(&self) -> PeerState {
@@ -96,6 +97,7 @@ pub struct TcpPeer {
 }
 
 impl TcpPeer {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(data: PeerData, tx: Tx) -> Box<dyn Peer> {
         Box::new(TcpPeer { data, tx })
     }
@@ -107,7 +109,7 @@ impl Peer for TcpPeer {
     }
 
     fn set_sdn_addr(&mut self, addr: &Ipv4Addr) {
-        self.data.sdn_addr = addr.clone();
+        self.data.sdn_addr = *addr;
     }
 
     fn get_state(&self) -> PeerState {
@@ -195,11 +197,7 @@ impl PeersVec<Tx, Ipv4Addr> for Peers<i32> {
         peers
             .values()
             .filter_map(|peer| {
-                if let Some(tcp_peer) = peer.as_any().downcast_ref::<TcpPeer>() {
-                    Some((tcp_peer.tx.clone(), tcp_peer.get_sdn_addr()))
-                } else {
-                    None
-                }
+                peer.as_any().downcast_ref::<TcpPeer>().map(|tcp_peer| (tcp_peer.tx.clone(), tcp_peer.get_sdn_addr()))
             })
             .collect()
     }
@@ -251,11 +249,10 @@ impl TcpPeersRouting for Peers<i32> {
     async fn find_tx_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<Tx> {
         let peers = self.lock().await;
         for peer in peers.values() {
-            if peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() == *sdn_ip {
-                if let Some(tcp_peer) = peer.as_any().downcast_ref::<TcpPeer>() {
+            if peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() == *sdn_ip
+                && let Some(tcp_peer) = peer.as_any().downcast_ref::<TcpPeer>() {
                     return Some(tcp_peer.tx.clone());
                 }
-            }
         }
         None
     }

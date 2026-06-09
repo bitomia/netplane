@@ -125,6 +125,7 @@ pub async fn create_transport(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     tun_dev: String,
     host: String,
@@ -188,6 +189,7 @@ pub async fn run(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_from_fd(
     tun_fd: PlatformFd,
     start_params: &StartParams,
@@ -235,6 +237,7 @@ fn create_p2p_session(
     Ok((own_sdn_ip, client_manager))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_loop(
     mut dev: tundev::TunDev,
     mut transport: Box<AnyTransport>,
@@ -301,7 +304,10 @@ fn update_loop(
 
                 Some(_) = async {
                     match &option_token {
-                        Some(t) => Some(t.cancelled().await),
+                        Some(t) => {
+                            let _: () = t.cancelled().await;
+                            Some(())
+                        },
                         None => None,
                     }
                 } => {
@@ -347,11 +353,10 @@ async fn handle_relay_server_message(
             debug!("Received P2P handshake init from {}", init.initiator_sdn_ip);
             match client_manager.handle_handshake_init(&init) {
                 Ok(resp) => {
-                    if let Ok(data) = resp.serialize() {
-                        if let Err(e) = transport.send(&data, None).await {
+                    if let Ok(data) = resp.serialize()
+                        && let Err(e) = transport.send(&data, None).await {
                             error!("Failed to send P2P handshake response: {}", e);
                         }
-                    }
                 }
                 Err(e) => {
                     error!("Failed to handle P2P handshake init: {}", e);
@@ -370,9 +375,9 @@ async fn handle_relay_server_message(
                     if let Ok(responder_ip) = Ipv4Addr::from_str(&resp.responder_sdn_ip) {
                         let pending = client_manager.take_pending_packets(&responder_ip);
                         for packet in pending {
-                            if let Some(header) = parse_ipv4_header(&packet) {
-                                if let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip) {
-                                    if let Ok(encrypted) =
+                            if let Some(header) = parse_ipv4_header(&packet)
+                                && let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip)
+                                    && let Ok(encrypted) =
                                         client_manager.encrypt_for(&dst_ip, &packet).await
                                     {
                                         let relay = RelayPacket::new(
@@ -388,8 +393,6 @@ async fn handle_relay_server_message(
                                             }
                                         }
                                     }
-                                }
-                            }
                         }
                     }
                 }
@@ -488,11 +491,10 @@ async fn handle_outgoing_packet(
                 &dst_ip.to_string(),
                 packet.to_vec(),
             );
-            if let Ok(data) = relay.serialize() {
-                if let Err(e) = transport.send(&data, None).await {
+            if let Ok(data) = relay.serialize()
+                && let Err(e) = transport.send(&data, None).await {
                     error!("Failed to send multicast relay packet: {}", e);
                 }
-            }
         } else {
             // Encryption mode: encrypt separately for each peer with an established session
             let peers = client_manager.get_all_session_peers();
@@ -504,11 +506,10 @@ async fn handle_outgoing_packet(
                             &peer_ip.to_string(),
                             encrypted,
                         );
-                        if let Ok(data) = relay.serialize() {
-                            if let Err(e) = transport.send(&data, None).await {
+                        if let Ok(data) = relay.serialize()
+                            && let Err(e) = transport.send(&data, None).await {
                                 error!("Failed to send multicast relay to {}: {}", peer_ip, e);
                             }
-                        }
                     }
                     Err(e) => {
                         error!("Failed to encrypt multicast for {}: {}", peer_ip, e);
@@ -526,11 +527,10 @@ async fn handle_outgoing_packet(
             &dst_ip.to_string(),
             packet.to_vec(),
         );
-        if let Ok(data) = relay.serialize() {
-            if let Err(e) = transport.send(&data, None).await {
+        if let Ok(data) = relay.serialize()
+            && let Err(e) = transport.send(&data, None).await {
                 error!("Failed to send relay packet: {}", e);
             }
-        }
         return;
     }
 
@@ -541,11 +541,10 @@ async fn handle_outgoing_packet(
             Ok(encrypted) => {
                 let relay =
                     RelayPacket::new(&own_sdn_ip.to_string(), &dst_ip.to_string(), encrypted);
-                if let Ok(data) = relay.serialize() {
-                    if let Err(e) = transport.send(&data, None).await {
+                if let Ok(data) = relay.serialize()
+                    && let Err(e) = transport.send(&data, None).await {
                         error!("Failed to send relay packet: {}", e);
                     }
-                }
             }
             Err(e) => {
                 error!("Failed to encrypt packet for {}: {}", dst_ip, e);
@@ -558,11 +557,10 @@ async fn handle_outgoing_packet(
         if !client_manager.handshake_in_progress(&dst_ip) {
             match client_manager.initiate_handshake(&dst_ip) {
                 Ok(init) => {
-                    if let Ok(data) = init.serialize() {
-                        if let Err(e) = transport.send(&data, None).await {
+                    if let Ok(data) = init.serialize()
+                        && let Err(e) = transport.send(&data, None).await {
                             error!("Failed to send P2P handshake init: {}", e);
                         }
-                    }
                 }
                 Err(e) => {
                     error!("Failed to initiate handshake with {}: {}", dst_ip, e);

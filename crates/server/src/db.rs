@@ -1,3 +1,7 @@
+// Database access layer: some query helpers and row structs are part of the
+// API surface but not yet wired into every code path.
+#![allow(dead_code)]
+
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Pool, Sqlite, sqlite::SqlitePoolOptions};
@@ -75,7 +79,7 @@ impl Db {
     }
 
     pub async fn create_client(
-        self: &Self,
+        &self,
         client_id: &str,
         sdn_client_ip: &str,
         network: &str,
@@ -87,24 +91,24 @@ impl Db {
         sqlx::query(
             "INSERT INTO clients (id, sdn_client_ip, network, netmask) VALUES (?, ?, ?, ?)",
         )
-        .bind(&client_id)
-        .bind(&sdn_client_ip)
-        .bind(&network)
-        .bind(&netmask)
+        .bind(client_id)
+        .bind(sdn_client_ip)
+        .bind(network)
+        .bind(netmask)
         .execute(&mut *tx)
         .await?;
         sqlx::query("INSERT INTO auth_links (id, client_id) VALUES (?, ?)")
-            .bind(&auth_link_id.to_string())
-            .bind(&client_id)
+            .bind(auth_link_id.to_string())
+            .bind(client_id)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
 
-        self.get_client(&client_id).await
+        self.get_client(client_id).await
     }
 
     pub async fn create_dynamic_client(
-        self: &Self,
+        &self,
         pub_key: &str,
         max_attempts: usize,
     ) -> Result<Client, anyhow::Error> {
@@ -131,7 +135,7 @@ impl Db {
                 .bind(&free_ip)
                 .bind(&network)
                 .bind(&netmask)
-                .bind(&pub_key)
+                .bind(pub_key)
                 .execute(&self.pool)
                 .await
             {
@@ -147,7 +151,7 @@ impl Db {
                         continue;
                     }
                     error!("Creating client for dynamic link failed: {}", err.to_string());
-                    return Err(anyhow!("Database error on create_dynamic_client: {}", err.to_string()));
+                    return Err(anyhow!("Database error on create_dynamic_client: {}", err));
                 }
             }
         }
@@ -161,7 +165,7 @@ impl Db {
     }
 
     async fn find_free_sdn_client_ip(
-        self: &Self,
+        &self,
         network: &str,
         netmask: &str,
     ) -> Result<String, anyhow::Error> {
@@ -209,7 +213,7 @@ impl Db {
     }
 
     pub async fn check_link_key(
-        self: &Self,
+        &self,
         auth_id: &String,
     ) -> Result<AuthClient, anyhow::Error> {
         let auth_entry = sqlx::query_as!(
@@ -223,11 +227,11 @@ impl Db {
     }
 
     pub async fn auth_client(
-        self: &Self,
+        &self,
         link_key: &String,
         pub_key: &String,
     ) -> Result<String, anyhow::Error> {
-        match self.check_link_key(&link_key).await {
+        match self.check_link_key(link_key).await {
             Ok(is_linked) => {
                 let has_used = match is_linked.used {
                     Some(value) => value,
@@ -235,7 +239,7 @@ impl Db {
                         return Err(anyhow!("Unexpected error on auth"));
                     }
                 };
-                if has_used == true {
+                if has_used {
                     return Err(anyhow!("Link key already used"));
                 }
 
@@ -248,11 +252,11 @@ impl Db {
 
                 let mut tx = self.pool.begin().await?;
                 sqlx::query("UPDATE auth_links SET used=true WHERE id=?")
-                    .bind(&link_key)
+                    .bind(link_key)
                     .execute(&mut *tx)
                     .await?;
                 sqlx::query("UPDATE clients SET pub_key=? WHERE id=?")
-                    .bind(&pub_key)
+                    .bind(pub_key)
                     .bind(&client_id)
                     .execute(&mut *tx)
                     .await?;
@@ -267,7 +271,7 @@ impl Db {
         }
     }
 
-    pub async fn get_all_clients(self: &Self) -> Result<Vec<Client>, anyhow::Error> {
+    pub async fn get_all_clients(&self) -> Result<Vec<Client>, anyhow::Error> {
         let clients = sqlx::query_as!(
             Client,
             r#"
@@ -280,7 +284,7 @@ LEFT JOIN auth_links ON clients.id=auth_links.client_id
         Ok(clients)
     }
 
-    pub async fn get_client(self: &Self, client_id: &str) -> Result<Client, anyhow::Error> {
+    pub async fn get_client(&self, client_id: &str) -> Result<Client, anyhow::Error> {
         let client = sqlx::query_as!(
             Client,
             r#"
@@ -294,14 +298,14 @@ LEFT JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
         Ok(client)
     }
 
-    pub async fn delete_client(self: &Self, client_id: &String) -> Result<(), anyhow::Error> {
+    pub async fn delete_client(&self, client_id: &String) -> Result<(), anyhow::Error> {
         let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM auth_links WHERE client_id=?")
-            .bind(&client_id)
+            .bind(client_id)
             .execute(&mut *tx)
             .await?;
         sqlx::query("DELETE FROM clients WHERE id=?")
-            .bind(&client_id)
+            .bind(client_id)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -309,7 +313,7 @@ LEFT JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
     }
 
     pub async fn create_or_update_user(
-        self: &Self,
+        &self,
         email: &str,
         password_hash: &str,
     ) -> Result<bool, anyhow::Error> {
@@ -334,7 +338,7 @@ LEFT JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
         }
     }
 
-    pub async fn get_user_by_email(self: &Self, email: &str) -> Result<User, anyhow::Error> {
+    pub async fn get_user_by_email(&self, email: &str) -> Result<User, anyhow::Error> {
         let user = sqlx::query_as!(
             User,
             "SELECT email, password_hash, role FROM users WHERE email = ?",
@@ -346,7 +350,7 @@ LEFT JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
     }
 
     pub async fn get_hostname(
-        self: &Self,
+        &self,
         hostname: &str,
     ) -> Result<Option<String>, anyhow::Error> {
         let resolved_sdn_ip = sqlx::query_scalar!(

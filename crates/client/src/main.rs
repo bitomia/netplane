@@ -12,7 +12,7 @@ mod tundev;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
-fn echo_syntax(args: &Vec<String>) {
+fn echo_syntax(args: &[String]) {
     println!(
         "Use {} [server] [--port=5000] [--tun=device] [--link=link_code|--dynamic-link=dynamic_link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
         args[0]
@@ -40,11 +40,9 @@ fn main() -> Result<()> {
     if args.len() >= 2 {
         if let Err(err) =
             netplane_common::crypto::try_generate_crypto_keys("public.key", "private.key")
-        {
-            if err.kind() != std::io::ErrorKind::AlreadyExists {
+            && err.kind() != std::io::ErrorKind::AlreadyExists {
                 return Err(anyhow!(err));
             }
-        }
 
         let mut link_code = None;
         let mut dynamic_link_code = None;

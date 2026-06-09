@@ -81,7 +81,7 @@ fn build_response(query: &[u8], answer_ip: Option<String>) -> Option<Vec<u8>> {
         resp.extend_from_slice(&[0x00, 0x00, 0x00, 0x3C]); // TTL
         resp.extend_from_slice(&[0x00, 0x04]); // RDLENGTH
 
-        let ipv4: Ipv4Addr = answer_ip.unwrap().parse().ok()?;
+        let ipv4: Ipv4Addr = answer_ip.as_ref()?.parse().ok()?;
         resp.extend_from_slice(&ipv4.octets());
     }
 

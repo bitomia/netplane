@@ -148,8 +148,12 @@ pub extern "C" fn netplane_client_init_logger(format: u32) {
     client::init_logger(format);
 }
 
+/// # Safety
+///
+/// All pointer arguments must be valid, non-null, NUL-terminated C strings that
+/// remain valid for the duration of the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_client_auth(
+pub unsafe extern "C" fn netplane_client_auth(
     authkey_path: *const c_char,
     publickey_path: *const c_char,
     privatekey_path: *const c_char,
@@ -234,8 +238,12 @@ pub extern "C" fn netplane_client_auth(
     })
 }
 
+/// # Safety
+///
+/// `ptr` must be a pointer previously returned by this library and not yet
+/// freed; passing any other value is undefined behavior.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_client_free_auth(ptr: *mut c_char) {
+pub unsafe extern "C" fn netplane_client_free_auth(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
             let _ = CString::from_raw(ptr);
@@ -243,8 +251,12 @@ pub extern "C" fn netplane_client_free_auth(ptr: *mut c_char) {
     }
 }
 
+/// # Safety
+///
+/// All pointer arguments must be valid, non-null, NUL-terminated C strings that
+/// remain valid for the duration of the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_try_generate_crypto_keys(
+pub unsafe extern "C" fn netplane_try_generate_crypto_keys(
     public_filepath: *const c_char,
     private_filepath: *const c_char,
 ) -> i32 {
@@ -296,8 +308,12 @@ pub extern "C" fn netplane_client_handshake(
     })
 }
 
+/// # Safety
+///
+/// `result` must be a pointer previously returned by this library and not yet
+/// freed; passing any other value is undefined behavior.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_client_free_handshake(result: *mut HandshakeResult) {
+pub unsafe extern "C" fn netplane_client_free_handshake(result: *mut HandshakeResult) {
     if result.is_null() {
         return;
     }
@@ -320,8 +336,12 @@ pub extern "C" fn netplane_client_free_handshake(result: *mut HandshakeResult) {
     }
 }
 
+/// # Safety
+///
+/// `server_addr` and `transport_type` must be valid, non-null, NUL-terminated C
+/// strings that remain valid for the duration of the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_create_transport(
+pub unsafe extern "C" fn netplane_create_transport(
     server_addr: *const c_char,
     server_port: u16,
     transport_type: *const c_char,
@@ -376,8 +396,13 @@ fn reset_cancel_token() {
     *token = CancellationToken::new();
 }
 
+/// # Safety
+///
+/// `transport` and `handshake` must be valid pointers previously returned by
+/// this library, and the string pointers must be valid, non-null,
+/// NUL-terminated C strings that remain valid for the duration of the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_client_run_fd(
+pub unsafe extern "C" fn netplane_client_run_fd(
     tun_fd: c_int,
     transport: *mut std::ffi::c_void,
     handshake: *mut HandshakeResult,
@@ -466,7 +491,7 @@ pub extern "C" fn netplane_client_run_fd(
                     Ok(_) => 0,
                     Err(err) => {
                         error!("Error running client: {}", err);
-                        return -12;
+                        -12
                     }
                 }
             },
@@ -488,8 +513,13 @@ pub extern "C" fn netplane_client_stop() {
     token.cancel();
 }
 
+/// # Safety
+///
+/// The string pointers must be valid, non-null, NUL-terminated C strings that
+/// remain valid for the duration of the call, and `cancel_token_out`, if
+/// non-null, must point to writable storage for one pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn netplane_client_run(
+pub unsafe extern "C" fn netplane_client_run(
     tun_dev: *const c_char,
     host: *const c_char,
     port: u16,

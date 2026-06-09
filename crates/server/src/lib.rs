@@ -1,4 +1,3 @@
-use anyhow::Error;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -22,6 +21,10 @@ pub extern "C" fn netplane_server_run(transport_mode: TransportMode) {
         let db = Arc::new(db::Db::new().await);
         let server_stats = Arc::new(server::ServerStats::new(transport_mode.clone()));
 
-        server::run(db, server_stats, transport_mode, None, None, None, None).await
+        match server::run(db, server_stats, transport_mode, None, None, None, None).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => tracing::error!("Server exited with error: {:?}", err),
+            Err(err) => tracing::error!("Server task panicked: {:?}", err),
+        }
     });
 }
