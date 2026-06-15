@@ -15,7 +15,10 @@ const DYNAMIC_KEY_FILENAME: &str = "dynamic.key";
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
-fn echo_syntax(args: &[String]) {
+fn echo_syntax(msg: Option<String>, args: &[String]) {
+    if let Some(msg) = msg {
+        print!("{}. ", msg);
+    }
     println!(
         "Use {} [server] [--port=5000] [--tun=device] [--link=link_code|--dynamic-link=dynamic_link_code] [--auth-port=8000] [--transport=udp|websocket] [--loopback-relay] [--no-encryption]",
         args[0]
@@ -57,6 +60,10 @@ fn main() -> Result<()> {
         let mut loopback_relay = false;
         let mut no_encryption = false;
 
+        if args[1] == "--help" {
+            echo_syntax(None, &args);
+            std::process::exit(1);
+        }
         // Parse optional arguments
         for arg in &args[2..] {
             if arg.starts_with("--dynamic-link") {
@@ -87,6 +94,12 @@ fn main() -> Result<()> {
                 loopback_relay = true;
             } else if arg == "--no-encryption" {
                 no_encryption = true;
+            } else if arg.starts_with("--help") {
+                echo_syntax(None, &args);
+                std::process::exit(1);
+            } else {
+                echo_syntax(Some("Argument not recognized".to_string()), &args);
+                std::process::exit(1);
             }
         }
 
@@ -113,7 +126,7 @@ fn main() -> Result<()> {
                 } else if std::fs::exists(AUTH_KEY_FILENAME)? {
                     (AUTH_KEY_FILENAME, None, false)
                 } else {
-                    echo_syntax(&args);
+                    echo_syntax(Some("Client not linked".to_string()), &args);
                     std::process::exit(1);
                 };
 
@@ -150,7 +163,7 @@ fn main() -> Result<()> {
             Ok::<(), anyhow::Error>(())
         })?;
     } else {
-        echo_syntax(&args);
+        echo_syntax(None, &args);
         std::process::exit(1);
     }
     Ok(())

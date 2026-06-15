@@ -24,7 +24,10 @@ use crate::dnsserver::DnsServer;
 use crate::server::ProcessError;
 use crate::webserver::WebServer;
 
-fn echo_syntax(args: &[String]) {
+fn echo_syntax(msg: Option<String>, args: &[String]) {
+    if let Some(msg) = msg {
+        print!("{}. ", msg);
+    }
     println!(
         "Use {} [--migrate] [--create-user=<email>] [--transport=udp|websocket] [--dump=<file>] [--replay=<file> --replay-delay=<seconds>] [--dynamic-clients=<link-key>]",
         args[0]
@@ -131,7 +134,10 @@ async fn main() -> Result<(), ProcessError> {
         } else if arg.starts_with("--dynamic-clients=") {
             dynamic_clients_key = Some(arg.split('=').nth(1).unwrap_or("").to_string());
         } else if arg.starts_with("--help") {
-            echo_syntax(&args);
+            echo_syntax(None, &args);
+            std::process::exit(1);
+        } else {
+            echo_syntax(Some("Argument not recognized".to_string()), &args);
             std::process::exit(1);
         }
     }
@@ -143,8 +149,7 @@ async fn main() -> Result<(), ProcessError> {
 
     if let Some(email) = create_user_email {
         if email.is_empty() {
-            println!("Error: Email cannot be empty");
-            echo_syntax(&args);
+            echo_syntax(Some("Error: Email cannot be empty".to_string()), &args);
             std::process::exit(1);
         }
 

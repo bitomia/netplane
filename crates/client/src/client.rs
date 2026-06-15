@@ -139,7 +139,7 @@ pub async fn run(
     private_filepath: &str,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
-) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
+) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
     info!("Starting client");
 
     let auth_key = load_auth_key(authkey_path.to_string())?;
@@ -199,7 +199,7 @@ pub async fn run_from_fd(
     public_filepath: &str,
     private_filepath: &str,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
-) -> Result<tokio::task::JoinHandle<()>, anyhow::Error> {
+) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
     info!("Starting client with fd");
 
     let (own_sdn_ip, client_manager) =
@@ -247,7 +247,7 @@ fn update_loop(
     no_encryption: bool,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
-) -> tokio::task::JoinHandle<()> {
+) -> tokio::task::JoinHandle<std::io::Error> {
     tokio::spawn(async move {
         let mut heartbeat_interval = interval(Duration::from_secs(5));
         let mut socket_buf = [0; 1500];
@@ -268,7 +268,10 @@ fn update_loop(
                                 &state_tx,
                             ).await;
                         },
-                        Err(err) => error!("Receive error: {}", err)
+                        Err(err) => {
+                            error!("Receive error: {}", err);
+                            return err;
+                        }
                     }
                 },
 
@@ -286,18 +289,22 @@ fn update_loop(
                                 no_encryption,
                             ).await;
                         }
-                        Err(err) => error!("TUN read error: {}", err)
+                        Err(err) => {
+                            error!("TUN read error: {}", err);
+                            return err;
+                        }
                     }
                 },
 
                 // Send heartbeat to relay server
                 _ = heartbeat_interval.tick() => {
                     let heartbeat = UDPHeartbeat::new();
-                    if let Ok(data) = heartbeat.serialize() {
-                        if let Err(err) = transport.send(&data, None).await {
+                    let data = heartbeat.serialize().unwrap();
+                    match transport.send(&data, None).await {
+                        Ok(_) => debug!("Heartbeat sent"),
+                        Err(err) => {
                             error!("Failed to send heartbeat: {}", err);
-                        } else {
-                            debug!("Heartbeat sent");
+                            return err;
                         }
                     }
                 },
@@ -312,7 +319,6 @@ fn update_loop(
                     }
                 } => {
                     info!("Update loop stopped");
-                    break;
                 }
             }
         }
@@ -354,9 +360,10 @@ async fn handle_relay_server_message(
             match client_manager.handle_handshake_init(&init) {
                 Ok(resp) => {
                     if let Ok(data) = resp.serialize()
-                        && let Err(e) = transport.send(&data, None).await {
-                            error!("Failed to send P2P handshake response: {}", e);
-                        }
+                        && let Err(e) = transport.send(&data, None).await
+                    {
+                        error!("Failed to send P2P handshake response: {}", e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to handle P2P handshake init: {}", e);
@@ -377,22 +384,22 @@ async fn handle_relay_server_message(
                         for packet in pending {
                             if let Some(header) = parse_ipv4_header(&packet)
                                 && let Ok(dst_ip) = Ipv4Addr::from_str(&header.dst_ip)
-                                    && let Ok(encrypted) =
-                                        client_manager.encrypt_for(&dst_ip, &packet).await
-                                    {
-                                        let relay = RelayPacket::new(
-                                            &own_sdn_ip.to_string(),
-                                            &dst_ip.to_string(),
-                                            encrypted,
-                                        );
-                                        if let Ok(data) = relay.serialize() {
-                                            if let Err(e) = transport.send(&data, None).await {
-                                                error!("Failed to send queued packet: {}", e);
-                                            } else {
-                                                debug!("Sent queued packet to {}", dst_ip);
-                                            }
-                                        }
+                                && let Ok(encrypted) =
+                                    client_manager.encrypt_for(&dst_ip, &packet).await
+                            {
+                                let relay = RelayPacket::new(
+                                    &own_sdn_ip.to_string(),
+                                    &dst_ip.to_string(),
+                                    encrypted,
+                                );
+                                if let Ok(data) = relay.serialize() {
+                                    if let Err(e) = transport.send(&data, None).await {
+                                        error!("Failed to send queued packet: {}", e);
+                                    } else {
+                                        debug!("Sent queued packet to {}", dst_ip);
                                     }
+                                }
+                            }
                         }
                     }
                 }
@@ -492,9 +499,10 @@ async fn handle_outgoing_packet(
                 packet.to_vec(),
             );
             if let Ok(data) = relay.serialize()
-                && let Err(e) = transport.send(&data, None).await {
-                    error!("Failed to send multicast relay packet: {}", e);
-                }
+                && let Err(e) = transport.send(&data, None).await
+            {
+                error!("Failed to send multicast relay packet: {}", e);
+            }
         } else {
             // Encryption mode: encrypt separately for each peer with an established session
             let peers = client_manager.get_all_session_peers();
@@ -507,9 +515,10 @@ async fn handle_outgoing_packet(
                             encrypted,
                         );
                         if let Ok(data) = relay.serialize()
-                            && let Err(e) = transport.send(&data, None).await {
-                                error!("Failed to send multicast relay to {}: {}", peer_ip, e);
-                            }
+                            && let Err(e) = transport.send(&data, None).await
+                        {
+                            error!("Failed to send multicast relay to {}: {}", peer_ip, e);
+                        }
                     }
                     Err(e) => {
                         error!("Failed to encrypt multicast for {}: {}", peer_ip, e);
@@ -528,9 +537,10 @@ async fn handle_outgoing_packet(
             packet.to_vec(),
         );
         if let Ok(data) = relay.serialize()
-            && let Err(e) = transport.send(&data, None).await {
-                error!("Failed to send relay packet: {}", e);
-            }
+            && let Err(e) = transport.send(&data, None).await
+        {
+            error!("Failed to send relay packet: {}", e);
+        }
         return;
     }
 
@@ -542,9 +552,10 @@ async fn handle_outgoing_packet(
                 let relay =
                     RelayPacket::new(&own_sdn_ip.to_string(), &dst_ip.to_string(), encrypted);
                 if let Ok(data) = relay.serialize()
-                    && let Err(e) = transport.send(&data, None).await {
-                        error!("Failed to send relay packet: {}", e);
-                    }
+                    && let Err(e) = transport.send(&data, None).await
+                {
+                    error!("Failed to send relay packet: {}", e);
+                }
             }
             Err(e) => {
                 error!("Failed to encrypt packet for {}: {}", dst_ip, e);
@@ -558,9 +569,10 @@ async fn handle_outgoing_packet(
             match client_manager.initiate_handshake(&dst_ip) {
                 Ok(init) => {
                     if let Ok(data) = init.serialize()
-                        && let Err(e) = transport.send(&data, None).await {
-                            error!("Failed to send P2P handshake init: {}", e);
-                        }
+                        && let Err(e) = transport.send(&data, None).await
+                    {
+                        error!("Failed to send P2P handshake init: {}", e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to initiate handshake with {}: {}", dst_ip, e);
@@ -605,6 +617,7 @@ pub async fn auth_client(
     };
 
     let auth_url = format!("http://{}:{}/auth/{}", host, port, link_code);
+
     let (public_key, _) =
         netplane_common::crypto::try_load_crypto_keys(publickey_filepath, privatekey_filepath)?;
 
