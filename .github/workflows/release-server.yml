@@ -21,6 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install bun dependencies
+        run: cd web && bun install --frozen-lockfile
+      - name: Build web assets
+        run: cd web && bun run build
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -63,17 +71,6 @@ jobs:
 
     - name: Add musl target
       run: rustup target add x86_64-unknown-linux-musl
-
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: latest
-
-    - name: Install bun dependencies
-      run: cd web && bun install --frozen-lockfile
-
-    - name: Build web assets
-      run: cd web && bun run build
 
     - name: Prepare database
       run: make db-prepare
