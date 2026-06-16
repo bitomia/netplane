@@ -1,39 +1,70 @@
-name: Build client
+name: Release client
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy -p netplane_client --all-targets -- -D warnings
+      - name: Run tests
+        run: cargo test -p netplane_client --verbose
+
   build:
+    needs: verify
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         include:
           - os: ubuntu-latest
-            suffix: linux
-            archive: netplane-linux.tgz
+            archive: netplane-linux-amd64.tgz
             binary: netplane
             target: x86_64-unknown-linux-gnu
           - os: macos-latest
-            suffix: macos
-            archive: netplane-macos.tgz
+            archive: netplane-darwin-universal.tgz
             binary: netplane
             target: universal-apple-darwin
           - os: windows-latest
-            suffix: windows
-            archive: netplane-windows.zip
+            archive: netplane-windows-amd64.zip
             binary: netplane.exe
             target: x86_64-pc-windows-msvc
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
 
     - name: Install Rust target (if needed)
       if: matrix.target != 'universal-apple-darwin'
@@ -60,14 +91,6 @@ jobs:
           target/aarch64-apple-darwin/release/${{ matrix.binary }} \
           -output target/universal-apple-darwin/release/${{ matrix.binary }}
 
-    - name: Run tests
-      if: matrix.target != 'universal-apple-darwin'
-      run: cargo test -p netplane_client --verbose --target ${{ matrix.target }}
-
-    - name: Run tests (macOS universal - native arch only)
-      if: matrix.target == 'universal-apple-darwin'
-      run: cargo test -p netplane_client --verbose
-
     - name: Archive binary
       shell: bash
       run: |
@@ -79,10 +102,22 @@ jobs:
           tar -czvf dist/${{ matrix.archive }} -C $(dirname $BIN_PATH) $(basename $BIN_PATH)
         fi
 
+    - name: Generate checksum
+      shell: bash
+      run: |
+        cd dist
+        if command -v sha256sum >/dev/null 2>&1; then
+          sha256sum ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
+        else
+          shasum -a 256 ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
+        fi
+
     - name: Upload GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: latest
-        files: dist/${{ matrix.archive }}
+        files: |
+          dist/${{ matrix.archive }}
+          dist/${{ matrix.archive }}.sha256
       env:
         GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}

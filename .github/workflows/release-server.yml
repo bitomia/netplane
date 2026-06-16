@@ -1,17 +1,41 @@
-name: Build server
+name: Release server
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: cargo clippy -p netplane_server --all-targets -- -D warnings
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     env:
       DATABASE_URL: sqlite://netplane.db
 
@@ -24,6 +48,12 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
 
     - name: Install sqlx-cli
       run: cargo install sqlx-cli --no-default-features --features sqlite
@@ -58,12 +88,18 @@ jobs:
       shell: bash
       run: |
         mkdir -p dist
-        tar -czvf dist/netplane-server.tgz -C target/x86_64-unknown-linux-musl/release netplane-server
+        tar -czvf dist/netplane-server-linux-amd64.tgz -C target/x86_64-unknown-linux-musl/release netplane-server
+
+    - name: Generate checksum
+      shell: bash
+      run: |
+        cd dist
+        sha256sum netplane-server-linux-amd64.tgz > netplane-server-linux-amd64.tgz.sha256
 
     - name: Upload GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: latest
-        files: dist/netplane-server.*
+        files: dist/netplane-server-linux-amd64.*
       env:
         GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}

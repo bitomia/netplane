@@ -1,11 +1,16 @@
-name: Build App
+name: Release app
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,6 +18,8 @@ env:
 jobs:
   android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -54,40 +61,44 @@ jobs:
         run: bun run tauri android build --apk
 
       - name: Collect APKs
+        shell: bash
         run: |
           mkdir -p dist
           find ee/app/src-tauri/gen/android -type f -name "*.apk" -exec cp {} dist/ \;
           ls -la dist/
 
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          for f in *.apk; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
       - name: Upload GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          files: dist/*.apk
+          files: |
+            dist/*.apk
+            dist/*.apk.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}
 
   desktop:
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_glob: |
-              ee/app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-              ee/app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_glob: |
-              ee/app/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
-              ee/app/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_glob: |
-              ee/app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-              ee/app/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -114,10 +125,37 @@ jobs:
         working-directory: ee/app
         run: bun run tauri build --target ${{ matrix.target }}
 
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          shopt -s nullglob
+          base="ee/app/src-tauri/target/${{ matrix.target }}/release/bundle"
+          for f in "$base"/dmg/*.dmg \
+                   "$base"/macos/*.app.tar.gz \
+                   "$base"/msi/*.msi \
+                   "$base"/nsis/*.exe; do
+            cp "$f" dist/
+          done
+          ls -la dist/
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist
+          for f in *; do
+            [ -f "$f" ] || continue
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$f" > "$f.sha256"
+            else
+              shasum -a 256 "$f" > "$f.sha256"
+            fi
+          done
+
       - name: Upload GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          files: ${{ matrix.artifact_glob }}
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}
