@@ -57,6 +57,17 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Install bun dependencies
+      run: cd web && bun install --frozen-lockfile
+
+    - name: Build web assets
+      run: cd web && bun run build
+
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
 
