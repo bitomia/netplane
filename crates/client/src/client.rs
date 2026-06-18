@@ -249,9 +249,11 @@ fn update_loop(
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> tokio::task::JoinHandle<std::io::Error> {
     tokio::spawn(async move {
-        let mut heartbeat_interval = interval(Duration::from_secs(5));
+        let is_udp = matches!(transport.as_ref(), AnyTransport::Udp(_) | AnyTransport::EncryptedUdp(_));
+        let mut heartbeat_interval = is_udp.then(|| interval(Duration::from_secs(5)));
         let mut socket_buf = [0; 1500];
         let mut tun_buf = [0; 1500];
+
         loop {
             tokio::select! {
                 // Receive from relay server
@@ -296,8 +298,13 @@ fn update_loop(
                     }
                 },
 
-                // Send heartbeat to relay server
-                _ = heartbeat_interval.tick() => {
+                // Send heartbeat to relay server (UDP only)
+                Some(_) = async {
+                    match heartbeat_interval.as_mut() {
+                        Some(i) => Some(i.tick().await),
+                        None => None,
+                    }
+                } => {
                     let heartbeat = UDPHeartbeat::new();
                     let data = heartbeat.serialize().unwrap();
                     match transport.send(&data, None).await {
