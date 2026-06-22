@@ -1,20 +1,18 @@
 use anyhow::Result;
+use dashmap::DashMap;
 use netplane_common::packet::is_multicast_or_broadcast;
 use netplane_common::transport::{Transport, UdpTransport};
 use netplane_common::{
     MessageType, P2PHandshakeInit, P2PHandshakeResp, PeerAnnounce, PeerEventType, PeerInfo,
     PeerList, PeerState, RelayPacket, UDPHeartbeat, get_message_type,
 };
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tokio::sync::mpsc;
-use tokio::time;
 use tracing::{error, info, trace, warn};
 
 use crate::db;
@@ -41,7 +39,7 @@ impl UdpServer {
         replay_delay: Option<u64>,
         dynamic_clients_key: Option<String>,
     ) -> Self {
-        let peers: Peers<SocketAddr> = Peers::new(Mutex::new(HashMap::new()));
+        let peers: Peers<SocketAddr> = Peers::new(DashMap::new());
 
         if let Some(traffic_logger_path) = dump_file {
             let traffic_logger = TrafficLogger::new(&traffic_logger_path).ok();
@@ -139,36 +137,23 @@ impl UdpServer {
             });
         }
 
-        // Start heartbeat timeout cleanup task
-        let peers_for_cleanup = self.server.peers.clone();
-        tokio::spawn(async move {
-            let mut interval = time::interval(Duration::from_secs(5));
-            let timeout = Duration::from_secs(15); // Increased timeout for E2E
-
-            loop {
-                interval.tick().await;
-
-                let mut peers = peers_for_cleanup.lock().await;
-                let mut expired_peers = Vec::new();
-
-                for (addr, peer) in peers.iter() {
-                    let udp_peer = peer.as_any().downcast_ref::<UdpPeer>().unwrap();
-                    if udp_peer.get_state() == PeerState::HandshakeDone
-                        && udp_peer.is_heartbeat_expired(timeout)
-                    {
-                        expired_peers.push(*addr);
-                    }
-                }
-
-                for addr in expired_peers {
-                    warn!("Removing peer {:?} due to heartbeat timeout", addr);
-                    peers.remove(&addr);
-                    // Note: peer disconnect broadcast handled below in main loop
-                }
-            }
-        });
-
         loop {
+            self.server.peers.retain(|addr, peer| {
+                let udp_peer = peer.as_any().downcast_ref::<UdpPeer>().unwrap();
+                if udp_peer.get_state() == PeerState::HandshakeDone
+                    && udp_peer.is_heartbeat_expired(Duration::from_secs(15))
+                {
+                    info!(
+                        "Removing expired peer sdn_addr={} addr={}",
+                        udp_peer.get_sdn_addr(),
+                        addr,
+                    );
+                    true
+                } else {
+                    false
+                }
+            });
+
             let (amt, src) = tokio::select! {
                 Some((data, addr)) = replay_rx.recv() => {
                     let addr = Ipv4Addr::from_str(&addr)?;
@@ -214,14 +199,13 @@ impl UdpServer {
     ) {
         // Collect addresses first to avoid holding lock across await
         let addrs: Vec<SocketAddr> = {
-            let peers = self.server.peers.lock().await;
-            peers
+            self.server
+                .peers
                 .iter()
-                .filter(|(addr, peer)| {
-                    peer.get_state() == PeerState::HandshakeDone
-                        && (exclude != Some(*addr))
+                .filter(|peer| {
+                    peer.get_state() == PeerState::HandshakeDone && (exclude != Some(peer.key()))
                 })
-                .map(|(addr, _)| *addr)
+                .map(|peer| *peer.key())
                 .collect()
         };
 
@@ -245,9 +229,10 @@ impl UdpServer {
 
         let msg = PeerList::new(peer_list);
         if let Ok(serialized) = msg.serialize()
-            && let Err(e) = transport.send(&serialized, Some(to)).await {
-                error!("Failed to send peer list to {:?}: {}", to, e);
-            }
+            && let Err(e) = transport.send(&serialized, Some(to)).await
+        {
+            error!("Failed to send peer list to {:?}: {}", to, e);
+        }
     }
 
     async fn network(
@@ -260,12 +245,15 @@ impl UdpServer {
         self.server.stats.add_in_bytes(amt);
 
         let peer_state = {
-            let mut peers = self.server.peers.lock().await;
-            let peer = peers.entry(*src).or_insert(UdpPeer::new(PeerData {
-                sdn_addr: Ipv4Addr::UNSPECIFIED,
-                state: PeerState::HandshakePending,
-                client_public_key: None,
-            }));
+            let peer = self
+                .server
+                .peers
+                .entry(*src)
+                .or_insert(UdpPeer::new(PeerData {
+                    sdn_addr: Ipv4Addr::UNSPECIFIED,
+                    state: PeerState::HandshakePending,
+                    client_public_key: None,
+                }));
             peer.get_state()
         };
 
@@ -287,16 +275,16 @@ impl UdpServer {
                     }
                     MessageType::Heartbeat(_) => {
                         trace!("Heartbeat received from {:?}", src);
-                        let mut peers = self.server.peers.lock().await;
-                        if let Some(peer) = peers.get_mut(src) {
+                        if let Some(mut peer) = self.server.peers.get_mut(src) {
                             let udp_peer = peer.as_any_mut().downcast_mut::<UdpPeer>().unwrap();
                             udp_peer.update_last_heartbeat();
                         }
                         let reply = UDPHeartbeat::new();
                         if let Ok(data) = reply.serialize()
-                            && let Err(e) = transport.send(&data, Some(src)).await {
-                                error!("Failed to send heartbeat reply to {:?}: {}", src, e);
-                            }
+                            && let Err(e) = transport.send(&data, Some(src)).await
+                        {
+                            error!("Failed to send heartbeat reply to {:?}: {}", src, e);
+                        }
                     }
                     _ => {
                         warn!("Unknown or unexpected message type from {:?}", src);

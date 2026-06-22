@@ -1,19 +1,18 @@
 use bytes::Bytes;
+use dashmap::DashMap;
 use netplane_common::{PeerInfo, PeerState};
 use std::any::Any;
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 
 pub type Tx = mpsc::UnboundedSender<Bytes>;
 pub type Rx = mpsc::UnboundedReceiver<Bytes>;
 
-pub trait Peer: Send + Any {
+pub trait Peer: Send + Sync + Any {
     fn get_sdn_addr(&self) -> Ipv4Addr;
     fn set_sdn_addr(&mut self, addr: &Ipv4Addr);
     fn get_state(&self) -> PeerState;
@@ -129,7 +128,7 @@ impl Peer for TcpPeer {
     }
 }
 
-pub type Peers<Key> = Arc<Mutex<HashMap<Key, Box<dyn Peer>>>>;
+pub type Peers<Key> = Arc<DashMap<Key, Box<dyn Peer>>>;
 
 pub trait PeersRouting<T> {
     /// Get list of all connected peers as PeerInfo for broadcasting
@@ -146,9 +145,7 @@ pub trait PeersRouting<T> {
 
 impl<T: Eq + Hash> PeersRouting<T> for Peers<T> {
     async fn get_peer_list(&self) -> Vec<PeerInfo> {
-        self.lock()
-            .await
-            .values()
+        self.iter()
             .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
             .map(|peer| {
                 PeerInfo::new(
@@ -166,10 +163,9 @@ impl<T: Eq + Hash> PeersRouting<T> for Peers<T> {
         client_pub_key: String,
         state: PeerState,
     ) {
-        let mut peers = self.lock().await;
-        peers.retain(|_, v| v.get_sdn_addr().to_string() != sdn_client_ip);
+        self.retain(|_, v| v.get_sdn_addr().to_string() != sdn_client_ip);
 
-        if let Some(peer) = peers.get_mut(&peer_id) {
+        if let Some(mut peer) = self.get_mut(&peer_id) {
             peer.set_sdn_addr(&Ipv4Addr::from_str(&sdn_client_ip).expect("Invalid SDN client IP"));
             peer.set_client_public_key(Some(client_pub_key));
             peer.set_state(state);
@@ -183,21 +179,19 @@ pub trait PeersVec<Key, Value> {
 
 impl PeersVec<SocketAddr, Ipv4Addr> for Peers<SocketAddr> {
     async fn to_vec(&self) -> Vec<(SocketAddr, Ipv4Addr)> {
-        let peers = self.lock().await;
-        peers
-            .iter()
-            .map(|(addr, peer)| (*addr, peer.get_sdn_addr()))
+        self.iter()
+            .map(|peer| (*peer.key(), peer.value().get_sdn_addr()))
             .collect()
     }
 }
 
 impl PeersVec<Tx, Ipv4Addr> for Peers<i32> {
     async fn to_vec(&self) -> Vec<(Tx, Ipv4Addr)> {
-        let peers = self.lock().await;
-        peers
-            .values()
+        self.iter()
             .filter_map(|peer| {
-                peer.as_any().downcast_ref::<TcpPeer>().map(|tcp_peer| (tcp_peer.tx.clone(), tcp_peer.get_sdn_addr()))
+                peer.as_any()
+                    .downcast_ref::<TcpPeer>()
+                    .map(|tcp_peer| (tcp_peer.tx.clone(), tcp_peer.get_sdn_addr()))
             })
             .collect()
     }
@@ -213,23 +207,20 @@ pub trait UdpPeersRouting: PeersRouting<SocketAddr> {
 
 impl UdpPeersRouting for Peers<SocketAddr> {
     async fn find_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<SocketAddr> {
-        let peers = self.lock().await;
-        for (addr, peer) in peers.iter() {
+        for peer in self.iter() {
             if peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() == *sdn_ip {
-                return Some(*addr);
+                return Some(*peer.key());
             }
         }
         None
     }
 
     async fn find_all_addrs_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<SocketAddr> {
-        let peers = self.lock().await;
-        peers
-            .iter()
-            .filter(|(_, peer)| {
+        self.iter()
+            .filter(|peer| {
                 peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() != *src_sdn_ip
             })
-            .map(|(addr, _)| *addr)
+            .map(|peer| *peer.key())
             .collect()
     }
 }
@@ -247,20 +238,19 @@ pub trait TcpPeersRouting {
 
 impl TcpPeersRouting for Peers<i32> {
     async fn find_tx_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<Tx> {
-        let peers = self.lock().await;
-        for peer in peers.values() {
-            if peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() == *sdn_ip
-                && let Some(tcp_peer) = peer.as_any().downcast_ref::<TcpPeer>() {
-                    return Some(tcp_peer.tx.clone());
-                }
+        for peer in self.iter() {
+            if peer.get_state() == PeerState::HandshakeDone
+                && peer.get_sdn_addr() == *sdn_ip
+                && let Some(tcp_peer) = peer.as_any().downcast_ref::<TcpPeer>()
+            {
+                return Some(tcp_peer.tx.clone());
+            }
         }
         None
     }
 
     async fn get_all_tx(&self) -> Vec<Tx> {
-        let peers = self.lock().await;
-        peers
-            .values()
+        self.iter()
             .filter(|peer| peer.get_state() == PeerState::HandshakeDone)
             .filter_map(|peer| {
                 peer.as_any()
@@ -271,9 +261,7 @@ impl TcpPeersRouting for Peers<i32> {
     }
 
     async fn get_all_tx_except(&self, src_sdn_ip: &Ipv4Addr) -> Vec<Tx> {
-        let peers = self.lock().await;
-        peers
-            .values()
+        self.iter()
             .filter(|peer| {
                 peer.get_state() == PeerState::HandshakeDone && peer.get_sdn_addr() != *src_sdn_ip
             })
