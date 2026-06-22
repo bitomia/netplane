@@ -249,8 +249,11 @@ fn update_loop(
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> tokio::task::JoinHandle<std::io::Error> {
     tokio::spawn(async move {
-        let is_udp = matches!(transport.as_ref(), AnyTransport::Udp(_) | AnyTransport::EncryptedUdp(_));
-        let mut heartbeat_interval = is_udp.then(|| interval(Duration::from_secs(5)));
+        let mut heartbeat_interval = matches!(
+            transport.as_ref(),
+            AnyTransport::Udp(_) | AnyTransport::EncryptedUdp(_)
+        )
+        .then(|| interval(Duration::from_secs(1)));
         let mut socket_buf = [0; 1500];
         let mut tun_buf = [0; 1500];
 
