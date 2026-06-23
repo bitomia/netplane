@@ -46,9 +46,10 @@ impl WebSocketServer {
         let dynamic_clients_key = self.0.dynamic_clients_key.clone();
 
         WebSocketTransport::bind(&listen_addr, move |socket, addr| {
-            let peer_id = next_peer_id.fetch_add(1, Ordering::SeqCst);
+            info!("New client connection");
+
             WebSocketServer::ws_handle_connection(
-                peer_id,
+                next_peer_id.fetch_add(1, Ordering::SeqCst),
                 socket,
                 addr,
                 Arc::clone(&db),
@@ -71,7 +72,10 @@ impl WebSocketServer {
         stats: Arc<ServerStats>,
         _dynamic_clients_key: Option<String>,
     ) {
-        info!("New client connection (connections={})", peers.len());
+        info!(
+            "Starting handler for new client connection (connections={})",
+            peers.len()
+        );
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
         let mut send_socket = socket.clone();
         let send_task = tokio::spawn(async move {
