@@ -212,10 +212,7 @@ impl Db {
         ))
     }
 
-    pub async fn check_link_key(
-        &self,
-        auth_id: &String,
-    ) -> Result<AuthClient, anyhow::Error> {
+    pub async fn check_link_key(&self, auth_id: &String) -> Result<AuthClient, anyhow::Error> {
         let auth_entry = sqlx::query_as!(
             AuthClient,
             "SELECT client_id, used FROM auth_links WHERE id=? LIMIT 1",
@@ -349,10 +346,7 @@ LEFT JOIN auth_links ON clients.id=auth_links.client_id WHERE clients.id=?
         Ok(user)
     }
 
-    pub async fn get_hostname(
-        &self,
-        hostname: &str,
-    ) -> Result<Option<String>, anyhow::Error> {
+    pub async fn get_hostname(&self, hostname: &str) -> Result<Option<String>, anyhow::Error> {
         let resolved_sdn_ip = sqlx::query_scalar!(
             r#"SELECT sdn_client_ip FROM clients WHERE hostname=?"#,
             hostname

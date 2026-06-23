@@ -254,10 +254,7 @@ impl ClientManager {
 
     /// Queue a packet for later sending (while waiting for handshake)
     pub fn queue_packet(&mut self, dst: &Ipv4Addr, packet: Vec<u8>) {
-        self.pending_packets
-            .entry(*dst)
-            .or_default()
-            .push(packet);
+        self.pending_packets.entry(*dst).or_default().push(packet);
         debug!("Queued packet for {} (waiting for handshake)", dst);
     }
 

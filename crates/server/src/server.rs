@@ -5,9 +5,7 @@ use anyhow::Error;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use netplane_common::{
-    HandshakeError, HandshakeRep, HandshakeReq, transport::TransportMode,
-};
+use netplane_common::{HandshakeError, HandshakeRep, HandshakeReq, transport::TransportMode};
 
 use crate::db;
 use crate::peers::*;
@@ -114,7 +112,6 @@ pub fn run(
     replay_delay: Option<u64>,
     dynamic_clients_key: Option<String>,
 ) -> JoinHandle<Result<(), Error>> {
-    
     tokio::spawn(async move {
         match transport_mode {
             TransportMode::WebSocket => {

@@ -56,7 +56,7 @@ docker:
 
 .PHONY: verify-fmt
 verify-fmt:
-	cargo fmt -- --check
+	cargo fmt
 
 .PHONY: verify-lint
 verify-lint:

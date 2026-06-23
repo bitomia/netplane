@@ -118,9 +118,7 @@ impl Transport for WebSocketTransport {
             .await
         {
             Ok(_) => Ok(buf.len()),
-            Err(e) => Err(std::io::Error::other(
-                e.to_string(),
-            )),
+            Err(e) => Err(std::io::Error::other(e.to_string())),
         }
     }
 
@@ -143,15 +141,11 @@ impl Transport for WebSocketTransport {
                 }
                 Err(e) => {
                     eprintln!("Error processing message {}", e);
-                    Err(tokio::io::Error::other(
-                        "Failed to handle received message",
-                    ))
+                    Err(tokio::io::Error::other("Failed to handle received message"))
                 }
             }
         } else {
-            Err(tokio::io::Error::other(
-                "Failed to receive message",
-            ))
+            Err(tokio::io::Error::other("Failed to receive message"))
         }
     }
 }
