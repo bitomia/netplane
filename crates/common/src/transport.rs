@@ -10,6 +10,7 @@ use tokio_tungstenite::accept_async;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
+use tracing::error;
 use tungstenite::Bytes;
 
 use crate::noise_session::NoiseSession;
@@ -79,7 +80,7 @@ impl WebSocketTransport {
         })
     }
 
-    pub async fn bind<F, Fut>(addr: &str, callback: F)
+    pub async fn bind<F, Fut>(addr: &str, callback: F) -> tokio::io::Result<()>
     where
         F: Fn(WebSocketTransport, SocketAddr) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
@@ -87,23 +88,29 @@ impl WebSocketTransport {
         let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
 
         loop {
-            if let Ok((stream, addr)) = listener.accept().await {
-                let ws_stream = match accept_async(MaybeTlsStream::Plain(stream)).await {
-                    Ok(ws) => ws,
-                    Err(e) => {
-                        eprintln!("WebSocket handshake error: {}", e);
-                        continue;
-                    }
-                };
+            match listener.accept().await {
+                Ok((stream, addr)) => {
+                    let ws_stream = match accept_async(MaybeTlsStream::Plain(stream)).await {
+                        Ok(ws) => ws,
+                        Err(e) => {
+                            eprintln!("WebSocket handshake error: {}", e);
+                            continue;
+                        }
+                    };
 
-                let (write, read) = ws_stream.split();
-                tokio::spawn(callback(
-                    WebSocketTransport {
-                        write: Arc::new(Mutex::new(write)),
-                        read: Arc::new(Mutex::new(read)),
-                    },
-                    addr,
-                ));
+                    let (write, read) = ws_stream.split();
+                    tokio::spawn(callback(
+                        WebSocketTransport {
+                            write: Arc::new(Mutex::new(write)),
+                            read: Arc::new(Mutex::new(read)),
+                        },
+                        addr,
+                    ));
+                }
+                Err(err) => {
+                    error!("Accept failed: {}", err.to_string());
+                    return Err(err);
+                }
             }
         }
     }

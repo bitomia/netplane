@@ -35,7 +35,7 @@ impl WebSocketServer {
         })
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    pub async fn start(&mut self) -> tokio::io::Result<()> {
         let listen_addr = std::env::var("SERVER").unwrap_or("0.0.0.0:5000".to_string());
         info!("Netplane websocket server listening on {}", listen_addr);
 
@@ -58,9 +58,7 @@ impl WebSocketServer {
                 dynamic_clients_key.clone(),
             )
         })
-        .await;
-
-        Ok(())
+        .await
     }
 
     async fn ws_handle_connection(

@@ -135,6 +135,7 @@ pub fn run(
                 )
                 .start()
                 .await
+                .map_err(anyhow::Error::from)
             }
             _ => {
                 UdpServer::new(
