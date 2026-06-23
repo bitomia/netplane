@@ -32,6 +32,7 @@ pub struct ServerStats {
     pub clients: AtomicUsize,
 }
 
+#[allow(dead_code)]
 impl ServerStats {
     pub fn new(transport_mode: TransportMode) -> ServerStats {
         ServerStats {
