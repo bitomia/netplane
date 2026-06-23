@@ -76,6 +76,7 @@ impl WebSocketServer {
             "Starting handler for new client connection (connections={})",
             peers.len()
         );
+
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
         let mut send_socket = socket.clone();
         let send_task = tokio::spawn(async move {
@@ -86,6 +87,7 @@ impl WebSocketServer {
 
         let mut recv_socket = socket.clone();
         let peers_clone = peers.clone();
+        let stats_clone = stats.clone();
         let forward_task = tokio::spawn(async move {
             let mut buf = [0; 1500];
 
@@ -128,7 +130,7 @@ impl WebSocketServer {
                         return;
                     }
                 };
-                stats.add_in_bytes(amt);
+                stats_clone.add_in_bytes(amt);
 
                 let peer_state = {
                     let peer = peers.entry(peer_id).or_insert(TcpPeer::new(
@@ -148,9 +150,13 @@ impl WebSocketServer {
                         match get_message_type(&buf[..amt]) {
                             MessageType::RelayPacket(relay) => {
                                 debug!("RelayPacket");
-                                if let Err(e) =
-                                    handle_ws_relay_packet(&peers, &stats, &relay, &buf[..amt])
-                                        .await
+                                if let Err(e) = handle_ws_relay_packet(
+                                    &peers,
+                                    &stats_clone,
+                                    &relay,
+                                    &buf[..amt],
+                                )
+                                .await
                                 {
                                     error!("Failed to handle relay packet: {}", e);
                                 }
@@ -194,6 +200,7 @@ impl WebSocketServer {
                                                 "User {} connected with SDN IP {}",
                                                 addr, sdn_client_ip
                                             );
+                                            stats_clone.inc_clients();
 
                                             // Create peer info for announcements
                                             let peer_info =
@@ -266,8 +273,12 @@ impl WebSocketServer {
         });
 
         tokio::select! {
-            _ = forward_task => {},
-            _ = send_task => {},
+            _ = forward_task => {
+                info!("Forward task finished");
+            },
+            _ = send_task => {
+                info!("Send task finished");
+            },
         }
 
         // Cleanup: broadcast disconnect on task completion
@@ -298,6 +309,8 @@ impl WebSocketServer {
 
         // Remove peer from list
         peers_clone.remove(&peer_id);
+        stats.dec_clients();
+        info!("Peer removed peer_id={}", peer_id);
     }
 }
 

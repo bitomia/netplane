@@ -29,6 +29,7 @@ pub struct ServerStats {
     pub transport_mode: TransportMode,
     pub in_bytes: AtomicUsize,
     pub out_bytes: AtomicUsize,
+    pub clients: AtomicUsize,
 }
 
 impl ServerStats {
@@ -37,6 +38,7 @@ impl ServerStats {
             transport_mode,
             in_bytes: AtomicUsize::new(0),
             out_bytes: AtomicUsize::new(0),
+            clients: AtomicUsize::new(0),
         }
     }
 
@@ -46,6 +48,16 @@ impl ServerStats {
 
     pub fn add_out_bytes(&self, nbytes: usize) -> usize {
         self.out_bytes.fetch_add(nbytes, Ordering::Relaxed)
+    }
+
+    pub fn dec_clients(&self) {
+        self.clients.fetch_sub(1, Ordering::Relaxed);
+    }
+    pub fn inc_clients(&self) {
+        self.clients.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn get_clients(&self) -> usize {
+        self.clients.load(Ordering::Relaxed)
     }
 }
 

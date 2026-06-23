@@ -143,6 +143,7 @@ impl UdpServer {
                 if udp_peer.get_state() == PeerState::HandshakeDone
                     && udp_peer.is_heartbeat_expired(Duration::from_secs(15))
                 {
+                    self.server.stats.dec_clients();
                     info!(
                         "Removing expired peer sdn_addr={} addr={}",
                         udp_peer.get_sdn_addr(),
@@ -168,7 +169,10 @@ impl UdpServer {
 
             match src {
                 SourceAddr::Replay(src) => self.replay(&src, &mut transport, &buf, amt).await?,
-                SourceAddr::Network(src) => self.network(&src, &mut transport, &buf, amt).await?,
+                SourceAddr::Network(src) => {
+                    self.network(&src, &mut transport, &buf, amt, self.server.stats.clone())
+                        .await?
+                }
             }
         }
     }
@@ -241,6 +245,7 @@ impl UdpServer {
         transport: &mut UdpTransport,
         buf: &[u8; 1500],
         amt: usize,
+        stats: Arc<ServerStats>,
     ) -> Result<()> {
         self.server.stats.add_in_bytes(amt);
 
@@ -305,6 +310,7 @@ impl UdpServer {
                             match transport.send(&reply.serialize()?, Some(src)).await {
                                 Ok(_) => {
                                     info!("User {} connected with SDN IP {}", src, sdn_client_ip);
+                                    stats.inc_clients();
 
                                     // Create peer info for announcements
                                     let peer_info = PeerInfo::new(&sdn_client_ip, &client_pub_key);

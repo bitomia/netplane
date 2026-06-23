@@ -204,10 +204,31 @@ async fn main() -> Result<(), ProcessError> {
 
     let db = Arc::new(db::Db::new().await);
     let server_stats = Arc::new(server::ServerStats::new(transport_mode.clone()));
-    let dnsserver = try_start_dns_server(Arc::clone(&db));
+    let dns_server = try_start_dns_server(Arc::clone(&db));
+
+    let mut stats_interval = tokio::time::interval(tokio::time::Duration::from_millis(5000));
+    let stats_server = Arc::clone(&server_stats);
+    let stats_task = tokio::spawn(async move {
+        loop {
+            stats_interval.tick().await;
+            let in_bytes = stats_server
+                .in_bytes
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let out_bytes = stats_server
+                .out_bytes
+                .load(std::sync::atomic::Ordering::Relaxed);
+            info!(
+                "Stats in_bytes={} out_bytes={} clients={}",
+                in_bytes,
+                out_bytes,
+                stats_server.get_clients()
+            );
+        }
+    });
 
     tokio::select! {
-        _ = async { dnsserver.unwrap().await }, if dnsserver.is_some() => info!("DNS server stopped"),
+        _ = stats_task => info!("Stats task stopped"),
+        _ = async { dns_server.unwrap().await }, if dns_server.is_some() => info!("DNS server stopped"),
         _ = WebServer::new(Arc::clone(&db), Arc::clone(&server_stats), dynamic_clients_key.clone()).await => info!("Web server stopped"),
         _ = server::run(Arc::clone(&db), Arc::clone(&server_stats), transport_mode, dump_file, replay_file, replay_delay, dynamic_clients_key) => info!("Netplane server stopped")
     }
