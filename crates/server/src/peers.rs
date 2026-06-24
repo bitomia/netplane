@@ -229,7 +229,6 @@ impl UdpPeersRouting for Peers<SocketAddr> {
 pub trait TcpPeersRouting {
     /// Find peer TX channel by SDN IP
     async fn find_tx_by_sdn_ip(&self, sdn_ip: &Ipv4Addr) -> Option<Tx>;
-
     /// Get all TX channels for connected peers (for broadcasting)
     async fn get_all_tx(&self) -> Vec<Tx>;
     /// Get all TX channels except the sender (for multicast/broadcast fan-out)

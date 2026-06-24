@@ -74,6 +74,7 @@ impl WebSocketServer {
             "Starting handler for new client connection (connections={})",
             peers.len()
         );
+        stats.inc_clients();
 
         let (tx, mut rx): (Tx, Rx) = mpsc::unbounded_channel();
         let mut send_socket = socket.clone();
@@ -198,7 +199,6 @@ impl WebSocketServer {
                                                 "User {} connected with SDN IP {}",
                                                 addr, sdn_client_ip
                                             );
-                                            stats_clone.inc_clients();
 
                                             // Create peer info for announcements
                                             let peer_info =
@@ -306,8 +306,8 @@ impl WebSocketServer {
         }
 
         // Remove peer from list
-        peers_clone.remove(&peer_id);
         stats.dec_clients();
+        peers_clone.remove(&peer_id);
         info!("Peer removed peer_id={}", peer_id);
     }
 }
