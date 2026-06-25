@@ -85,32 +85,45 @@ impl WebSocketTransport {
         F: Fn(WebSocketTransport, SocketAddr) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
-        let listener = TcpListener::bind(&addr).await.expect("Failed to bind");
+        let listener = TcpListener::bind(&addr).await?;
+        let callback = Arc::new(callback);
 
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
-                    let ws_stream = match accept_async(MaybeTlsStream::Plain(stream)).await {
-                        Ok(ws) => ws,
-                        Err(e) => {
-                            eprintln!("WebSocket handshake error: {}", e);
-                            continue;
-                        }
-                    };
+                    let callback = Arc::clone(&callback);
+                    tokio::spawn(async move {
+                        let ws_stream = match accept_async(MaybeTlsStream::Plain(stream)).await {
+                            Ok(ws) => ws,
+                            Err(e) => {
+                                eprintln!("WebSocket handshake error: {}", e);
+                                return;
+                            }
+                        };
 
-                    let (write, read) = ws_stream.split();
-                    tokio::spawn(callback(
-                        WebSocketTransport {
-                            write: Arc::new(Mutex::new(write)),
-                            read: Arc::new(Mutex::new(read)),
-                        },
-                        addr,
-                    ));
+                        let (write, read) = ws_stream.split();
+                        callback(
+                            WebSocketTransport {
+                                write: Arc::new(Mutex::new(write)),
+                                read: Arc::new(Mutex::new(read)),
+                            },
+                            addr,
+                        )
+                        .await;
+                    });
                 }
-                Err(err) => {
-                    error!("Accept failed: {}", err.to_string());
-                    return Err(err);
-                }
+                Err(err) => match err.kind() {
+                    std::io::ErrorKind::ConnectionReset
+                    | std::io::ErrorKind::ConnectionAborted
+                    | std::io::ErrorKind::BrokenPipe => {
+                        error!("Accept transient error: {}", err);
+                        continue;
+                    }
+                    _ => {
+                        error!("Accept failed: {}", err);
+                        return Err(err);
+                    }
+                },
             }
         }
     }
