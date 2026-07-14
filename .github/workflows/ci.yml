@@ -39,7 +39,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Clippy
-        run: cargo clippy --workspace --exclude app_lib --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --workspace --exclude app_lib --verbose
+        run: cargo test --workspace --verbose
 
   build:
     needs: [verify-format, lint, test]
