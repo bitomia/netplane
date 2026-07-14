@@ -39,6 +39,11 @@ chrono = "0.4"
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-android = "0.2"
 
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+# Low-level os_log bridge only; the `logger` (log-facade) feature is not needed
+# because we forward tracing events to OsLog directly via a custom layer.
+oslog = { version = "0.2", default-features = false }
+
 [features]
 default = []
 android = ["jni", "tracing-android"]

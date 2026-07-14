@@ -457,9 +457,14 @@ pub unsafe extern "C" fn netplane_client_run_fd(
 
     let transport_ptr = unsafe { Box::from_raw(transport as *mut AnyTransport) };
 
+    // Own these before spawning: the incoming pointers are backed by the
+    // caller's buffers (e.g. Swift `withCString`), which are freed as soon as
+    // this function returns — but the spawned task outlives that return. A
+    // borrowed `&str` here would dangle and read freed memory (observed as
+    // "file name contained an unexpected NUL byte" when opening the key files).
     let public_filepath = unsafe {
         match CStr::from_ptr(public_filepath).to_str() {
-            Ok(s) => s,
+            Ok(s) => s.to_string(),
             Err(err) => {
                 error!("Error parsing public_key: {:?}", err);
                 return -4;
@@ -469,7 +474,7 @@ pub unsafe extern "C" fn netplane_client_run_fd(
 
     let private_filepath = unsafe {
         match CStr::from_ptr(private_filepath).to_str() {
-            Ok(s) => s,
+            Ok(s) => s.to_string(),
             Err(err) => {
                 error!("Error parsing private_key: {:?}", err);
                 return -4;
@@ -485,7 +490,7 @@ pub unsafe extern "C" fn netplane_client_run_fd(
         let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
 
         tokio::select! {
-            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, public_filepath, private_filepath, None) => {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, &public_filepath, &private_filepath, None) => {
                     reset_cancel_token();
                 match retval {
                     Ok(_) => 0,
