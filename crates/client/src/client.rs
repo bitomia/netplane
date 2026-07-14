@@ -224,6 +224,44 @@ pub async fn run_from_fd(
     ))
 }
 
+/// Run the client against a prebuilt transport and a named TUN device.
+/// It never calls `process::exit`, so it is safe to embed in a host app.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_with_named_tun(
+    tun_dev: String,
+    start_params: &StartParams,
+    transport: Box<AnyTransport>,
+    loopback_relay: bool,
+    no_encryption: bool,
+    public_filepath: &str,
+    private_filepath: &str,
+    option_token: Option<CancellationToken>,
+    state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
+) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
+    info!("Starting client on named TUN device {}", tun_dev);
+
+    let (own_sdn_ip, client_manager) =
+        create_p2p_session(start_params, public_filepath, private_filepath)?;
+
+    let dev = tundev::TunDev::new(
+        tun_dev,
+        start_params.netmask.as_str(),
+        start_params.destination.as_str(),
+        start_params.ip_addr.as_str(),
+    )?;
+
+    Ok(update_loop(
+        dev,
+        transport,
+        client_manager,
+        own_sdn_ip,
+        loopback_relay,
+        no_encryption,
+        option_token,
+        state_tx,
+    ))
+}
+
 fn create_p2p_session(
     start_params: &StartParams,
     public_filepath: &str,
@@ -898,6 +936,82 @@ mod logfmt {
     }
 }
 
+/// Forwards `tracing` events to Apple's unified logging (`os_log`).
+///
+/// On macOS/iOS the app runs inside a NetworkExtension appex whose stdout/stderr
+/// is not captured anywhere, so the default `fmt` subscriber is invisible. This
+/// layer routes events to `os_log` under the extension's subsystem so they show
+/// up in `log stream --predicate 'process == "PacketTunnel"'` next to the Swift
+/// `os_log` lines.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod oslog_layer {
+    use std::fmt::Write as _;
+
+    use oslog::{Level as OsLevel, OsLog};
+    use tracing::field::{Field, Visit};
+    use tracing::{Event, Level, Subscriber};
+    use tracing_subscriber::layer::{Context, Layer};
+    use tracing_subscriber::registry::LookupSpan;
+
+    pub struct OsLogLayer {
+        log: OsLog,
+    }
+
+    impl OsLogLayer {
+        pub fn new(subsystem: &str, category: &str) -> Self {
+            Self {
+                log: OsLog::new(subsystem, category),
+            }
+        }
+    }
+
+    /// Collects the event's `message` plus any structured fields into a single
+    /// line (os_log has no notion of separate key/value columns here).
+    #[derive(Default)]
+    struct EventVisitor {
+        message: String,
+        fields: String,
+    }
+
+    impl Visit for EventVisitor {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                let _ = write!(self.message, "{:?}", value);
+            } else {
+                let _ = write!(self.fields, " {}={:?}", field.name(), value);
+            }
+        }
+
+        fn record_str(&mut self, field: &Field, value: &str) {
+            if field.name() == "message" {
+                self.message.push_str(value);
+            } else {
+                let _ = write!(self.fields, " {}={}", field.name(), value);
+            }
+        }
+    }
+
+    impl<S> Layer<S> for OsLogLayer
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+    {
+        fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+            let mut visitor = EventVisitor::default();
+            event.record(&mut visitor);
+
+            let meta = event.metadata();
+            let line = format!("[{}] {}{}", meta.target(), visitor.message, visitor.fields);
+
+            let level = match *meta.level() {
+                Level::TRACE | Level::DEBUG => OsLevel::Debug,
+                Level::INFO => OsLevel::Default,
+                Level::WARN | Level::ERROR => OsLevel::Error,
+            };
+            self.log.with_level(level, &line);
+        }
+    }
+}
+
 pub fn init_logger(format: LogFormat) {
     #[cfg(target_os = "android")]
     {
@@ -911,7 +1025,33 @@ pub fn init_logger(format: LogFormat) {
             .init();
     }
 
-    #[cfg(not(target_os = "android"))]
+    // Apple: also fan out to os_log so logs are visible inside the sandboxed
+    // NetworkExtension appex, whose stdout/stderr goes nowhere.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        use tracing_subscriber::{EnvFilter, Layer};
+
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        let oslog = oslog_layer::OsLogLayer::new("com.netplane.app.PacketTunnel", "rust");
+        let fmt_layer = match format {
+            LogFormat::Json => tracing_subscriber::fmt::layer()
+                .event_format(json_fmt::JsonFormatter)
+                .boxed(),
+            LogFormat::Pretty => tracing_subscriber::fmt::layer().boxed(),
+            LogFormat::Logfmt => tracing_subscriber::fmt::layer()
+                .event_format(logfmt::LogfmtFormatter)
+                .boxed(),
+        };
+        let _ = tracing_subscriber::registry()
+            .with(filter)
+            .with(oslog)
+            .with(fmt_layer)
+            .try_init();
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "macos", target_os = "ios")))]
     {
         use tracing_subscriber::EnvFilter;
         let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));

@@ -60,6 +60,10 @@ impl TunDev {
             .netmask(netmask)
             .destination(destination)
             .raw_fd(raw_fd)
+            // The fd is owned by the host (macOS NetworkExtension created the utun);
+            // don't let the tun device close it on drop, or a stop/reconnect can
+            // double-close and hit an unrelated, reused descriptor.
+            .close_fd_on_drop(false)
             .mtu(1400);
         #[cfg(windows)]
         config
