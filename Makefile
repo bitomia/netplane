@@ -47,6 +47,7 @@ webapp:
 .PHONY: release
 release:
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
+	cargo build -p netplane_client --release --target x86_64-unknown-linux-musl
 	cargo build -p netplane_client --release
 
 .PHONY: docker

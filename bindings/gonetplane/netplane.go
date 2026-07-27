@@ -4,7 +4,7 @@ package gonetplane
 
 /*
 #cgo CFLAGS: -I../cpp
-#cgo LDFLAGS: ${SRCDIR}/../../target/release/libnetplane_client.a
+#cgo LDFLAGS: -L${SRCDIR}/../../target/release -lnetplane_client
 #cgo linux LDFLAGS: -lpthread -ldl -lm -lrt
 #cgo darwin LDFLAGS: -framework Security -framework SystemConfiguration
 #include "netplane.h"
