@@ -15,6 +15,12 @@ typedef struct NetplaneHandshakeResult {
  */
  void netplane_client_init_logger(uint32_t format) ;
 
+/**
+ * # Safety
+ *
+ * All pointer arguments must be valid, non-null, NUL-terminated C strings that
+ * remain valid for the duration of the call.
+ */
 
 int32_t netplane_client_auth(const char *authkey_path,
                              const char *publickey_path,
@@ -24,8 +30,20 @@ int32_t netplane_client_auth(const char *authkey_path,
                              uint16_t auth_port)
 ;
 
+/**
+ * # Safety
+ *
+ * `ptr` must be a pointer previously returned by this library and not yet
+ * freed; passing any other value is undefined behavior.
+ */
  void netplane_client_free_auth(char *ptr) ;
 
+/**
+ * # Safety
+ *
+ * All pointer arguments must be valid, non-null, NUL-terminated C strings that
+ * remain valid for the duration of the call.
+ */
 
 int32_t netplane_try_generate_crypto_keys(const char *public_filepath,
                                           const char *private_filepath)
@@ -39,8 +57,20 @@ int32_t netplane_client_handshake(const char *authkey_path,
                                   struct NetplaneHandshakeResult *result)
 ;
 
+/**
+ * # Safety
+ *
+ * `result` must be a pointer previously returned by this library and not yet
+ * freed; passing any other value is undefined behavior.
+ */
  void netplane_client_free_handshake(struct NetplaneHandshakeResult *result) ;
 
+/**
+ * # Safety
+ *
+ * `server_addr` and `transport_type` must be valid, non-null, NUL-terminated C
+ * strings that remain valid for the duration of the call.
+ */
 
 void *netplane_create_transport(const char *server_addr,
                                 uint16_t server_port,
@@ -49,6 +79,13 @@ void *netplane_create_transport(const char *server_addr,
 
  void netplane_free_transport(void *transport) ;
 
+/**
+ * # Safety
+ *
+ * `transport` and `handshake` must be valid pointers previously returned by
+ * this library, and the string pointers must be valid, non-null,
+ * NUL-terminated C strings that remain valid for the duration of the call.
+ */
 
 int32_t netplane_client_run_fd(int tun_fd,
                                void *transport,
@@ -61,6 +98,13 @@ int32_t netplane_client_run_fd(int tun_fd,
 
  void netplane_client_stop(void) ;
 
+/**
+ * # Safety
+ *
+ * The string pointers must be valid, non-null, NUL-terminated C strings that
+ * remain valid for the duration of the call, and `cancel_token_out`, if
+ * non-null, must point to writable storage for one pointer.
+ */
 
 int32_t netplane_client_run(const char *tun_dev,
                             const char *host,
