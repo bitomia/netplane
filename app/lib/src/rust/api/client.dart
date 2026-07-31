@@ -8,80 +8,166 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'client.freezed.dart';
 
-            
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `PendingTunnel`
 
-            /// Initialize the tracing logger. `0 = Pretty, 1 = Json, 2 = Logfmt`
-Future<void>  initLogger({required int logFormat }) => RustLib.instance.api.crateApiClientInitLogger(logFormat: logFormat);
+/// Initialize the tracing logger. `0 = Pretty, 1 = Json, 2 = Logfmt`
+Future<void> initLogger({required int logFormat}) =>
+    RustLib.instance.api.crateApiClientInitLogger(logFormat: logFormat);
 
 /// Generate the client's crypto keypair if it does not already exist.
 /// A pre-existing keypair is treated as success
-Future<void>  generateKeys({required String publicKeyPath , required String privateKeyPath }) => RustLib.instance.api.crateApiClientGenerateKeys(publicKeyPath: publicKeyPath, privateKeyPath: privateKeyPath);
+Future<void> generateKeys({
+  required String publicKeyPath,
+  required String privateKeyPath,
+}) => RustLib.instance.api.crateApiClientGenerateKeys(
+  publicKeyPath: publicKeyPath,
+  privateKeyPath: privateKeyPath,
+);
 
 /// Exchange the link code for an auth key and persist it to `authkey_path`.
 /// Blocking network call; runs on an FRB worker thread
-Future<void>  authenticate({required NetplaneConfig config }) => RustLib.instance.api.crateApiClientAuthenticate(config: config);
+Future<void> authenticate({required NetplaneConfig config}) =>
+    RustLib.instance.api.crateApiClientAuthenticate(config: config);
 
 /// Establish the tunnel and stream status until it ends or [`disconnect`] is
 /// called.
 /// Returns immediately after spawning the session; the caller consumes
 /// the returned Dart stream. Requires privileges to create the TUN device
-Stream<ConnectionEvent>  connect({required NetplaneConfig config }) => RustLib.instance.api.crateApiClientConnect(config: config);
+Stream<ConnectionEvent> connect({required NetplaneConfig config}) =>
+    RustLib.instance.api.crateApiClientConnect(config: config);
+
+/// Connect the transport and run the handshake, parking the live transport for a
+/// subsequent [`connect_fd`]. Returns the IP/netmask/destination the relay
+/// assigned so the caller can build the TUN device (Android `VpnService.Builder`
+/// needs the address before `establish()` can hand back the fd).
+///
+/// Blocking network call; runs on an FRB worker thread. Must be followed by
+/// [`connect_fd`] (or [`disconnect`] to discard the parked transport).
+Future<TunnelParams> prepareTunnel({required NetplaneConfig config}) =>
+    RustLib.instance.api.crateApiClientPrepareTunnel(config: config);
+
+/// Run the packet loop over a host-provided TUN file descriptor, streaming status
+/// until it ends or [`disconnect`] is called. Consumes the transport parked by the
+/// most recent [`prepare_tunnel`]; errors immediately if none is pending.
+///
+/// The fd is owned by the caller (e.g. the Android `VpnService`'s
+/// `ParcelFileDescriptor`); this side does not close it on drop.
+Stream<ConnectionEvent> connectFd({
+  required NetplaneConfig config,
+  required int fd,
+}) => RustLib.instance.api.crateApiClientConnectFd(config: config, fd: fd);
 
 /// Cancel the active connection, if any. Idempotent.
-Future<void>  disconnect() => RustLib.instance.api.crateApiClientDisconnect();
+Future<void> disconnect() => RustLib.instance.api.crateApiClientDisconnect();
 
-            @freezed
-                sealed class ConnectionEvent with _$ConnectionEvent  {
-                    const ConnectionEvent._();
+@freezed
+sealed class ConnectionEvent with _$ConnectionEvent {
+  const ConnectionEvent._();
 
-                     const factory ConnectionEvent.connecting() = ConnectionEvent_Connecting;
- const factory ConnectionEvent.connected({   required String ipAddr ,  required String netmask , }) = ConnectionEvent_Connected;
- const factory ConnectionEvent.disconnected() = ConnectionEvent_Disconnected;
- const factory ConnectionEvent.error(  String field0,) = ConnectionEvent_Error;
-
-                    
-
-                    
-                }
+  const factory ConnectionEvent.connecting() = ConnectionEvent_Connecting;
+  const factory ConnectionEvent.connected({
+    required String ipAddr,
+    required String netmask,
+  }) = ConnectionEvent_Connected;
+  const factory ConnectionEvent.disconnected() = ConnectionEvent_Disconnected;
+  const factory ConnectionEvent.error(String field0) = ConnectionEvent_Error;
+}
 
 /// Connection parameters
-class NetplaneConfig  {
-                /// Relay server host (no scheme), e.g. `relay.example.com`
-final String host;
-/// Relay control port (handshake/transport). `0` uses the client default
-final int port;
-/// `"udp"` or `"websocket"`
-final String transport;
-/// One-time link code used by [`authenticate`]
-final String linkCode;
-/// TUN device name to create
-final String tunDev;
-/// Path where the auth key is stored
-final String authkeyPath;
-final String publicKeyPath;
-final String privateKeyPath;
-/// HTTP auth port. `0` uses the client default (8000)
-final int authPort;
-final bool loopbackRelay;
-final bool noEncryption;
+class NetplaneConfig {
+  /// Relay server host (no scheme), e.g. `relay.example.com`
+  final String host;
 
-                const NetplaneConfig({required this.host ,required this.port ,required this.transport ,required this.linkCode ,required this.tunDev ,required this.authkeyPath ,required this.publicKeyPath ,required this.privateKeyPath ,required this.authPort ,required this.loopbackRelay ,required this.noEncryption ,});
+  /// Relay control port (handshake/transport). `0` uses the client default
+  final int port;
 
-                
-                
+  /// `"udp"` or `"websocket"`
+  final String transport;
 
-                
-        @override
-        int get hashCode => host.hashCode^port.hashCode^transport.hashCode^linkCode.hashCode^tunDev.hashCode^authkeyPath.hashCode^publicKeyPath.hashCode^privateKeyPath.hashCode^authPort.hashCode^loopbackRelay.hashCode^noEncryption.hashCode;
-        
+  /// One-time link code used by [`authenticate`]
+  final String linkCode;
 
-                
-        @override
-        bool operator ==(Object other) =>
-            identical(this, other) ||
-            other is NetplaneConfig &&
-                runtimeType == other.runtimeType
-                && host == other.host&& port == other.port&& transport == other.transport&& linkCode == other.linkCode&& tunDev == other.tunDev&& authkeyPath == other.authkeyPath&& publicKeyPath == other.publicKeyPath&& privateKeyPath == other.privateKeyPath&& authPort == other.authPort&& loopbackRelay == other.loopbackRelay&& noEncryption == other.noEncryption;
-        
-            }
-            
+  /// TUN device name to create
+  final String tunDev;
+
+  /// Path where the auth key is stored
+  final String authkeyPath;
+  final String publicKeyPath;
+  final String privateKeyPath;
+
+  /// HTTP auth port. `0` uses the client default (8000)
+  final int authPort;
+  final bool loopbackRelay;
+  final bool noEncryption;
+
+  const NetplaneConfig({
+    required this.host,
+    required this.port,
+    required this.transport,
+    required this.linkCode,
+    required this.tunDev,
+    required this.authkeyPath,
+    required this.publicKeyPath,
+    required this.privateKeyPath,
+    required this.authPort,
+    required this.loopbackRelay,
+    required this.noEncryption,
+  });
+
+  @override
+  int get hashCode =>
+      host.hashCode ^
+      port.hashCode ^
+      transport.hashCode ^
+      linkCode.hashCode ^
+      tunDev.hashCode ^
+      authkeyPath.hashCode ^
+      publicKeyPath.hashCode ^
+      privateKeyPath.hashCode ^
+      authPort.hashCode ^
+      loopbackRelay.hashCode ^
+      noEncryption.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NetplaneConfig &&
+          runtimeType == other.runtimeType &&
+          host == other.host &&
+          port == other.port &&
+          transport == other.transport &&
+          linkCode == other.linkCode &&
+          tunDev == other.tunDev &&
+          authkeyPath == other.authkeyPath &&
+          publicKeyPath == other.publicKeyPath &&
+          privateKeyPath == other.privateKeyPath &&
+          authPort == other.authPort &&
+          loopbackRelay == other.loopbackRelay &&
+          noEncryption == other.noEncryption;
+}
+
+/// Tunnel parameters assigned by the relay during the handshake. The host uses
+/// these to configure its TUN device before handing the fd back to [`connect_fd`].
+class TunnelParams {
+  final String ipAddr;
+  final String netmask;
+  final String destination;
+
+  const TunnelParams({
+    required this.ipAddr,
+    required this.netmask,
+    required this.destination,
+  });
+
+  @override
+  int get hashCode => ipAddr.hashCode ^ netmask.hashCode ^ destination.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TunnelParams &&
+          runtimeType == other.runtimeType &&
+          ipAddr == other.ipAddr &&
+          netmask == other.netmask &&
+          destination == other.destination;
+}

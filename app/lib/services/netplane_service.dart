@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../src/rust/api/client.dart' as rust;
 import 'vpn_channel.dart';
+import 'vpn_service_android.dart';
 
 /// High-level facade over the connect → authenticate → run flow.
 ///
@@ -11,6 +12,9 @@ import 'vpn_channel.dart';
 /// (`src/rust/api/client.dart`). Opening the tunnel is platform-specific:
 ///   - macOS: driven through the NetworkExtension `PacketTunnel` extension via
 ///     [VpnChannel] (a sandboxed app can't create a utun itself).
+///   - Android: the Rust bridge runs the handshake, then a `VpnService`
+///     ([AndroidVpnChannel]) creates the TUN and hands its fd back to the Rust
+///     packet loop (only a `VpnService` may create a TUN).
 ///   - other platforms: the in-process Rust `connect` path.
 class NetplaneService {
   NetplaneService._();
@@ -71,6 +75,27 @@ class NetplaneService {
       privateKeyPath: config.privateKeyPath,
     );
     await rust.authenticate(config: config);
+    if (Platform.isAndroid) {
+      // A VpnService.Builder needs the tunnel IP before establish(), so run the
+      // handshake first (parks the transport in Rust), then create the TUN and
+      // hand its fd to the Rust packet loop.
+      final granted = await AndroidVpnChannel.prepare();
+      if (!granted) {
+        throw StateError('VPN permission was denied');
+      }
+      final params = await rust.prepareTunnel(config: config);
+      try {
+        final fd = await AndroidVpnChannel.establish(
+          ipAddr: params.ipAddr,
+          netmask: params.netmask,
+        );
+        return rust.connectFd(config: config, fd: fd);
+      } catch (_) {
+        // Discard the transport parked by prepareTunnel so it isn't leaked.
+        await rust.disconnect();
+        rethrow;
+      }
+    }
     if (Platform.isMacOS) {
       await VpnChannel.start({
         'host': config.host,
@@ -111,10 +136,14 @@ class NetplaneService {
   }
 
   /// Cancel the active connection, if any.
-  Future<void> stop() {
+  Future<void> stop() async {
     if (Platform.isMacOS) {
       return VpnChannel.stop();
     }
-    return rust.disconnect();
+    // Stop the Rust packet loop first, then close the TUN fd via the service.
+    await rust.disconnect();
+    if (Platform.isAndroid) {
+      await AndroidVpnChannel.stop();
+    }
   }
 }
