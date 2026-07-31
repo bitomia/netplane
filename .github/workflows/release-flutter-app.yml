@@ -1,0 +1,91 @@
+name: Release Flutter app
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Flutter 3.44 defaults; keep in sync with app/pubspec.yaml and the local toolchain.
+  FLUTTER_VERSION: "3.44.4"
+  ANDROID_NDK_VERSION: "28.2.13676358"
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;${{ env.ANDROID_NDK_VERSION }}" "platforms;android-36"
+
+      # cargokit cross-compiles the Rust bridge (app/rust) for each Android ABI
+      # during the Gradle build, so the toolchain needs the Android targets.
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/rust -> target
+          key: android
+
+      - name: Install Flutter dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Build release APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp app/build/app/outputs/flutter-apk/app-release.apk dist/netplane-android.apk
+          ls -la dist/
+
+      - name: Generate checksum
+        shell: bash
+        run: |
+          cd dist
+          sha256sum netplane-android.apk > netplane-android.apk.sha256
+
+      - name: Upload GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          files: |
+            dist/netplane-android.apk
+            dist/netplane-android.apk.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_NETPLANE_RELEASE_TOKEN }}
