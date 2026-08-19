@@ -361,7 +361,6 @@ impl UdpServer {
         Ok(())
     }
 
-    /// Handle E2E encrypted relay packet - just forward based on destination SDN IP
     async fn handle_relay_packet(
         &self,
         transport: &mut UdpTransport,

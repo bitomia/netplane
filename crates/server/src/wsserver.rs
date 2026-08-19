@@ -312,7 +312,6 @@ impl WebSocketServer {
     }
 }
 
-/// Handle E2E encrypted relay packet - just forward based on destination SDN IP
 async fn handle_ws_relay_packet(
     peers: &Peers<i32>,
     stats: &Arc<ServerStats>,
