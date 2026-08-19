@@ -141,6 +141,21 @@ pub async fn run(
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
 ) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
     info!("Starting client");
+    info!(
+        "Client options (tun_dev={}, host={}, port={:?}, transport_type={:?}, \
+         loopback_relay={}, no_encryption={}, is_dynamic_link={}, authkey_path={}, \
+         public_filepath={}, private_filepath={})",
+        tun_dev,
+        host,
+        port,
+        transport_type,
+        loopback_relay,
+        no_encryption,
+        is_dynamic_link,
+        authkey_path,
+        public_filepath,
+        private_filepath
+    );
 
     let auth_key = load_auth_key(authkey_path.to_string())?;
     let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
