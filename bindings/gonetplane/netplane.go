@@ -87,7 +87,7 @@ func ClientStop() {
 }
 
 // ClientRun runs the netplane client with the given parameters and returns a CancelToken
-func ClientRun(tunDev, host string, port uint16, transportType, authKeyPath, publicKeyPath, privateKeyPath string) error {
+func ClientRun(tunDev, host string, port uint16, transportType string, noEncryption bool, authKeyPath, publicKeyPath, privateKeyPath string) error {
 	cTunDev := C.CString(tunDev)
 	defer C.free(unsafe.Pointer(cTunDev))
 
@@ -110,7 +110,7 @@ func ClientRun(tunDev, host string, port uint16, transportType, authKeyPath, pub
 	defer C.free(unsafe.Pointer(cPrivateKeyPath))
 
 	var tokenPtr unsafe.Pointer
-	result := C.netplane_client_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, true, cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
+	result := C.netplane_client_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, C.bool(noEncryption), cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
 
 	if result != 0 {
 		return fmt.Errorf("run failed with code: %d", result)

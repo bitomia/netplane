@@ -18,6 +18,6 @@ func TestNetplane(t *testing.T) {
 	assert.NoError(t, err)
 	assert.FileExists(t, "public.key", "private.key")
 
-	err = netplane.ClientRun("tun0", "localhost", 12512, "ws", "./auth.key", "./public.key", "./private.key")
+	err = netplane.ClientRun("tun0", "localhost", 12512, "ws", true, "./auth.key", "./public.key", "./private.key")
 	assert.Error(t, err)
 }
