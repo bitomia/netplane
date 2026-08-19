@@ -110,7 +110,7 @@ func ClientRun(tunDev, host string, port uint16, transportType, authKeyPath, pub
 	defer C.free(unsafe.Pointer(cPrivateKeyPath))
 
 	var tokenPtr unsafe.Pointer
-	result := C.netplane_client_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, false, cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
+	result := C.netplane_client_run(cTunDev, cHost, C.uint16_t(port), cTransportType, false, true, cAuthKeyPath, cPublicKeyPath, cPrivateKeyPath, &tokenPtr)
 
 	if result != 0 {
 		return fmt.Errorf("run failed with code: %d", result)
