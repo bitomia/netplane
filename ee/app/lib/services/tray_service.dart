@@ -3,7 +3,8 @@ import 'dart:io' show Platform;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// Wires up "minimize to menu-bar tray on window close" behavior for desktop.
+/// Wires up "minimize to menu-bar tray on window close" behavior on macOS and
+/// Windows. Linux has no tray and keeps normal close-quits-the-app behavior.
 ///
 /// Closing the window hides it (the app — and any active VPN tunnel — keeps
 /// running) instead of quitting. The tray icon reopens the window, and only
@@ -16,9 +17,14 @@ class TrayService with TrayListener, WindowListener {
 
   /// Call once, after `windowManager.ensureInitialized()`, before the first
   /// frame. No-op on platforms without a menu-bar tray.
+  ///
+  /// Linux is excluded deliberately: `tray_manager` is vendored without Linux
+  /// support (see third_party/tray_manager/FORK.md), so there is no tray icon
+  /// to restore the window from. Enabling `setPreventClose` there would hide
+  /// the window on close with no way to bring it back or quit.
   Future<void> init() async {
     if (_initialized) return;
-    if (!(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+    if (!(Platform.isMacOS || Platform.isWindows)) return;
     _initialized = true;
 
     // Intercept the red close button so it hides instead of terminating.

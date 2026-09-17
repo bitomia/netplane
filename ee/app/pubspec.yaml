@@ -102,3 +102,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# `tray_manager` is vendored with Linux support removed from its plugin
+# platform map, so Linux builds do not require libayatana-appindicator3-dev.
+# See third_party/tray_manager/FORK.md.
+dependency_overrides:
+  tray_manager:
+    path: third_party/tray_manager
