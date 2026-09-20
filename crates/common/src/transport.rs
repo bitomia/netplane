@@ -20,7 +20,13 @@ pub enum TransportError {
     #[error("UDP error: {0}")]
     UDP(#[from] tokio::io::Error),
     #[error("Websocket error: {0}")]
-    WebSocket(#[from] tungstenite::Error),
+    WebSocket(#[source] Box<tungstenite::Error>),
+}
+
+impl From<tungstenite::Error> for TransportError {
+    fn from(err: tungstenite::Error) -> Self {
+        TransportError::WebSocket(Box::new(err))
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -70,7 +76,7 @@ impl WebSocketTransport {
         let (ws_stream, _) = match connect_async(addr).await {
             Ok(val) => val,
             Err(err) => {
-                return Err(TransportError::WebSocket(err));
+                return Err(TransportError::WebSocket(Box::new(err)));
             }
         };
         let (write, read) = ws_stream.split();

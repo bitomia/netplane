@@ -55,9 +55,13 @@ docker:
 	cargo build -p netplane_server --release --target x86_64-unknown-linux-musl
 	docker build -t ghcr.io/bitomia/netplane-server -f Dockerfile.server .
 
+.PHONY: fmt
+fmt:
+	cargo fmt --all
+
 .PHONY: verify-fmt
 verify-fmt:
-	cargo fmt
+	cargo fmt --all --check
 
 .PHONY: verify-lint
 verify-lint:
