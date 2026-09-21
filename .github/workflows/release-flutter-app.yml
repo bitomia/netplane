@@ -14,8 +14,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Flutter 3.44 defaults; keep in sync with ee/app/pubspec.yaml and the local toolchain.
-  FLUTTER_VERSION: "3.44.4"
+  # Flutter 3.47 defaults; keep in sync with ee/app/pubspec.lock and the local toolchain.
+  FLUTTER_VERSION: "3.47.4"
   ANDROID_NDK_VERSION: "28.2.13676358"
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
           cache: true
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android NDK
         run: sdkmanager --install "ndk;${{ env.ANDROID_NDK_VERSION }}" "platforms;android-36"
