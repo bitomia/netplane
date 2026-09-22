@@ -17,14 +17,6 @@ const _transportLabels = {
   Transport.udp: 'UDP',
 };
 
-const _logoMockupSVG = '''
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect x="4" y="4" width="56" height="56" rx="14" fill="currentColor"/>
-  <path d="M20 44V20l24 24V20" stroke="white" stroke-width="6"
-        stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-''';
-
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -154,10 +146,11 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SvgPicture.string(
-                    _logoMockupSVG,
-                    width: 72,
-                    height: 72,
+                  SvgPicture.asset(
+                    'assets/home_logo.svg',
+                    // The logo is a 213x50 wordmark; keep its aspect ratio.
+                    width: 204,
+                    height: 48,
                     colorFilter: ColorFilter.mode(
                       theme.colorScheme.primary,
                       BlendMode.srcIn,

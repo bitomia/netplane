@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <!-- Show a splash screen on the activity. Automatically removed when
+             the Flutter engine draws its first frame -->
+        <item name="android:windowBackground">@drawable/launch_background</item>
+        <!-- On API 31+ the system builds the splash from @mipmap/ic_launcher and
+             discards the adaptive icon's background layer, so restore it here.
+             Must match ic_launcher_background.png. -->
+        <item name="android:windowSplashScreenBackground">#303030</item>
+    </style>
+</resources>
