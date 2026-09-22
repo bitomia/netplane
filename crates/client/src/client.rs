@@ -1049,7 +1049,7 @@ pub fn init_logger(format: LogFormat) {
         use tracing_subscriber::{EnvFilter, Layer};
 
         let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-        let oslog = oslog_layer::OsLogLayer::new("com.netplane.app.PacketTunnel", "rust");
+        let oslog = oslog_layer::OsLogLayer::new("com.bitomia.netplane.PacketTunnel", "rust");
         let fmt_layer = match format {
             LogFormat::Json => tracing_subscriber::fmt::layer()
                 .event_format(json_fmt::JsonFormatter)

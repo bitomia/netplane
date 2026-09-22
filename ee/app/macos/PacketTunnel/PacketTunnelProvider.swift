@@ -12,7 +12,7 @@ import os.log
 /// Flow (see `startTunnel`): create transport → handshake (gets IP/netmask) →
 /// `setTunnelNetworkSettings` → locate the utun fd → `netplane_client_run_fd`.
 class PacketTunnelProvider: NEPacketTunnelProvider {
-  private let log = OSLog(subsystem: "com.netplane.app.PacketTunnel", category: "tunnel")
+  private let log = OSLog(subsystem: "com.bitomia.netplane.PacketTunnel", category: "tunnel")
 
   override func startTunnel(
     options: [String: NSObject]?,
@@ -134,7 +134,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
   private func providerError(_ message: String) -> NSError {
     os_log("error: %{public}@", log: log, type: .error, message)
     return NSError(
-      domain: "com.netplane.app.PacketTunnel",
+      domain: "com.bitomia.netplane.PacketTunnel",
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: message]
     )

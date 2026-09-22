@@ -8,7 +8,7 @@
 PRODUCT_NAME = netplane
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.netplane.app
+PRODUCT_BUNDLE_IDENTIFIER = com.bitomia.netplane
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 netplane. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Bitomia Software SLU - Netplane. All rights reserved.

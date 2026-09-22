@@ -1,4 +1,4 @@
-package com.example.netplane
+package com.bitomia.netplane
 
 import android.app.Activity
 import android.content.Intent

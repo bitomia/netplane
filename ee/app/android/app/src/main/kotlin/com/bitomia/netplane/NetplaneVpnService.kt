@@ -1,4 +1,4 @@
-package com.example.netplane
+package com.bitomia.netplane
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -151,8 +151,8 @@ class NetplaneVpnService : VpnService() {
         private const val CHANNEL_ID = "netplane_vpn"
         private const val NOTIFICATION_ID = 1
 
-        const val ACTION_ESTABLISH = "com.example.netplane.ESTABLISH"
-        const val ACTION_STOP = "com.example.netplane.STOP"
+        const val ACTION_ESTABLISH = "com.bitomia.netplane.ESTABLISH"
+        const val ACTION_STOP = "com.bitomia.netplane.STOP"
         const val EXTRA_IP = "ipAddr"
         const val EXTRA_NETMASK = "netmask"
         const val EXTRA_MTU = "mtu"

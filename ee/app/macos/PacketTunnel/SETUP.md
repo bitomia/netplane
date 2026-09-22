@@ -4,8 +4,8 @@ All source files exist in this repo. These steps wire them into the Xcode
 project (adding a target + build phases by hand-editing `project.pbxproj` is
 fragile, so do them once in the Xcode GUI). Open `macos/Runner.xcworkspace`.
 
-Bundle IDs used everywhere: app `com.netplane.app`, extension
-`com.netplane.app.PacketTunnel`, App Group `group.com.netplane.app`.
+Bundle IDs used everywhere: app `com.bitomia.netplane`, extension
+`com.bitomia.netplane.PacketTunnel`, App Group `group.com.bitomia.netplane`.
 
 > ⚠️ **Signing gate.** The `com.apple.developer.networking.networkextension`
 > entitlement cannot be ad-hoc (`-`) signed. Steps 2 (capabilities) and the
@@ -28,7 +28,7 @@ Bundle IDs used everywhere: app `com.netplane.app`, extension
 ## 2. Signing & Capabilities (needs a team)
 On **both** the `Runner` and `PacketTunnel` targets:
 - Select your Team; keep automatic signing.
-- **+ Capability ▸ App Groups** → add `group.com.netplane.app`.
+- **+ Capability ▸ App Groups** → add `group.com.bitomia.netplane`.
 - **+ Capability ▸ Network Extensions** → check **Packet Tunnel**.
 Confirm each target's `CODE_SIGN_ENTITLEMENTS` points at its committed
 `.entitlements` file (Runner already does; set PacketTunnel's to
@@ -43,7 +43,7 @@ Confirm each target's `CODE_SIGN_ENTITLEMENTS` points at its committed
 - **Link Binary With Libraries** → add `NetworkExtension.framework`,
   `Security.framework`, `SystemConfiguration.framework`, `libresolv.tbd`,
   `libc++.tbd` (Rust's std + tun/tokio deps pull these in).
-- Set `PRODUCT_BUNDLE_IDENTIFIER = com.netplane.app.PacketTunnel`.
+- Set `PRODUCT_BUNDLE_IDENTIFIER = com.bitomia.netplane.PacketTunnel`.
 
 ## 4. Cargo build phase (PacketTunnel target)
 - **Build Phases ▸ + ▸ New Run Script Phase**. Drag it **above** *Compile
@@ -59,7 +59,7 @@ Confirm each target's `CODE_SIGN_ENTITLEMENTS` points at its committed
 - `flutter build macos` (or build the Runner scheme in Xcode).
 - Run the app, enter server + link code, Connect → macOS shows a **"netplane
   Would Like to Add VPN Configurations"** prompt → Allow.
-- In **Console.app** filter by `com.netplane.app.PacketTunnel`: expect
+- In **Console.app** filter by `com.bitomia.netplane.PacketTunnel`: expect
   `handshake ok…`, `TUN initialized from FD…`, `tunnel started on fd N`.
 - `ifconfig` shows a `utun*` with the assigned overlay IP; disconnect from the
   app (Settings) stops it.

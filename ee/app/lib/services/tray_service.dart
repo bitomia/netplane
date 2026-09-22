@@ -44,7 +44,7 @@ class TrayService with TrayListener, WindowListener {
     await trayManager.setContextMenu(
       Menu(
         items: [
-          MenuItem(key: 'show', label: 'Show netplane'),
+          MenuItem(key: 'show', label: 'Show Netplane'),
           MenuItem.separator(),
           MenuItem(key: 'quit', label: 'Quit'),
         ],

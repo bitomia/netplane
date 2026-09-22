@@ -16,7 +16,7 @@ Future<void> main() async {
   if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
     await windowManager.ensureInitialized();
     const windowOptions = WindowOptions(
-      title: 'netplane',
+      title: 'Netplane',
       titleBarStyle: TitleBarStyle.normal,
     );
     unawaited(

@@ -14,7 +14,7 @@
 	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.netplane.app</string>
+		<string>group.com.bitomia.netplane</string>
 	</array>
 </dict>
 </plist>

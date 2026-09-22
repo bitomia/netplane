@@ -16,8 +16,8 @@ import NetworkExtension
 ///   status() -> String
 /// Event channel: "netplane/vpn/status" -> status strings
 class VpnChannel: NSObject {
-  static let appGroup = "group.com.netplane.app"
-  static let providerBundleId = "com.netplane.app.PacketTunnel"
+  static let appGroup = "group.com.bitomia.netplane"
+  static let providerBundleId = "com.bitomia.netplane.PacketTunnel"
 
   private var manager: NETunnelProviderManager?
   private var eventSink: FlutterEventSink?
