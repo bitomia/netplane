@@ -2,6 +2,7 @@ use anyhow::Error;
 use dotenv::dotenv;
 use netplane_common::crypto;
 use netplane_common::transport::TransportMode;
+use std::io::{IsTerminal, Read};
 use std::sync::Arc;
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
@@ -54,6 +55,16 @@ fn try_start_dns_server(db: Arc<crate::db::Db>) -> Option<JoinHandle<Result<(), 
             tokio::spawn(async move { dns_server.start(dns_address.unwrap()).await });
 
         Some(dns_server_task)
+    } else {
+        None
+    }
+}
+
+fn try_read_from_stdin(buf: &mut String) -> Option<usize> {
+    if !std::io::stdin().is_terminal() {
+        let size = std::io::stdin().read_to_string(buf).ok()?;
+        *buf = buf.trim().to_string();
+        Some(size)
     } else {
         None
     }
@@ -153,19 +164,22 @@ async fn main() -> Result<(), ProcessError> {
             std::process::exit(1);
         }
 
-        let password = rpassword::prompt_password(format!("Enter password for {}: ", email))
-            .expect("Failed to read password");
+        let mut password = String::new();
+        if try_read_from_stdin(&mut password).is_none() {
+            password = rpassword::prompt_password(format!("Enter password for {}: ", email))
+                .expect("Failed to read password");
+
+            let confirm_password = rpassword::prompt_password("Confirm password: ".to_string())
+                .expect("Failed to read password confirmation");
+
+            if password != confirm_password {
+                println!("Error: Passwords do not match");
+                std::process::exit(1);
+            }
+        }
 
         if password.is_empty() {
             println!("Error: Password cannot be empty");
-            std::process::exit(1);
-        }
-
-        let confirm_password = rpassword::prompt_password("Confirm password: ".to_string())
-            .expect("Failed to read password confirmation");
-
-        if password != confirm_password {
-            println!("Error: Passwords do not match");
             std::process::exit(1);
         }
 
