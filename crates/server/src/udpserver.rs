@@ -149,9 +149,9 @@ impl UdpServer {
                         udp_peer.get_sdn_addr(),
                         addr,
                     );
-                    true
-                } else {
                     false
+                } else {
+                    true
                 }
             });
 
@@ -297,64 +297,75 @@ impl UdpServer {
                 }
             }
             PeerState::HandshakePending => {
-                if let MessageType::HandshakeReq(handshake) = get_message_type(&buf[..amt]) {
-                    match Server::<SocketAddr>::process_handshake(
-                        handshake,
-                        &self.server.db,
-                        src.ip(),
-                    )
-                    .await
-                    {
-                        HandshakeResult::Success(reply, sdn_client_ip, client_pub_key) => {
-                            // Send handshake reply
-                            match transport.send(&reply.serialize()?, Some(src)).await {
-                                Ok(_) => {
-                                    info!("User {} connected with SDN IP {}", src, sdn_client_ip);
-                                    stats.inc_clients();
+                match get_message_type(&buf[..amt]) {
+                    MessageType::HandshakeReq(handshake) => {
+                        match Server::<SocketAddr>::process_handshake(
+                            handshake,
+                            &self.server.db,
+                            src.ip(),
+                        )
+                        .await
+                        {
+                            HandshakeResult::Success(reply, sdn_client_ip, client_pub_key) => {
+                                // Send handshake reply
+                                match transport.send(&reply.serialize()?, Some(src)).await {
+                                    Ok(_) => {
+                                        info!(
+                                            "User {} connected with SDN IP {}",
+                                            src, sdn_client_ip
+                                        );
+                                        stats.inc_clients();
 
-                                    // Create peer info for announcements
-                                    let peer_info = PeerInfo::new(&sdn_client_ip, &client_pub_key);
+                                        // Create peer info for announcements
+                                        let peer_info =
+                                            PeerInfo::new(&sdn_client_ip, &client_pub_key);
 
-                                    // Update peer state
-                                    self.server
-                                        .peers
-                                        .update(
-                                            *src,
-                                            sdn_client_ip.clone(),
-                                            client_pub_key.clone(),
-                                            PeerState::HandshakeDone,
-                                        )
-                                        .await;
-
-                                    // Send current peer list to new peer
-                                    self.send_peer_list(transport, src).await;
-
-                                    // Broadcast new peer to existing peers
-                                    let announce =
-                                        PeerAnnounce::new(PeerEventType::Connected, peer_info);
-                                    if let Ok(serialized) = announce.serialize() {
-                                        self.broadcast_to_peers(transport, &serialized, Some(src))
+                                        // Update peer state
+                                        self.server
+                                            .peers
+                                            .update(
+                                                *src,
+                                                sdn_client_ip.clone(),
+                                                client_pub_key.clone(),
+                                                PeerState::HandshakeDone,
+                                            )
                                             .await;
+
+                                        // Send current peer list to new peer
+                                        self.send_peer_list(transport, src).await;
+
+                                        // Broadcast new peer to existing peers
+                                        let announce =
+                                            PeerAnnounce::new(PeerEventType::Connected, peer_info);
+                                        if let Ok(serialized) = announce.serialize() {
+                                            self.broadcast_to_peers(
+                                                transport,
+                                                &serialized,
+                                                Some(src),
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                    Err(err) => {
+                                        error!("Send handshake reply failed: {}", err);
                                     }
                                 }
-                                Err(err) => {
-                                    error!("Send handshake reply failed: {}", err);
-                                }
                             }
-                        }
-                        HandshakeResult::Error(error_response) => {
-                            if let Err(err) = transport
-                                .send(&error_response.serialize()?, Some(src))
-                                .await
-                            {
-                                error!("Failed to send error response: {}", err);
-                            } else {
-                                info!("Authorization failed, error response sent to {}", src);
+                            HandshakeResult::Error(error_response) => {
+                                if let Err(err) = transport
+                                    .send(&error_response.serialize()?, Some(src))
+                                    .await
+                                {
+                                    error!("Failed to send error response: {}", err);
+                                } else {
+                                    info!("Authorization failed, error response sent to {}", src);
+                                }
                             }
                         }
                     }
-                } else {
-                    error!("Expected HandshakeReq from {:?}", src);
+                    t => {
+                        error!("Expected HandshakeReq from {:?}. Got {}", src, t);
+                    }
                 }
             }
         }

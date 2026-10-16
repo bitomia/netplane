@@ -463,6 +463,44 @@ pub enum MessageType {
     Unknown,
 }
 
+impl std::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // Never print the auth key carried by a handshake request
+            MessageType::HandshakeReq(_) => write!(f, "HandshakeReq"),
+            MessageType::HandshakeRep(rep) => write!(f, "HandshakeRep({})", rep.sdn_ip_addr),
+            MessageType::HandshakeError(err) => {
+                write!(f, "HandshakeError({})", err.error_message)
+            }
+            MessageType::Heartbeat(_) => write!(f, "Heartbeat"),
+            MessageType::PeerList(list) => write!(f, "PeerList({} peers)", list.peers.len()),
+            MessageType::PeerAnnounce(announce) => write!(
+                f,
+                "PeerAnnounce({:?} {})",
+                announce.event_type, announce.peer.sdn_ip
+            ),
+            MessageType::P2PHandshakeInit(init) => write!(
+                f,
+                "P2PHandshakeInit({} -> {})",
+                init.initiator_sdn_ip, init.responder_sdn_ip
+            ),
+            MessageType::P2PHandshakeResp(resp) => write!(
+                f,
+                "P2PHandshakeResp({} -> {})",
+                resp.responder_sdn_ip, resp.initiator_sdn_ip
+            ),
+            MessageType::RelayPacket(relay) => write!(
+                f,
+                "RelayPacket({} -> {}, {} bytes)",
+                relay.src_sdn_ip,
+                relay.dst_sdn_ip,
+                relay.encrypted_payload.len()
+            ),
+            MessageType::Unknown => write!(f, "Unknown"),
+        }
+    }
+}
+
 pub fn get_message_type(buf: &[u8]) -> MessageType {
     if buf.len() < 3 {
         return MessageType::Unknown;
