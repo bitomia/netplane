@@ -5,7 +5,7 @@ use std::env;
 use std::io;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use tokio::time::{Duration, interval};
+use tokio::time::{Duration, Instant, interval, sleep, timeout};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -32,7 +32,34 @@ async fn send_tun(dev: &mut tundev::TunDev, buf: &[u8], nbytes: usize) {
     }
 }
 
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
+const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+const RECONNECT_MIN_DELAY: Duration = Duration::from_secs(1);
+const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(30);
+
 #[derive(Debug)]
+pub struct AuthorizationError(pub String);
+
+impl std::fmt::Display for AuthorizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Authorization failed: {}", self.0)
+    }
+}
+
+impl std::error::Error for AuthorizationError {}
+
+#[derive(Debug, Clone)]
+pub struct ReconnectParams {
+    pub control_addr: String,
+    pub transport_type: Option<String>,
+    pub authkey_path: String,
+    pub public_filepath: String,
+    pub private_filepath: String,
+    pub is_dynamic_link: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartParams {
     pub netmask: String,
     pub destination: String,
@@ -78,10 +105,7 @@ pub async fn handshake(
             ));
         } else if let Ok(error_response) = HandshakeError::deserialize(&socket_buf[..amt]) {
             error!("Authorization failed: {}", error_response.error_message);
-            return Err(anyhow!(
-                "Authorization failed: {}",
-                error_response.error_message
-            ));
+            return Err(AuthorizationError(error_response.error_message).into());
         } else {
             error!("Initialization failed. Keep trying");
         }
@@ -159,6 +183,14 @@ pub async fn run(
 
     let auth_key = load_auth_key(authkey_path.to_string())?;
     let control_addr = format!("{}:{}", host, port.unwrap_or(5000));
+    let reconnect = ReconnectParams {
+        control_addr: control_addr.clone(),
+        transport_type: transport_type.clone(),
+        authkey_path: authkey_path.to_string(),
+        public_filepath: public_filepath.to_string(),
+        private_filepath: private_filepath.to_string(),
+        is_dynamic_link,
+    };
     let mut transport = create_transport(&control_addr, transport_type).await?;
 
     info!("Client connected to relay server");
@@ -197,10 +229,12 @@ pub async fn run(
         transport,
         client_manager,
         own_sdn_ip,
+        start_params,
         loopback_relay,
         no_encryption,
         option_token,
         state_tx,
+        Some(reconnect),
     ))
 }
 
@@ -214,6 +248,7 @@ pub async fn run_from_fd(
     public_filepath: &str,
     private_filepath: &str,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
+    reconnect: Option<ReconnectParams>,
 ) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
     info!("Starting client with fd");
 
@@ -232,15 +267,15 @@ pub async fn run_from_fd(
         transport,
         client_manager,
         own_sdn_ip,
+        start_params.clone(),
         loopback_relay,
         no_encryption,
         None,
         state_tx,
+        reconnect,
     ))
 }
 
-/// Run the client against a prebuilt transport and a named TUN device.
-/// It never calls `process::exit`, so it is safe to embed in a host app.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_with_named_tun(
     tun_dev: String,
@@ -252,6 +287,7 @@ pub async fn run_with_named_tun(
     private_filepath: &str,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
+    reconnect: Option<ReconnectParams>,
 ) -> Result<tokio::task::JoinHandle<std::io::Error>, anyhow::Error> {
     info!("Starting client on named TUN device {}", tun_dev);
 
@@ -270,10 +306,12 @@ pub async fn run_with_named_tun(
         transport,
         client_manager,
         own_sdn_ip,
+        start_params.clone(),
         loopback_relay,
         no_encryption,
         option_token,
         state_tx,
+        reconnect,
     ))
 }
 
@@ -290,102 +328,243 @@ fn create_p2p_session(
     Ok((own_sdn_ip, client_manager))
 }
 
+/// Why a session with the relay server ended
+enum SessionEnd {
+    /// The connection with the relay server was lost; reconnecting may help
+    Disconnected(io::Error),
+    /// The client must stop (TUN failure, cancellation)
+    Fatal(io::Error),
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_loop(
     mut dev: tundev::TunDev,
     mut transport: Box<AnyTransport>,
     mut client_manager: ClientManager,
     own_sdn_ip: Ipv4Addr,
+    start_params: StartParams,
     loopback_relay: bool,
     no_encryption: bool,
     option_token: Option<CancellationToken>,
     state_tx: Option<tokio::sync::watch::Sender<ClientState>>,
+    reconnect: Option<ReconnectParams>,
 ) -> tokio::task::JoinHandle<std::io::Error> {
     tokio::spawn(async move {
-        let mut heartbeat_interval = matches!(
-            transport.as_ref(),
-            AnyTransport::Udp(_) | AnyTransport::EncryptedUdp(_)
-        )
-        .then(|| interval(Duration::from_secs(1)));
-        let mut socket_buf = [0; 1500];
-        let mut tun_buf = [0; 1500];
-
         loop {
-            tokio::select! {
-                // Receive from relay server
-                result = transport.recv(&mut socket_buf) => {
-                    match result {
-                        Ok((amt, _)) => {
-                            handle_relay_server_message(
-                                &socket_buf[..amt],
-                                &mut transport,
-                                &mut dev,
-                                &mut client_manager,
-                                &own_sdn_ip,
-                                no_encryption,
-                                &state_tx,
-                            ).await;
-                        },
-                        Err(err) => {
-                            error!("Receive error: {}", err);
-                            return err;
-                        }
-                    }
-                },
+            let err = match run_session(
+                &mut dev,
+                &mut transport,
+                &mut client_manager,
+                &own_sdn_ip,
+                loopback_relay,
+                no_encryption,
+                option_token.as_ref(),
+                &state_tx,
+            )
+            .await
+            {
+                SessionEnd::Disconnected(err) => err,
+                SessionEnd::Fatal(err) => return err,
+            };
 
-                // Receive from TUN device
-                tun_ret = dev.read(&mut tun_buf) => {
-                    match tun_ret {
-                        Ok(amt) => {
-                            handle_outgoing_packet(
-                                &tun_buf[..amt],
-                                &mut transport,
-                                &mut dev,
-                                &mut client_manager,
-                                &own_sdn_ip,
-                                loopback_relay,
-                                no_encryption,
-                            ).await;
-                        }
-                        Err(err) => {
-                            error!("TUN read error: {}", err);
-                            return err;
-                        }
-                    }
-                },
+            let Some(params) = &reconnect else {
+                return err;
+            };
 
-                // Send heartbeat to relay server (UDP only)
-                Some(_) = async {
-                    match heartbeat_interval.as_mut() {
-                        Some(i) => Some(i.tick().await),
-                        None => None,
-                    }
-                } => {
-                    let heartbeat = UDPHeartbeat::new();
-                    let data = heartbeat.serialize().unwrap();
-                    match transport.send(&data, None).await {
-                        Ok(_) => debug!("Heartbeat sent"),
-                        Err(err) => {
-                            error!("Failed to send heartbeat: {}", err);
-                            return err;
-                        }
-                    }
-                },
-
-                Some(_) = async {
-                    match &option_token {
-                        Some(t) => {
-                            let _: () = t.cancelled().await;
-                            Some(())
-                        },
-                        None => None,
-                    }
-                } => {
-                    info!("Update loop stopped");
+            warn!("Connection with relay server lost: {}. Reconnecting", err);
+            match reconnect_transport(params, &start_params, option_token.as_ref()).await {
+                Ok(new_transport) => {
+                    info!("Reconnected to relay server {}", params.control_addr);
+                    transport = new_transport;
                 }
+                Err(err) => return err,
             }
         }
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_session(
+    dev: &mut tundev::TunDev,
+    transport: &mut AnyTransport,
+    client_manager: &mut ClientManager,
+    own_sdn_ip: &Ipv4Addr,
+    loopback_relay: bool,
+    no_encryption: bool,
+    option_token: Option<&CancellationToken>,
+    state_tx: &Option<tokio::sync::watch::Sender<ClientState>>,
+) -> SessionEnd {
+    let mut heartbeat_interval = matches!(
+        transport,
+        AnyTransport::Udp(_) | AnyTransport::EncryptedUdp(_)
+    )
+    .then(|| interval(HEARTBEAT_INTERVAL));
+
+    let mut last_server_message = Instant::now();
+    let mut socket_buf = [0; 1500];
+    let mut tun_buf = [0; 1500];
+
+    loop {
+        tokio::select! {
+            // Receive from relay server
+            result = transport.recv(&mut socket_buf) => {
+                match result {
+                    Ok((amt, _)) => {
+                        last_server_message = Instant::now();
+                        handle_relay_server_message(
+                            &socket_buf[..amt],
+                            transport,
+                            dev,
+                            client_manager,
+                            own_sdn_ip,
+                            no_encryption,
+                            state_tx,
+                        ).await;
+                    },
+                    Err(err) => {
+                        error!("Receive error: {}", err);
+                        return SessionEnd::Disconnected(err);
+                    }
+                }
+            },
+
+            // Receive from TUN device
+            tun_ret = dev.read(&mut tun_buf) => {
+                match tun_ret {
+                    Ok(amt) => {
+                        handle_outgoing_packet(
+                            &tun_buf[..amt],
+                            transport,
+                            dev,
+                            client_manager,
+                            own_sdn_ip,
+                            loopback_relay,
+                            no_encryption,
+                        ).await;
+                    }
+                    Err(err) => {
+                        error!("TUN read error: {}", err);
+                        return SessionEnd::Fatal(err);
+                    }
+                }
+            },
+
+            // Send heartbeat to relay server (UDP only)
+            Some(_) = async {
+                match heartbeat_interval.as_mut() {
+                    Some(i) => Some(i.tick().await),
+                    None => None,
+                }
+            } => {
+                if last_server_message.elapsed() > SERVER_TIMEOUT {
+                    error!("Relay server not responding for {:?}", SERVER_TIMEOUT);
+                    return SessionEnd::Disconnected(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "relay server not responding",
+                    ));
+                }
+
+                let heartbeat = UDPHeartbeat::new();
+                let data = heartbeat.serialize().unwrap();
+                match transport.send(&data, None).await {
+                    Ok(_) => debug!("Heartbeat sent"),
+                    Err(err) => {
+                        error!("Failed to send heartbeat: {}", err);
+                        return SessionEnd::Disconnected(err);
+                    }
+                }
+            },
+
+            Some(_) = async {
+                match option_token {
+                    Some(t) => {
+                        let _: () = t.cancelled().await;
+                        Some(())
+                    },
+                    None => None,
+                }
+            } => {
+                info!("Update loop stopped");
+                return SessionEnd::Fatal(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "client stopped",
+                ));
+            }
+        }
+    }
+}
+
+async fn reconnect_transport(
+    params: &ReconnectParams,
+    start_params: &StartParams,
+    option_token: Option<&CancellationToken>,
+) -> Result<Box<AnyTransport>, io::Error> {
+    let mut delay = RECONNECT_MIN_DELAY;
+
+    loop {
+        let cancelled = async {
+            match option_token {
+                Some(t) => t.cancelled().await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            _ = sleep(delay) => {},
+            _ = cancelled => {
+                info!("Reconnection cancelled");
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "client stopped"));
+            }
+        }
+
+        match try_reconnect(params).await {
+            Ok((transport, new_params)) => {
+                // The TUN device is already configured, so the tunnel can only
+                // resume if the server hands back the same addressing
+                if new_params != *start_params {
+                    error!(
+                        "Relay server assigned different tunnel parameters {:?} (was {:?})",
+                        new_params, start_params
+                    );
+                    return Err(io::Error::other(
+                        "relay server assigned different tunnel parameters",
+                    ));
+                }
+                return Ok(transport);
+            }
+            Err(err) if err.downcast_ref::<AuthorizationError>().is_some() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    err.to_string(),
+                ));
+            }
+            Err(err) => {
+                delay = (delay * 2).min(RECONNECT_MAX_DELAY);
+                warn!("Reconnection failed: {}. Retrying in {:?}", err, delay);
+            }
+        }
+    }
+}
+
+async fn try_reconnect(params: &ReconnectParams) -> Result<(Box<AnyTransport>, StartParams)> {
+    let auth_key = load_auth_key(params.authkey_path.clone())?;
+    let mut transport =
+        create_transport(&params.control_addr, params.transport_type.clone()).await?;
+
+    let (start_params, _) = timeout(
+        HANDSHAKE_TIMEOUT,
+        handshake(
+            auth_key,
+            &params.public_filepath,
+            &params.private_filepath,
+            params.control_addr.clone(),
+            &mut transport,
+            params.is_dynamic_link,
+        ),
+    )
+    .await
+    .map_err(|_| anyhow!("Handshake timeout"))??;
+
+    Ok((transport, start_params))
 }
 
 async fn handle_relay_server_message(
