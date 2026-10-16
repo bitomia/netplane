@@ -1,16 +1,15 @@
+use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use once_cell::sync::Lazy;
 use std::io;
 use std::sync::{Mutex, Once};
-use tracing::info;
-
-use crate::frb_generated::StreamSink;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 use netplane_client::client::{
-    self, auth_client, create_transport, handshake, run_from_fd, run_with_named_tun, LogFormat,
-    StartParams,
+    self, LogFormat, ReconnectParams, StartParams, auth_client, create_transport, handshake,
+    run_from_fd, run_with_named_tun,
 };
 use netplane_client::fd::PlatformFd;
 use netplane_common::crypto::{load_auth_key, try_generate_crypto_keys};
@@ -63,6 +62,24 @@ pub struct NetplaneConfig {
     pub auth_port: u16,
     pub loopback_relay: bool,
     pub no_encryption: bool,
+}
+
+impl NetplaneConfig {
+    fn control_addr(&self) -> String {
+        let port = if self.port == 0 { 5000 } else { self.port };
+        format!("{}:{}", self.host, port)
+    }
+
+    fn reconnect_params(&self) -> ReconnectParams {
+        ReconnectParams {
+            control_addr: self.control_addr(),
+            transport_type: Some(self.transport.clone()),
+            authkey_path: self.authkey_path.clone(),
+            public_filepath: self.public_key_path.clone(),
+            private_filepath: self.private_key_path.clone(),
+            is_dynamic_link: false,
+        }
+    }
 }
 
 /// Status events emitted during a [`connect`] session.
@@ -119,10 +136,6 @@ pub fn authenticate(config: NetplaneConfig) -> anyhow::Result<()> {
     ))
 }
 
-/// Establish the tunnel and stream status until it ends or [`disconnect`] is
-/// called.
-/// Returns immediately after spawning the session; the caller consumes
-/// the returned Dart stream. Requires privileges to create the TUN device
 pub fn connect(config: NetplaneConfig, sink: StreamSink<ConnectionEvent>) -> anyhow::Result<()> {
     info!("connect");
 
@@ -140,8 +153,7 @@ pub fn connect(config: NetplaneConfig, sink: StreamSink<ConnectionEvent>) -> any
         let _ = sink.add(ConnectionEvent::Connecting);
 
         let outcome: anyhow::Result<()> = async {
-            let port = if config.port == 0 { 5000 } else { config.port };
-            let control_addr = format!("{}:{}", config.host, port);
+            let control_addr = config.control_addr();
 
             let auth_key = load_auth_key(config.authkey_path.clone())?;
             let mut transport =
@@ -173,6 +185,7 @@ pub fn connect(config: NetplaneConfig, sink: StreamSink<ConnectionEvent>) -> any
                 &config.private_key_path,
                 None,
                 None,
+                Some(config.reconnect_params()),
             )
             .await?;
 
@@ -223,12 +236,10 @@ pub fn prepare_tunnel(config: NetplaneConfig) -> anyhow::Result<TunnelParams> {
     info!("prepare_tunnel");
 
     RT.block_on(async move {
-        let port = if config.port == 0 { 5000 } else { config.port };
-        let control_addr = format!("{}:{}", config.host, port);
+        let control_addr = config.control_addr();
 
         let auth_key = load_auth_key(config.authkey_path.clone())?;
-        let mut transport =
-            create_transport(&control_addr, Some(config.transport.clone())).await?;
+        let mut transport = create_transport(&control_addr, Some(config.transport.clone())).await?;
 
         let (start_params, _client_pub) = handshake(
             auth_key,
@@ -304,6 +315,7 @@ pub fn connect_fd(
                 &config.public_key_path,
                 &config.private_key_path,
                 None,
+                Some(config.reconnect_params()),
             )
             .await?;
 
