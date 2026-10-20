@@ -179,7 +179,7 @@ pub async fn run(
         }
         Err(err) => {
             error!("Handshake failed: {}", err);
-            std::process::exit(1)
+            return Err(err);
         }
     };
     let (own_sdn_ip, client_manager) =

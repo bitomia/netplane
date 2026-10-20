@@ -1,8 +1,8 @@
-use std::env;
+use std::{env, time::Duration};
 
 use anyhow::{Result, anyhow};
 use dotenv::dotenv;
-use tracing::info;
+use tracing::{error, info};
 
 pub mod client;
 pub mod client_manager;
@@ -12,6 +12,7 @@ mod tundev;
 
 const AUTH_KEY_FILENAME: &str = "auth.key";
 const DYNAMIC_KEY_FILENAME: &str = "dynamic.key";
+const RECONNECT_DELAY: Duration = Duration::from_secs(5);
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[allow(dead_code)]
@@ -143,28 +144,53 @@ fn main() -> Result<()> {
                 .await?;
             }
 
-            client::run(
-                tun_dev,
-                host,
-                port,
-                transport_type,
-                loopback_relay,
-                no_encryption,
-                is_dynamic_link,
-                authkey_filepath,
-                "public.key",
-                "private.key",
-                None,
-                None,
-            )
-            .await?
-            .await?;
+            // This flag prevents trying to reconnect at first connection
+            let mut shall_reconnect = false;
+            loop {
+                if shall_reconnect {
+                    info!("Reconnecting in {:?}", RECONNECT_DELAY);
+                    tokio::time::sleep(RECONNECT_DELAY).await;
+                }
 
-            Ok::<(), anyhow::Error>(())
+                match client::run(
+                    tun_dev.clone(),
+                    host.clone(),
+                    port,
+                    transport_type.clone(),
+                    loopback_relay,
+                    no_encryption,
+                    is_dynamic_link,
+                    authkey_filepath,
+                    "public.key",
+                    "private.key",
+                    None,
+                    None,
+                )
+                .await
+                {
+                    Ok(session) => match session.await {
+                        Ok(err) => {
+                            error!("Client session ended: {}", err);
+                            shall_reconnect = true;
+                        }
+                        Err(err) => {
+                            error!("Client session task failed: {}", err);
+                            return Err(err.into());
+                        }
+                    },
+                    Err(err) => {
+                        error!("Failed to start session: {}", err);
+                        if !shall_reconnect {
+                            return Err(err);
+                        }
+                    }
+                };
+            }
         })?;
     } else {
         echo_syntax(None, &args);
         std::process::exit(1);
     }
+
     Ok(())
 }
