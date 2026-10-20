@@ -25,6 +25,16 @@ static GLOBAL_RT: Lazy<Runtime> =
 static CANCEL_TOKEN: Lazy<Mutex<CancellationToken>> =
     Lazy::new(|| Mutex::new(CancellationToken::new()));
 
+#[derive(Default)]
+struct ConnectionInfo {
+    control_addr: Option<String>,
+    transport_type: Option<String>,
+    authkey_path: Option<String>,
+}
+
+static CONNECTION_INFO: Lazy<Mutex<ConnectionInfo>> =
+    Lazy::new(|| Mutex::new(ConnectionInfo::default()));
+
 async fn do_handshake(
     authkey_path: *const c_char,
     public_filepath: *const c_char,
@@ -41,6 +51,7 @@ async fn do_handshake(
             }
         }
     };
+    CONNECTION_INFO.lock().unwrap().authkey_path = Some(authkey_path.clone());
     let auth_key = match load_auth_key(authkey_path) {
         Ok(auth_key) => auth_key,
         Err(err) => {
@@ -372,8 +383,13 @@ pub unsafe extern "C" fn netplane_create_transport(
             }
         };
 
-        match client::create_transport(&control_addr, transport_type_opt).await {
-            Ok(transport) => Box::into_raw(transport) as *mut std::ffi::c_void,
+        match client::create_transport(&control_addr, transport_type_opt.clone()).await {
+            Ok(transport) => {
+                let mut info = CONNECTION_INFO.lock().unwrap();
+                info.control_addr = Some(control_addr);
+                info.transport_type = transport_type_opt;
+                Box::into_raw(transport) as *mut std::ffi::c_void
+            }
             Err(err) => {
                 error!("Error creating transport: {:?}", err);
                 std::ptr::null_mut()
@@ -482,6 +498,21 @@ pub unsafe extern "C" fn netplane_client_run_fd(
         }
     };
 
+    let reconnect = {
+        let info = CONNECTION_INFO.lock().unwrap();
+        match (&info.control_addr, &info.authkey_path) {
+            (Some(control_addr), Some(authkey_path)) => Some(client::ReconnectParams {
+                control_addr: control_addr.clone(),
+                transport_type: info.transport_type.clone(),
+                authkey_path: authkey_path.clone(),
+                public_filepath: public_filepath.clone(),
+                private_filepath: private_filepath.clone(),
+                is_dynamic_link: false,
+            }),
+            _ => None,
+        }
+    };
+
     GLOBAL_RT.spawn(async move {
         // Convert c_int to PlatformFd
         #[cfg(unix)]
@@ -490,7 +521,7 @@ pub unsafe extern "C" fn netplane_client_run_fd(
         let platform_fd = PlatformFd::from_raw_handle(tun_fd as _);
 
         tokio::select! {
-            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, &public_filepath, &private_filepath, None) => {
+            retval = client::run_from_fd(platform_fd, &handshake_result, transport_ptr, loopback_relay, no_encryption, &public_filepath, &private_filepath, None, reconnect) => {
                     reset_cancel_token();
                 match retval {
                     Ok(_) => 0,
