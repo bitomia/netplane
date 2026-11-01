@@ -1,11 +1,16 @@
 [Unit]
 Description=netplane-server
-After=podman.service
-Requires=podman.service
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Restart=on-failure
-ExecStart=/usr/bin/podman run --rm --name netplane-server --env-file /root/netplane-server.env --network=host ghcr.io/bitomia/netplane-server
+RestartSec=5
+ExecStartPre=-/usr/bin/podman rm -f netplane-server
+ExecStart=/usr/bin/podman run --rm --name netplane-server --env-file /root/netplane-server.env --network=host -v /var/lib/netplane:/data -w /data ghcr.io/bitomia/netplane-server
 ExecStop=/usr/bin/podman stop netplane-server
 StandardOutput=append:/var/log/netplane-server.out.log
 StandardError=append:/var/log/netplane-server.err.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,11 +1,13 @@
 [Unit]
 Description=netplane-client
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
+WorkingDirectory=/opt/netplane
+ExecStart=/opt/netplane/netplane 116.203.59.48 --port=5000 --tun=tun0
 Restart=on-failure
-ExecStart=/opt/netplane/netplane tun0 12.0.0.0 255.255.255.0 12.0.0.2 116.203.59.48:5000
-PIDFile=/run/reticual/netplane-server.pid
+RestartSec=5
 StandardOutput=append:/var/log/netplane-client.out.log
 StandardError=append:/var/log/netplane-client.err.log
 

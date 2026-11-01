@@ -11,4 +11,4 @@ ENV RUST_LOG=debug
 EXPOSE 8080
 EXPOSE 5050/udp
 EXPOSE 5050/tcp
-ENTRYPOINT ["./netplane-server"]
+ENTRYPOINT ["/app/netplane-server"]
